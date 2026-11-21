@@ -1,0 +1,78 @@
+#pragma once
+#include <memory>
+#include <vector>
+
+#include "glutil.hpp"
+#include "mathutil.hpp"
+#include "state.hpp"
+
+// One point where an effect is injected. Each finger produces one emitter per mirror copy.
+struct Emitter {
+  Vec2 pos;          // output UV, 0..1, y up
+  Vec2 vel;          // velocity in "aspect space" (x scaled by aspect, y = 0..1) per second
+  float speed = 0;   // |vel|
+  int touch = 0;     // which finger (0/1)
+  int mirror = 0;    // which mirror copy (0 = the real finger)
+  Mat2 m;            // mirror transform (aspect space, around the canvas centre)
+};
+
+struct FxCtx {
+  float dt = 0;       // real seconds since last frame
+  float time = 0;     // seconds since start
+  float speed = 1;    // BPM speed factor (1.0 at 120 BPM, x1)
+  double beat = 0;    // beats elapsed (continuous)
+  int W = 0, H = 0;
+  float aspect = 1;
+  const Look* look = nullptr;
+  const Palette* pal = nullptr;
+  std::vector<Emitter> live;  // emitters from fingers currently down
+  std::vector<Emitter> held;  // last emitters, kept while fading out after release
+  bool touching = false;
+  float gain = 1;     // 1 while touching, falls to 0 while fading out
+  float fadeMul = 1;  // per-frame attenuation while fading out (1 = not fading)
+
+  // Emitters to draw "shape" effects from: live ones, or the held ones while fading.
+  const std::vector<Emitter>& shapeEmitters() const { return touching ? live : held; }
+  Vec3 color(float t) const;
+  // Picks a 0..1 position in the palette according to the colour mode.
+  // gradient: what "gradient" means for this effect (age, beam index...), rnd: a random value.
+  float colorT(const Emitter* e, float gradient, float rnd) const;
+};
+
+class Effect {
+ public:
+  virtual ~Effect() = default;
+  virtual bool init() = 0;               // build shaders
+  virtual void resize(int W, int H) = 0;  // (re)create buffers for the output size
+  virtual void clear() = 0;               // remove everything on screen
+  virtual void frame(const FxCtx& c, const Target& out) = 0;
+};
+
+std::unique_ptr<Effect> makeFluid();
+std::unique_ptr<Effect> makeParticles();
+std::unique_ptr<Effect> makeKaleido();
+std::unique_ptr<Effect> makeLasers();
+std::unique_ptr<Effect> makeStrobe();
+
+std::vector<Mat2> mirrorMatrices(int mode);
+Vec3 paletteAt(const Palette& p, float t);
+
+// ---- shared GPU helpers ----
+bool fxSharedInit();
+// Draws src into out with tonemapping and the given gain.
+void fxComposite(const Target& out, GLuint srcTex, float gain);
+// Multiplies every pixel of t by mul (used for trails and fade-outs).
+void fxFade(const Target& t, float mul);
+// Adds gaussian blobs into a ping-pong target. aspect corrects the blob shape. Max 16 points.
+void fxSplat(DoubleTarget& t, float aspect, const std::vector<Vec2>& pts, const std::vector<Vec3>& vals,
+             float radius);
+
+// Soft round points drawn additively (particles, sparkles).
+struct PointVertex {
+  float x, y;        // pixels, origin bottom-left
+  float r, g, b, a;
+  float size;        // diameter in pixels
+};
+void fxDrawPoints(const Target& out, const std::vector<PointVertex>& pts);
+
+constexpr int kMaxSplats = 16;

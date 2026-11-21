@@ -1,0 +1,48 @@
+name: TouchFX Windows build
+
+on:
+  push:
+    paths:
+      - "touchfx/**"
+      - ".github/workflows/touchfx-windows.yml"
+    tags:
+      - "touchfx-v*"
+  pull_request:
+    paths:
+      - "touchfx/**"
+  workflow_dispatch:
+
+permissions:
+  contents: write  # needed to attach the zip to a release on tags
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S touchfx -B build -A x64
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist/TouchFX | Out-Null
+          Copy-Item build/Release/TouchFX.exe dist/TouchFX/
+          Copy-Item touchfx/README.md dist/TouchFX/README.md
+          Compress-Archive -Path dist/TouchFX -DestinationPath TouchFX-windows-x64.zip -Force
+
+      - name: Upload build
+        uses: actions/upload-artifact@v4
+        with:
+          name: TouchFX-windows-x64
+          path: dist/TouchFX
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/touchfx-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: TouchFX-windows-x64.zip
