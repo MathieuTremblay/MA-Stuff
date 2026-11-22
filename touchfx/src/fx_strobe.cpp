@@ -9,7 +9,7 @@ namespace {
 const char* kShapeFS = R"(
 in vec2 vUv; out vec4 o;
 uniform int uShape, uCount;
-uniform vec2 uPts[16];
+uniform vec2 uPts[64];
 uniform float uAspect, uSize;
 uniform vec3 uColor;
 void main() {
@@ -27,7 +27,7 @@ void main() {
       m = max(m, 1.0 - smoothstep(r * 0.75, r, d));
     }
   }
-  o = vec4(tonemap(uColor * m), 1.0);
+  o = vec4(uColor * m, 1.0);
 }
 )";
 
@@ -62,7 +62,7 @@ class Strobe : public Effect {
     } else {
       col = c.color(c.colorT(&em[0], 0.5f + 0.5f * std::sin(float(flash) * 0.7f), hash01(flash * 37u)));
     }
-    col = col * (c.gain * c.look->brightness);
+    col = col * (c.gain * c.look->brightness * 1.6f);
 
     if (s.shape == STROBE_SPARKLE) {
       // Random dots around each finger, re-scattered on every flash.
@@ -71,17 +71,17 @@ class Strobe : public Effect {
       verts.clear();
       for (size_t k = 0; k < em.size(); ++k) {
         const Emitter& e = em[k];
-        for (int i = 0; i < 90; ++i) {
+        for (int i = 0; i < 70; ++i) {
           uint32_t h = flash * 2654435761u + uint32_t(e.touch) * 97u + uint32_t(i) * 7919u;
           float ang = hash01(h) * kTau;
           float r = std::sqrt(hash01(h + 1)) * radius;
           Vec2 q = e.m * Vec2(std::cos(ang) * r, std::sin(ang) * r);
           float x = e.pos.x * c.W + q.x * c.H, y = e.pos.y * c.H + q.y * c.H;
-          float sz = mixf(8.f, 26.f, hash01(h + 2)) * px;
-          verts.push_back({x, y, col.x, col.y, col.z, 2.2f, sz});
+          float sz = mixf(24.f, 70.f, hash01(h + 2)) * px;
+          verts.push_back({x, y, col.x, col.y, col.z, 1.4f, sz});
         }
       }
-      fxDrawPoints(out, verts);
+      fxDrawPoints(out, verts, POINT_STAR);
       return;
     }
 

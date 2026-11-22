@@ -54,15 +54,15 @@ std::vector<Mat2> mirrorMatrices(int mode) {
 namespace {
 
 struct Shared {
-  Program composite, fade, splat, points;
+  Program copy, fade, splat, points, stars;
   GLuint pointVbo = 0, pointVao = 0;
 };
 Shared g;
 
-const char* kCompositeFS = R"(
+const char* kCopyFS = R"(
 in vec2 vUv; out vec4 o;
 uniform sampler2D uSrc; uniform float uGain;
-void main() { o = vec4(tonemap(texture(uSrc, vUv).rgb * uGain), 1.0); }
+void main() { o = vec4(max(texture(uSrc, vUv).rgb, vec3(0.0)) * uGain, 1.0); }
 )";
 
 const char* kFadeFS = R"(
@@ -75,8 +75,8 @@ in vec2 vUv; out vec4 o;
 uniform sampler2D uTarget;
 uniform float uAspect, uRadius;
 uniform int uCount;
-uniform vec2 uPoint[16];
-uniform vec3 uValue[16];
+uniform vec2 uPoint[64];
+uniform vec3 uValue[64];
 void main() {
   vec4 base = texture(uTarget, vUv);
   vec3 add = vec3(0.0);
@@ -113,11 +113,30 @@ void main() {
 }
 )";
 
+// Four-pointed glint with a hot core and thinner diagonal rays.
+const char* kStarsFS = R"(
+in vec4 vCol; out vec4 o;
+void main() {
+  vec2 d = gl_PointCoord * 2.0 - 1.0;
+  float r2 = dot(d, d);
+  if (r2 > 1.0) discard;
+  float core = exp(-r2 * 60.0) * 3.0 + exp(-r2 * 12.0) * 0.6;
+  float ray = exp(-abs(d.x) * 40.0) * exp(-d.y * d.y * 4.0) + exp(-abs(d.y) * 40.0) * exp(-d.x * d.x * 4.0);
+  vec2 q = vec2(d.x + d.y, d.x - d.y) * 0.7071;
+  float diag = exp(-abs(q.x) * 60.0) * exp(-q.y * q.y * 10.0) + exp(-abs(q.y) * 60.0) * exp(-q.x * q.x * 10.0);
+  float edge = 1.0 - smoothstep(0.7, 1.0, sqrt(r2));
+  float v = (core + ray * 1.2 + diag * 0.5) * edge;
+  vec3 c = mix(vCol.rgb, vec3(1.0), clamp(core * 0.25, 0.0, 0.6));  // white-hot centre
+  o = vec4(c * v * vCol.a, 1.0);
+}
+)";
+
 }  // namespace
 
 bool fxSharedInit() {
   bool ok = true;
-  ok &= g.composite.build("composite", kFullscreenVS, kCompositeFS);
+  ok &= g.copy.build("copy", kFullscreenVS, kCopyFS);
+  ok &= g.stars.build("stars", kPointsVS, kStarsFS);
   ok &= g.fade.build("fade", kFullscreenVS, kFadeFS);
   ok &= g.splat.build("splat", kFullscreenVS, kSplatFS);
   ok &= g.points.build("points", kPointsVS, kPointsFS);
@@ -136,13 +155,13 @@ bool fxSharedInit() {
   return ok;
 }
 
-void fxComposite(const Target& out, GLuint srcTex, float gain) {
+void fxCopy(const Target& out, GLuint srcTex, float gain) {
   out.bind();
   glDisable(GL_BLEND);
-  g.composite.use();
+  g.copy.use();
   bindTex(0, srcTex);
-  g.composite.seti("uSrc", 0);
-  g.composite.setf("uGain", gain);
+  g.copy.seti("uSrc", 0);
+  g.copy.setf("uGain", gain);
   drawFullscreen();
 }
 
@@ -184,15 +203,16 @@ void fxSplat(DoubleTarget& t, float aspect, const std::vector<Vec2>& pts, const 
   t.swap();
 }
 
-void fxDrawPoints(const Target& out, const std::vector<PointVertex>& pts) {
+void fxDrawPoints(const Target& out, const std::vector<PointVertex>& pts, PointStyle style) {
   if (pts.empty()) return;
   out.bind();
   glEnable(GL_BLEND);
   glBlendEquation(GL_FUNC_ADD);
   glBlendFunc(GL_ONE, GL_ONE);
   glEnable(GL_PROGRAM_POINT_SIZE);
-  g.points.use();
-  g.points.set2f("uRes", float(out.w), float(out.h));
+  Program& prog = style == POINT_STAR ? g.stars : g.points;
+  prog.use();
+  prog.set2f("uRes", float(out.w), float(out.h));
   glBindVertexArray(g.pointVao);
   glBindBuffer(GL_ARRAY_BUFFER, g.pointVbo);
   glBufferData(GL_ARRAY_BUFFER, pts.size() * sizeof(PointVertex), pts.data(), GL_STREAM_DRAW);

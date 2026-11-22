@@ -2,7 +2,7 @@
 
 Touch-driven live visuals for Windows, sent out over **NDI** (up to 1920x1080) to Resolume, grandMA3 or any NDI receiver.
 
-Draw on the canvas with one or two fingers. The canvas is the output: where you touch is where the effect appears.
+Draw on the canvas with up to 10 fingers. The canvas is the output: where you touch is where the effect appears.
 
 ## Install / run
 
@@ -15,19 +15,31 @@ Requirements: Windows 10/11 64-bit, a GPU with OpenGL 3.3 (any dedicated card), 
 
 ## Controls
 
+The panel has two tabs: **LIVE** (everything you touch during the show) and **SETTINGS** (set up once).
+Swipe up/down anywhere in the panel to scroll (sliders: swipe sideways to change, tap to jump to a value).
+
+### LIVE
+
 | Area | What it does |
 |---|---|
 | **BPM** | Tap **TAP** (or press SPACE) to set the tempo; **-/+** nudge it. `x1/4 … x4` scale effect speed. The 4 lights show the beat. |
-| **EFFECT** | Fluid / smoke, Particles, Kaleidoscope, Lines / lasers, Strobe / flash. **BLACKOUT** kills the output. |
-| **MIRROR** | Off, left/right, up/down, quad (both), radial 6, radial 8. Guides are drawn on the preview only. |
-| **ON RELEASE** | **FADE**: the effect fades out over the chosen time after you lift your fingers. **SNAP**: it goes off instantly. |
-| **CLEAR CANVAS** | Wipes the current effect. |
-| **EFFECT tab** | Settings for the current effect (size, trail, speed, glow, strobe rate…) and a reset button. |
-| **COLOUR tab** | 10 palettes (tap to select). Edit the **LOW / MID / HIGH** colours and name of the selected palette. **Colour mode**: Gradient (over the effect's life), Speed (finger speed), Position (left to right), Beat (steps each beat), Random. Output brightness. |
-| **SCENES tab** | 12 slots. **STORE** then tap a slot to save the whole look; tap a slot to recall it. **DELETE** then tap to clear. |
-| **OUTPUT tab** | Resolution (1920x1080, 1280x720, 960x540 or custom, max 1920x1080), 30 / 60 fps, NDI on/off and source name, UI size, fullscreen. |
+| **Effects** | Fluid / smoke, Particles, Sparkles, Kaleidoscope, Lasers, Strobe / flash. **CLEAR** wipes the canvas, **BLACKOUT** kills the output. |
+| **Mirror** | Off, left/right, up/down, quad (both), radial 6, radial 8. Guides are drawn on the preview only. |
+| **On release** | **FADE**: the effect fades out over the chosen time after you lift your fingers. **SNAP**: it goes off instantly. |
+| **Effect settings** | Sliders for the current effect (size, trail, speed, glow, strobe rate…) and a reset button. |
+| **Lasers** | Laser-show modes: **FAN** (fan of beams from the finger), **AIM** (projectors along the bottom converge on your finger), **TUNNEL** (rings on the beat), **WAVE**, **SCAN**, **WEB**. *Swing* sweeps on the beat, *Chase* makes beams blink in sequence / alternate / random. |
+| **Palette / colour mode** | Pick one of the 10 palettes. Colour mode: Gradient (over the effect's life), Speed (finger speed), Position (left to right), Beat (steps each beat), Random. |
+| **Look** | Glow (bloom), glow size, saturation and brightness, applied to every effect. Saved in scenes. |
+| **Scenes** | Under the canvas (or in the LIVE tab). **STORE** then tap a slot to save the whole look; tap a slot to recall. **DELETE** then tap to clear. |
 
-Strobe rate is in flashes per beat (`1/4 … 8`) synced to the BPM, or free-running in Hz. Particles can strobe too (*SYNC*: all together, *SPARKLE*: each particle on its own phase).
+### SETTINGS
+
+| Tab | What it does |
+|---|---|
+| **PALETTES** | Edit the **LOW / MID / HIGH** colours and name of each palette. |
+| **OUTPUT** | Resolution (1920x1080, 1280x720, 960x540 or custom, max 1920x1080), 30 / 60 fps, NDI on/off and source name, **alpha channel** (straight or premultiplied). |
+| **SCREEN** | **External display**: show the output fullscreen on another screen (fit / fill / stretch, or windowed). Layout: panel left or right, panel width, scenes under the canvas, UI size, fullscreen. |
+| **SYSTEM** | Number of touch points (1–10), touch markers on the preview, reset everything. |
 
 Keyboard: `SPACE` tap tempo, `C` clear, `B` blackout, `F11` fullscreen, `Esc` leave fullscreen.
 
@@ -55,6 +67,7 @@ Developer self-test (renders every effect with fake fingers and saves screenshot
 - `src/main.cpp`: window, touch input, mirroring, release/fade logic, NDI readback
 - `src/ui.cpp`: the touch control panel
 - `src/fx_*.cpp`: one file per effect (GPU shaders)
+- `src/post.cpp`: glow (bloom), saturation, tonemapping, alpha
 - `src/ndi.cpp`: NDI sender (runtime-loaded, runs on its own thread)
 - `src/state.cpp`: settings, palettes, scenes and saving
 

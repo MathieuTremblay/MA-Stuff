@@ -46,9 +46,9 @@ class Particles : public Effect {
       rate /= std::sqrt(float(perEmitter));  // keep the total sensible with many mirrors
       for (size_t i = 0; i < c.live.size(); ++i) {
         const Emitter& e = c.live[i];
-        spawnAcc[i % 16] += rate * sdt;
-        int n = int(spawnAcc[i % 16]);
-        spawnAcc[i % 16] -= n;
+        spawnAcc[i % kMaxSplats] += rate * sdt;
+        int n = int(spawnAcc[i % kMaxSplats]);
+        spawnAcc[i % kMaxSplats] -= n;
         for (int k = 0; k < n && int(ps.size()) < kMaxParticles; ++k) spawn(c, s, e, px);
       }
     }
@@ -90,12 +90,12 @@ class Particles : public Effect {
         case COLOR_RANDOM: t = p.rnd; break;
         default: t = c.colorT(nullptr, age, p.rnd);
       }
-      Vec3 col = c.color(t) * 1.8f;
+      Vec3 col = c.color(t) * 2.6f;
       float sx = p.pos.x / aspect * c.W, sy = p.pos.y * c.H;
       verts.push_back({sx, sy, col.x, col.y, col.z, a * alphaScale, p.size * (0.6f + 0.4f * (1.f - age))});
     }
     fxDrawPoints(trail, verts);
-    fxComposite(out, trail.tex, c.look->brightness);
+    fxCopy(out, trail.tex, c.look->brightness);
   }
 
  private:
@@ -122,7 +122,7 @@ class Particles : public Effect {
   std::vector<PointVertex> verts;
   Target trail;
   Rng rng;
-  float spawnAcc[16] = {};
+  float spawnAcc[kMaxSplats] = {};
   float aspect = 1;
   float alphaScale = 1;
 };

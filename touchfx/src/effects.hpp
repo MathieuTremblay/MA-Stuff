@@ -11,7 +11,7 @@ struct Emitter {
   Vec2 pos;          // output UV, 0..1, y up
   Vec2 vel;          // velocity in "aspect space" (x scaled by aspect, y = 0..1) per second
   float speed = 0;   // |vel|
-  int touch = 0;     // which finger (0/1)
+  int touch = 0;     // which finger (0..9)
   int mirror = 0;    // which mirror copy (0 = the real finger)
   Mat2 m;            // mirror transform (aspect space, around the canvas centre)
 };
@@ -53,17 +53,18 @@ std::unique_ptr<Effect> makeParticles();
 std::unique_ptr<Effect> makeKaleido();
 std::unique_ptr<Effect> makeLasers();
 std::unique_ptr<Effect> makeStrobe();
+std::unique_ptr<Effect> makeSparkles();
 
 std::vector<Mat2> mirrorMatrices(int mode);
 Vec3 paletteAt(const Palette& p, float t);
 
 // ---- shared GPU helpers ----
 bool fxSharedInit();
-// Draws src into out with tonemapping and the given gain.
-void fxComposite(const Target& out, GLuint srcTex, float gain);
+// Copies src into out (HDR, no tonemapping) multiplied by gain.
+void fxCopy(const Target& out, GLuint srcTex, float gain);
 // Multiplies every pixel of t by mul (used for trails and fade-outs).
 void fxFade(const Target& t, float mul);
-// Adds gaussian blobs into a ping-pong target. aspect corrects the blob shape. Max 16 points.
+// Adds gaussian blobs into a ping-pong target. aspect corrects the blob shape. Max kMaxSplats points.
 void fxSplat(DoubleTarget& t, float aspect, const std::vector<Vec2>& pts, const std::vector<Vec3>& vals,
              float radius);
 
@@ -73,6 +74,7 @@ struct PointVertex {
   float r, g, b, a;
   float size;        // diameter in pixels
 };
-void fxDrawPoints(const Target& out, const std::vector<PointVertex>& pts);
+enum PointStyle { POINT_SOFT, POINT_STAR };
+void fxDrawPoints(const Target& out, const std::vector<PointVertex>& pts, PointStyle style = POINT_SOFT);
 
-constexpr int kMaxSplats = 16;
+constexpr int kMaxSplats = 64;   // also the max number of emitters (fingers x mirror copies)

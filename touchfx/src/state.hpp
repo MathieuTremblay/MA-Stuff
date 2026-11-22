@@ -4,11 +4,13 @@
 
 using Color3 = std::array<float, 3>;
 
-enum EffectId { FX_FLUID, FX_PARTICLES, FX_KALEIDO, FX_LASERS, FX_STROBE, FX_COUNT };
+// Values are stored in settings files: only ever append.
+enum EffectId { FX_FLUID, FX_PARTICLES, FX_KALEIDO, FX_LASERS, FX_STROBE, FX_SPARKLES, FX_COUNT };
 enum MirrorMode { MIRROR_OFF, MIRROR_LR, MIRROR_UD, MIRROR_QUAD, MIRROR_RADIAL6, MIRROR_RADIAL8, MIRROR_COUNT };
 enum ReleaseMode { RELEASE_FADE, RELEASE_SNAP };
 enum ColorMode { COLOR_GRADIENT, COLOR_SPEED, COLOR_POSITION, COLOR_BEAT, COLOR_RANDOM, COLOR_COUNT };
-enum LaserMode { LASER_FAN, LASER_BURST, LASER_WEB, LASER_SCAN, LASER_COUNT };
+enum LaserMode { LASER_FAN, LASER_AIM, LASER_WEB, LASER_SCAN, LASER_TUNNEL, LASER_WAVE, LASER_COUNT };
+enum LaserChase { CHASE_OFF, CHASE_STEP, CHASE_ALTERNATE, CHASE_RANDOM, CHASE_COUNT };
 enum StrobeShape { STROBE_FULL, STROBE_SPOT, STROBE_HBAR, STROBE_VBAR, STROBE_SPARKLE, STROBE_COUNT };
 enum ParticleStrobe { PSTROBE_OFF, PSTROBE_SYNC, PSTROBE_SPARKLE, PSTROBE_COUNT };
 
@@ -42,9 +44,21 @@ struct KaleidoSettings {
   float warp = 0.4f, brush = 0.4f, trail = 0.6f;
 };
 struct LaserSettings {
-  int mode = LASER_FAN, beams = 6;
-  float rotation = 0.65f;  // centered
-  float width = 0.3f, glow = 0.5f, length = 1.0f, trail = 0.2f;
+  int mode = LASER_FAN, beams = 8;
+  float rotation = 0.6f;  // centered
+  float spread = 0.45f;   // fan angle / wave height / tunnel size
+  float swing = 0.3f;     // back-and-forth sweep on the beat
+  float width = 0.25f, glow = 0.5f, length = 1.0f, trail = 0.15f;
+  int chase = CHASE_OFF;
+};
+struct SparkleSettings {
+  float amount = 0.5f, size = 0.5f, spread = 0.35f, twinkle = 0.5f, life = 0.5f, drift = 0.25f, rays = 0.6f,
+        trail = 0.1f;
+};
+// Global look applied after every effect.
+struct PostSettings {
+  float bloom = 0.55f, bloomSize = 0.6f;
+  float saturation = 0.62f;  // 0.5 = unchanged
 };
 struct StrobeSettings {
   int shape = STROBE_FULL, rate = 3;
@@ -62,6 +76,8 @@ struct Look {
   KaleidoSettings kaleido;
   LaserSettings lasers;
   StrobeSettings strobe;
+  SparkleSettings sparkles;
+  PostSettings post;
   int mirror = MIRROR_LR;
   int release = RELEASE_FADE;
   float fadeTime = 1.5f;  // seconds
@@ -81,17 +97,39 @@ struct OutputSettings {
   int width = 1920, height = 1080, fps = 60;
   bool ndiEnabled = true;
   std::string ndiName = "TouchFX";
+  bool alpha = false;          // send an alpha channel (transparent background)
+  bool premultiplied = false;  // premultiplied instead of straight alpha
+};
+
+enum FitMode { FIT_FIT, FIT_FILL, FIT_STRETCH, FIT_COUNT };
+struct ExternalSettings {
+  bool enabled = false;
+  int display = 1;
+  int fit = FIT_FIT;
+  bool windowed = false;  // a movable window instead of fullscreen (handy with one screen)
+};
+
+struct LayoutSettings {
+  bool panelLeft = false;
+  float panelWidth = 1.0f;  // multiplier
+  bool sceneStrip = true;   // scenes bar under the canvas (otherwise in the LIVE tab)
 };
 
 constexpr int kNumPalettes = 10;
 constexpr int kNumScenes = 12;
 constexpr int kMaxOutW = 1920, kMaxOutH = 1080;
+constexpr int kMaxTouches = 10;
 
 struct AppState {
   Look look;
   std::array<Palette, kNumPalettes> palettes;
   std::array<Scene, kNumScenes> scenes;
   OutputSettings output;
+  ExternalSettings external;
+  LayoutSettings layout;
+  int maxTouches = 4;  // 1..10
+  bool showTouches = true;
+  int settingsTab = 0;
   float uiScale = 1.0f;  // multiplier on top of the monitor DPI scale
   bool fullscreen = false;
   int tab = 0;

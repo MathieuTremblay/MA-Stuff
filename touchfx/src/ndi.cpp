@@ -152,7 +152,7 @@ void NdiSender::stop() {
   connections_ = 0;
 }
 
-void NdiSender::submit(const uint8_t* bgra, int w, int h, int fps) {
+void NdiSender::submit(const uint8_t* bgra, int w, int h, int fps, bool alpha) {
   if (!instance_) return;
   {
     std::lock_guard<std::mutex> lk(mtx_);
@@ -162,6 +162,7 @@ void NdiSender::submit(const uint8_t* bgra, int w, int h, int fps) {
     pw_ = w;
     ph_ = h;
     pfps_ = fps;
+    palpha_ = alpha;
     hasPending_ = true;
   }
   cv_.notify_one();
@@ -172,6 +173,7 @@ void NdiSender::threadMain() {
   auto lastPoll = clock::now() - std::chrono::seconds(1);
   for (;;) {
     int w, h, fps;
+    bool alpha = false;
     {
       std::unique_lock<std::mutex> lk(mtx_);
       cv_.wait_for(lk, std::chrono::milliseconds(250), [&] { return quit_ || hasPending_; });
@@ -182,6 +184,7 @@ void NdiSender::threadMain() {
         w = pw_;
         h = ph_;
         fps = pfps_;
+        alpha = palpha_;
       } else {
         w = 0;
         h = 0;
@@ -192,7 +195,7 @@ void NdiSender::threadMain() {
       ndi::video_frame_v2_t f{};
       f.xres = w;
       f.yres = h;
-      f.FourCC = ndi::fourcc('B', 'G', 'R', 'X');
+      f.FourCC = alpha ? ndi::fourcc('B', 'G', 'R', 'A') : ndi::fourcc('B', 'G', 'R', 'X');
       f.frame_rate_N = fps;
       f.frame_rate_D = 1;
       f.picture_aspect_ratio = float(w) / float(h);

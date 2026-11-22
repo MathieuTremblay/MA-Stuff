@@ -18,12 +18,19 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(FluidSettings, size, force, swir
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(ParticleSettings, amount, size, life, speed, spread, gravity,
                                                 trail, strobe, strobeRate)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(KaleidoSettings, segments, rotation, zoom, warp, brush, trail)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(LaserSettings, mode, beams, rotation, width, glow, length, trail)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(LaserSettings, mode, beams, rotation, spread, swing, width, glow, length,
+                                                trail, chase)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(SparkleSettings, amount, size, spread, twinkle, life, drift, rays, trail)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(PostSettings, bloom, bloomSize, saturation)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(StrobeSettings, shape, rate, freeHz, hz, duty, size, colorCycle)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Look, effect, fluid, particles, kaleido, lasers, strobe, mirror,
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Look, effect, fluid, particles, kaleido, lasers, strobe, sparkles, post,
+                                                mirror,
                                                 release, fadeTime, colorMode, palette, brightness, bpm, speedMult)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene, used, look)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(OutputSettings, width, height, fps, ndiEnabled, ndiName)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(OutputSettings, width, height, fps, ndiEnabled, ndiName, alpha,
+                                                premultiplied)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(ExternalSettings, enabled, display, fit, windowed)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(LayoutSettings, panelLeft, panelWidth, sceneStrip)
 
 static Color3 hex(unsigned v) {
   return {((v >> 16) & 255) / 255.f, ((v >> 8) & 255) / 255.f, (v & 255) / 255.f};
@@ -66,6 +73,7 @@ static void sanitizeLook(Look& l) {
   clampRef(l.kaleido.segments, 2, 16);
   clampRef(l.lasers.mode, 0, LASER_COUNT - 1);
   clampRef(l.lasers.beams, 1, 32);
+  clampRef(l.lasers.chase, 0, CHASE_COUNT - 1);
   clampRef(l.strobe.shape, 0, STROBE_COUNT - 1);
   clampRef(l.strobe.rate, 0, kNumDivisions - 1);
   clampRef(l.strobe.hz, 0.5f, 25.f);
@@ -81,7 +89,12 @@ void sanitize(AppState& s) {
   if (s.output.fps != 30 && s.output.fps != 60) s.output.fps = 60;
   if (s.output.ndiName.empty()) s.output.ndiName = "TouchFX";
   clampRef(s.uiScale, 0.5f, 3.f);
-  clampRef(s.tab, 0, 3);
+  clampRef(s.tab, 0, 1);
+  clampRef(s.settingsTab, 0, 3);
+  clampRef(s.maxTouches, 1, kMaxTouches);
+  clampRef(s.external.display, 0, 15);
+  clampRef(s.external.fit, 0, FIT_COUNT - 1);
+  clampRef(s.layout.panelWidth, 0.6f, 1.8f);
 }
 
 std::string serializeState(const AppState& s) {
@@ -91,6 +104,11 @@ std::string serializeState(const AppState& s) {
   j["palettes"] = s.palettes;
   j["scenes"] = s.scenes;
   j["output"] = s.output;
+  j["external"] = s.external;
+  j["layout"] = s.layout;
+  j["maxTouches"] = s.maxTouches;
+  j["showTouches"] = s.showTouches;
+  j["settingsTab"] = s.settingsTab;
   j["uiScale"] = s.uiScale;
   j["fullscreen"] = s.fullscreen;
   j["tab"] = s.tab;
@@ -119,6 +137,11 @@ bool loadState(const std::string& path, AppState& s) {
     readArray(j, "palettes", d.palettes);
     readArray(j, "scenes", d.scenes);
     if (j.contains("output")) d.output = j["output"].get<OutputSettings>();
+    if (j.contains("external")) d.external = j["external"].get<ExternalSettings>();
+    if (j.contains("layout")) d.layout = j["layout"].get<LayoutSettings>();
+    d.maxTouches = j.value("maxTouches", d.maxTouches);
+    d.showTouches = j.value("showTouches", d.showTouches);
+    d.settingsTab = j.value("settingsTab", d.settingsTab);
     d.uiScale = j.value("uiScale", d.uiScale);
     d.fullscreen = j.value("fullscreen", d.fullscreen);
     d.tab = j.value("tab", d.tab);

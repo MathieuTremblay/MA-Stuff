@@ -9,6 +9,7 @@
 
 #include "effects.hpp"
 #include "ndi.hpp"
+#include "post.hpp"
 #include "state.hpp"
 
 struct ImFont;
@@ -37,6 +38,11 @@ struct Tempo {
   }
 };
 
+struct Rect {
+  float x = 0, y = 0, w = 0, h = 0;
+  bool contains(float px, float py) const { return px >= x && px <= x + w && py >= y && py <= y + h; }
+};
+
 struct App {
   AppState st;
   std::string settingsPath;
@@ -44,13 +50,16 @@ struct App {
   double saveTimer = 0;
 
   SDL_Window* window = nullptr;
+  SDL_GLContext gl = nullptr;
   int winW = 0, winH = 0;  // window size in pixels
   float dpiScale = 1;
 
   Tempo tempo;
   std::unique_ptr<Effect> fx[FX_COUNT];
   int curFx = -1;
-  Target out;  // the rendered output (also shown in the preview)
+  Target scene;  // HDR render of the current effect
+  Target out;    // final 8-bit output (preview, NDI, external display)
+  Post post;
 
   // NDI readback
   NdiSender ndi;
@@ -60,15 +69,19 @@ struct App {
   int pboIdx = 0;
   double ndiAccum = 0, ndiRetry = 0;
 
-  TouchSlot touches[2];
+  // External display
+  SDL_Window* extWindow = nullptr;
+  int extDisplay = -1;
+  bool extWindowed = false;
+
+  TouchSlot touches[kMaxTouches];
   std::vector<Emitter> live, held;
   bool wasTouching = false, fading = false;
   float fadeElapsed = 0, gain = 1;
   bool blackout = false;
 
-  // canvas rectangle in window pixels
-  float cx = 0, cy = 0, cw = 1, ch = 1;
-  float panelW = 500;
+  // Layout (window pixels)
+  Rect canvas, panel, strip;
 
   // UI
   float fontScale = 0;
@@ -86,6 +99,7 @@ struct App {
   bool selftest = false;
 
   void clearEffect();
+  void recallScene(int i);
 };
 
 void drawUI(App& a);

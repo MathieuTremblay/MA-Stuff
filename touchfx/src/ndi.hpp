@@ -19,7 +19,7 @@ class NdiSender {
   const std::string& error() const { return error_; }
   int connections() const { return connections_.load(); }
   // Copies a BGRA frame (top row first) and queues it for sending.
-  void submit(const uint8_t* bgra, int w, int h, int fps);
+  void submit(const uint8_t* bgra, int w, int h, int fps, bool alpha);
 
  private:
   bool loadRuntime();
@@ -36,4 +36,5 @@ class NdiSender {
   bool quit_ = false, hasPending_ = false;
   std::vector<uint8_t> pending_, sending_;
   int pw_ = 0, ph_ = 0, pfps_ = 60;
+  bool palpha_ = false;
 };

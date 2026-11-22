@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(TouchFX VERSION 0.1.0 LANGUAGES C CXX)
+project(TouchFX VERSION 0.2.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -56,6 +56,8 @@ add_executable(TouchFX WIN32
   src/fx_kaleido.cpp
   src/fx_lasers.cpp
   src/fx_strobe.cpp
+  src/fx_sparkles.cpp
+  src/post.cpp
   src/ndi.cpp
   src/platform.cpp
   third_party/glad/src/gl.c
