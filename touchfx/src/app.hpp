@@ -117,7 +117,7 @@ struct App {
   bool blackout = false;
 
   // Layout (window pixels)
-  Rect canvas, panel, strip;
+  Rect canvas, panel, strip, fxStrip;
 
   // UI
   float fontScale = 0;

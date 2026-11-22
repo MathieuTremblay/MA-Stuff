@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(TouchFX VERSION 0.4.0 LANGUAGES C CXX)
+project(TouchFX VERSION 0.5.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -57,6 +57,16 @@ add_executable(TouchFX WIN32
   src/fx_lasers.cpp
   src/fx_strobe.cpp
   src/fx_sparkles.cpp
+  src/fx_ripples.cpp
+  src/fx_ribbons.cpp
+  src/fx_geometry.cpp
+  src/fx_tunnel.cpp
+  src/fx_lightning.cpp
+  src/fx_plexus.cpp
+  src/fx_fireworks.cpp
+  src/fx_starfield.cpp
+  src/fx_spectrum.cpp
+  src/fx_grid.cpp
   src/post.cpp
   src/audio.cpp
   src/dmx.cpp

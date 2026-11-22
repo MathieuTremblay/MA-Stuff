@@ -54,8 +54,10 @@ std::vector<Mat2> mirrorMatrices(int mode) {
 namespace {
 
 struct Shared {
-  Program copy, fade, splat, points, stars;
+  Program copy, fade, splat, points, stars, glow;
   GLuint pointVbo = 0, pointVao = 0;
+  GLuint glowVbo = 0, glowVao = 0;
+  std::vector<float> glowVerts;
 };
 Shared g;
 
@@ -131,12 +133,98 @@ void main() {
 }
 )";
 
+const char* kGlowVS = R"(
+layout(location = 0) in vec2 aPos;
+layout(location = 1) in float aSide;
+layout(location = 2) in vec3 aCol;
+layout(location = 3) in vec2 aWidth;
+uniform vec2 uRes;
+out float vSide; out vec3 vCol; out vec2 vWidth;
+void main() {
+  gl_Position = vec4(aPos / uRes * 2.0 - 1.0, 0.0, 1.0);
+  vSide = aSide; vCol = aCol; vWidth = aWidth;
+}
+)";
+
+const char* kGlowFS = R"(
+in float vSide; in vec3 vCol; in vec2 vWidth;
+out vec4 o;
+uniform float uGlow;
+void main() {
+  float d = abs(vSide) * vWidth.x;
+  float hc = vWidth.y * 0.5;
+  float core = 1.0 - smoothstep(hc, hc + 1.0, d);
+  float gw = max(vWidth.x - hc, 0.001);
+  float glow = exp(-max(d - hc, 0.0) / gw * 4.0) * uGlow;
+  o = vec4(vCol * (core * 2.4 + glow) + vec3(core * 0.6) * dot(vCol, vec3(0.33)), 1.0);
+}
+)";
+
 }  // namespace
+
+void fxDrawGlowSegs(const Target& out, const std::vector<GlowSeg>& segs, float glow, bool maxBlend) {
+  if (segs.empty()) return;
+  std::vector<float>& v = g.glowVerts;
+  v.clear();
+  v.reserve(segs.size() * 6 * 8);
+  for (const GlowSeg& s : segs) {
+    Vec2 d = s.b - s.a;
+    float l = length(d);
+    if (l < 0.25f) continue;
+    d = d * (1.f / l);
+    Vec2 n(-d.y, d.x);
+    float hw = s.halfW;
+    Vec2 a = s.a - d * (hw * 0.5f), b = s.b + d * (hw * 0.5f);
+    Vec2 p[4] = {a + n * hw, a - n * hw, b + n * hw, b - n * hw};
+    float side[4] = {1, -1, 1, -1};
+    int idx[6] = {0, 1, 2, 2, 1, 3};
+    for (int k : idx) {
+      float vv[8] = {p[k].x, p[k].y, side[k], s.col.x, s.col.y, s.col.z, hw, s.coreW};
+      v.insert(v.end(), vv, vv + 8);
+    }
+  }
+  if (v.empty()) return;
+  out.bind();
+  glEnable(GL_BLEND);
+  if (maxBlend) {
+    glBlendEquation(GL_MAX);
+  } else {
+    glBlendEquation(GL_FUNC_ADD);
+    glBlendFunc(GL_ONE, GL_ONE);
+  }
+  g.glow.use();
+  g.glow.set2f("uRes", float(out.w), float(out.h));
+  g.glow.setf("uGlow", glow);
+  glBindVertexArray(g.glowVao);
+  glBindBuffer(GL_ARRAY_BUFFER, g.glowVbo);
+  glBufferData(GL_ARRAY_BUFFER, v.size() * sizeof(float), v.data(), GL_STREAM_DRAW);
+  glDrawArrays(GL_TRIANGLES, 0, GLsizei(v.size() / 8));
+  glBindVertexArray(0);
+  glBlendEquation(GL_FUNC_ADD);
+  glDisable(GL_BLEND);
+}
 
 bool fxSharedInit() {
   bool ok = true;
   ok &= g.copy.build("copy", kFullscreenVS, kCopyFS);
   ok &= g.stars.build("stars", kPointsVS, kStarsFS);
+  ok &= g.glow.build("glowsegs", kGlowVS, kGlowFS);
+  glGenVertexArrays(1, &g.glowVao);
+  glGenBuffers(1, &g.glowVbo);
+  glBindVertexArray(g.glowVao);
+  glBindBuffer(GL_ARRAY_BUFFER, g.glowVbo);
+  {
+    const GLsizei st = 8 * sizeof(float);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, st, (void*)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, st, (void*)(2 * sizeof(float)));
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, st, (void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, st, (void*)(6 * sizeof(float)));
+  }
+  glBindVertexArray(0);
   ok &= g.fade.build("fade", kFullscreenVS, kFadeFS);
   ok &= g.splat.build("splat", kFullscreenVS, kSplatFS);
   ok &= g.points.build("points", kPointsVS, kPointsFS);

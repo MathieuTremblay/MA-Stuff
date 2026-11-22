@@ -35,6 +35,7 @@ struct FxCtx {
   float level = 0, bass = 0, mid = 0, high = 0, pulse = 0;
   bool onset = false;
   float drive = 1;    // multiplies how much each effect emits (1 = no audio influence)
+  const float* spectrum = nullptr;  // 32 log bands 0..1 when audio is on, else nullptr
 
   // Emitters to draw "shape" effects from: live ones, or the held ones while fading.
   const std::vector<Emitter>& shapeEmitters() const { return touching ? live : held; }
@@ -59,6 +60,16 @@ std::unique_ptr<Effect> makeKaleido();
 std::unique_ptr<Effect> makeLasers();
 std::unique_ptr<Effect> makeStrobe();
 std::unique_ptr<Effect> makeSparkles();
+std::unique_ptr<Effect> makeRipples();
+std::unique_ptr<Effect> makeRibbons();
+std::unique_ptr<Effect> makeGeometry();
+std::unique_ptr<Effect> makeTunnel();
+std::unique_ptr<Effect> makeLightning();
+std::unique_ptr<Effect> makePlexus();
+std::unique_ptr<Effect> makeFireworks();
+std::unique_ptr<Effect> makeStarfield();
+std::unique_ptr<Effect> makeSpectrum();
+std::unique_ptr<Effect> makeGrid();
 
 std::vector<Mat2> mirrorMatrices(int mode);
 Vec3 paletteAt(const Palette& p, float t);
@@ -81,5 +92,14 @@ struct PointVertex {
 };
 enum PointStyle { POINT_SOFT, POINT_STAR };
 void fxDrawPoints(const Target& out, const std::vector<PointVertex>& pts, PointStyle style = POINT_SOFT);
+
+// Glowing line segments (pixels, origin bottom-left): a hot core plus a soft glow.
+// maxBlend keeps the brightest value where lines overlap (no bright beads at joints).
+struct GlowSeg {
+  Vec2 a, b;
+  Vec3 col;
+  float halfW, coreW;  // total half width and core width, pixels
+};
+void fxDrawGlowSegs(const Target& out, const std::vector<GlowSeg>& segs, float glow, bool maxBlend);
 
 constexpr int kMaxSplats = 64;   // also the max number of emitters (fingers x mirror copies)

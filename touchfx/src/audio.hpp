@@ -14,6 +14,7 @@ struct AudioFeatures {
   float pulse = 0;      // 1 on a detected hit, then decays
   bool onset = false;   // a hit was detected this frame
   float bpm = 0;        // estimated tempo (0 = not sure yet)
+  float spectrum[32] = {};  // log-spaced bands 40 Hz..16 kHz, 0..1
 };
 
 // Special device names
@@ -65,6 +66,7 @@ class AudioInput {
   // analysis state
   AudioFeatures f_;
   float peak_[4] = {0.05f, 0.05f, 0.05f, 0.05f};
+  float specPeak_ = 0.01f;
   float bassAvg_ = 0;
   double now_ = 0, lastOnset_ = -10, gateHold_ = 0;
   std::vector<float> intervals_;

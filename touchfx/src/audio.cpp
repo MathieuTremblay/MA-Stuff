@@ -243,6 +243,22 @@ void AudioInput::update(float dt, float sensitivity) {
   smooth(f_.mid, norm[2]);
   smooth(f_.high, norm[3]);
 
+  // 32-band log spectrum (for the Spectrum effect), one shared auto gain so band heights stay comparable
+  {
+    float bandsRaw[32];
+    float mx = 0;
+    for (int b = 0; b < 32; ++b) {
+      float lo = 40.f * std::pow(400.f, b / 32.f), hi = 40.f * std::pow(400.f, (b + 1) / 32.f);
+      bandsRaw[b] = band(lo, std::max(hi, lo + binHz)) * (1.f + b * 0.08f);  // tilt: highs are naturally weaker
+      mx = std::max(mx, bandsRaw[b]);
+    }
+    specPeak_ = std::max(mx, std::max(specPeak_ * decay, gate * 0.02f));
+    for (int b = 0; b < 32; ++b) {
+      float t = f_.active ? std::clamp(bandsRaw[b] / specPeak_, 0.f, 1.f) : 0.f;
+      f_.spectrum[b] += (t - f_.spectrum[b]) * (t > f_.spectrum[b] ? 0.7f : 0.18f);
+    }
+  }
+
   // hits: bass jumps above its running average
   float b = norm[1];
   bassAvg_ += (b - bassAvg_) * std::min(1.f, dt * 3.f);

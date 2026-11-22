@@ -222,9 +222,13 @@ void TouchScroll() {
   }
 }
 
-const char* kEffectNames[FX_COUNT] = {"FLUID", "PARTICLES", "KALEIDO", "LASERS", "STROBE", "SPARKLES"};
-// Display order of the effect buttons.
-const int kEffectOrder[FX_COUNT] = {FX_FLUID, FX_PARTICLES, FX_SPARKLES, FX_KALEIDO, FX_LASERS, FX_STROBE};
+const char* kEffectNames[FX_COUNT] = {"FLUID",   "PARTICLES", "KALEIDO",   "LASERS",    "STROBE",  "SPARKLES",
+                                     "RIPPLES", "RIBBONS",   "SHAPES",    "TUNNEL",    "LIGHTNING", "PLEXUS",
+                                     "FIREWORKS", "STARFIELD", "SPECTRUM", "LED GRID"};
+// Display order of the effect buttons (two rows of eight).
+const int kEffectOrder[FX_COUNT] = {FX_FLUID,  FX_PARTICLES, FX_SPARKLES,  FX_RIBBONS,  FX_FIREWORKS, FX_STARFIELD,
+                                    FX_PLEXUS, FX_KALEIDO,   FX_LASERS,    FX_LIGHTNING, FX_TUNNEL,   FX_GEOMETRY,
+                                    FX_RIPPLES, FX_SPECTRUM, FX_GRID,      FX_STROBE};
 
 // ---------------------------------------------------------------------------
 void EffectParams(App& a) {
@@ -313,11 +317,144 @@ void EffectParams(App& a) {
       if (ImGui::Button("RESET LASERS", ImVec2(-1, 40 * s))) z = LaserSettings();
       break;
     }
+    case FX_RIPPLES: {
+      RippleSettings& p = l.ripples;
+      SectionLabel("RIPPLES");
+      Pct("Drop size", &p.size);
+      Pct("Strength", &p.strength);
+      Pct("Ring time", &p.decay);
+      Pct("Shine", &p.shine);
+      OnOff("DROP ON EVERY BEAT", &p.beatDrops, 44 * s);
+      if (ImGui::Button("RESET RIPPLES", ImVec2(-1, 40 * s))) p = RippleSettings();
+      break;
+    }
+    case FX_RIBBONS: {
+      RibbonSettings& p = l.ribbons;
+      SectionLabel("RIBBONS");
+      IntSlider("Strands", &p.strands, 1, 6);
+      Pct("Length", &p.length);
+      Pct("Width", &p.width);
+      Pct("Wave", &p.wave);
+      Pct("Glow", &p.glow);
+      Pct("Trail", &p.trail);
+      if (ImGui::Button("RESET RIBBONS", ImVec2(-1, 40 * s))) p = RibbonSettings();
+      break;
+    }
+    case FX_GEOMETRY: {
+      GeometrySettings& p = l.geometry;
+      SectionLabel("SHAPES");
+      static const char* shapes[] = {"TRIANGLE", "SQUARE", "PENTAGON", "HEXAGON", "CIRCLE", "STAR", "MIX"};
+      Choice("gshape", shapes, SHAPE_COUNT, &p.shape, 4);
+      SectionLabel("SHAPES PER BEAT");
+      Choice("grate", kDivisionLabels, kNumDivisions, &p.rate);
+      Pct("Size", &p.size);
+      Centered("Spin", &p.spin);
+      Pct("Line width", &p.width);
+      Pct("Life", &p.life);
+      Pct("Glow", &p.glow);
+      if (ImGui::Button("RESET SHAPES", ImVec2(-1, 40 * s))) p = GeometrySettings();
+      break;
+    }
+    case FX_TUNNEL: {
+      TunnelSettings& p = l.tunnel;
+      SectionLabel("TUNNEL");
+      static const char* sides[] = {"ROUND", "TRIANGLE", "SQUARE", "HEXAGON", "OCTAGON"};
+      static const int sideVals[] = {0, 3, 4, 6, 8};
+      int idx = 0;
+      for (int i = 0; i < 5; ++i)
+        if (sideVals[i] == p.sides) idx = i;
+      if (Choice("tsides", sides, 5, &idx, 3)) p.sides = sideVals[idx];
+      Pct("Speed", &p.speed);
+      Pct("Ring density", &p.density);
+      Centered("Spin", &p.twist);
+      Pct("Line width", &p.width);
+      Pct("Edge fade", &p.depth);
+      if (ImGui::Button("RESET TUNNEL", ImVec2(-1, 40 * s))) p = TunnelSettings();
+      break;
+    }
+    case FX_LIGHTNING: {
+      LightningSettings& p = l.lightning;
+      SectionLabel("LIGHTNING");
+      Pct("Branches", &p.branches);
+      Pct("Chaos", &p.chaos);
+      Pct("Flicker rate", &p.rate);
+      Pct("Reach", &p.reach);
+      Pct("Width", &p.width);
+      Pct("Glow", &p.glow);
+      Pct("Afterglow", &p.trail);
+      if (ImGui::Button("RESET LIGHTNING", ImVec2(-1, 40 * s))) p = LightningSettings();
+      break;
+    }
+    case FX_PLEXUS: {
+      PlexusSettings& p = l.plexus;
+      SectionLabel("PLEXUS");
+      Pct("Points", &p.amount);
+      Pct("Link distance", &p.range);
+      Pct("Dot size", &p.size);
+      Pct("Drift", &p.drift);
+      Pct("Spread", &p.spread);
+      Pct("Trail", &p.trail);
+      if (ImGui::Button("RESET PLEXUS", ImVec2(-1, 40 * s))) p = PlexusSettings();
+      break;
+    }
+    case FX_FIREWORKS: {
+      FireworkSettings& p = l.fireworks;
+      SectionLabel("FIREWORKS");
+      SectionLabel("BURSTS PER BEAT (while holding)");
+      Choice("frate", kDivisionLabels, kNumDivisions, &p.rate);
+      OnOff("ROCKETS FROM THE BOTTOM", &p.rockets, 44 * s);
+      Pct("Burst size", &p.size);
+      Pct("Embers", &p.amount);
+      Pct("Gravity", &p.gravity);
+      Pct("Trail", &p.trail);
+      Pct("Sparkle", &p.sparkle);
+      if (ImGui::Button("RESET FIREWORKS", ImVec2(-1, 40 * s))) p = FireworkSettings();
+      break;
+    }
+    case FX_STARFIELD: {
+      StarfieldSettings& p = l.starfield;
+      SectionLabel("STARFIELD");
+      Pct("Stars", &p.amount);
+      Pct("Speed", &p.speed);
+      Pct("Streaks", &p.streak);
+      Pct("Size", &p.size);
+      Pct("Twinkle", &p.twinkle);
+      if (ImGui::Button("RESET STARFIELD", ImVec2(-1, 40 * s))) p = StarfieldSettings();
+      break;
+    }
+    case FX_SPECTRUM: {
+      SpectrumSettings& p = l.spectrum;
+      SectionLabel("SPECTRUM");
+      if (!a.st.audio.enabled) Hint("Turn AUDIO on to follow the music (a demo spectrum plays meanwhile).");
+      static const char* modes[] = {"CIRCLE", "BARS", "WAVE"};
+      Choice("smode", modes, SPEC_COUNT, &p.mode);
+      IntSlider("Bars", &p.bars, 8, 128);
+      OnOff("SYMMETRIC", &p.symmetric, 44 * s);
+      Pct("Size", &p.size);
+      Pct("Gain", &p.gain);
+      Pct("Bar width", &p.width);
+      Pct("Glow", &p.glow);
+      if (ImGui::Button("RESET SPECTRUM", ImVec2(-1, 40 * s))) p = SpectrumSettings();
+      break;
+    }
+    case FX_GRID: {
+      GridSettings& p = l.grid;
+      SectionLabel("LED GRID");
+      static const char* modes[] = {"TRAIL", "RINGS", "SPARKLE"};
+      Choice("gmode", modes, GRID_COUNT, &p.mode);
+      Pct("Tile size", &p.tile);
+      Pct("Gap", &p.gap);
+      Pct("Rounded", &p.round);
+      Pct("Brush", &p.radius);
+      Pct("Trail", &p.decay);
+      if (ImGui::Button("RESET LED GRID", ImVec2(-1, 40 * s))) p = GridSettings();
+      break;
+    }
     case FX_STROBE: {
       StrobeSettings& t = l.strobe;
       SectionLabel("STROBE / FLASH");
-      static const char* shapes[] = {"FULL", "SPOT", "H-BAR", "V-BAR", "SPARKLE"};
-      Choice("sshape", shapes, 5, &t.shape, 3);
+      static const char* shapes[] = {"FULL", "SPOT", "H-BAR", "V-BAR", "SPARKLE", "SHOCKWAVE", "WIPE", "BLINDER", "BLOCKS"};
+      Choice("sshape", shapes, STROBE_COUNT, &t.shape, 3);
       SectionLabel("RATE");
       int mode = t.freeHz ? 1 : 0;
       static const char* rm[] = {"BPM SYNC", "FREE (Hz)"};
@@ -692,6 +829,27 @@ void DmxTab(App& a) {
   (void)s;
 }
 
+void ClearBlackout(App& a, ImVec2 size, bool sameLine) {
+  ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.30f, 0.12f, 0.12f, 1));
+  ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.30f, 0.12f, 0.12f, 1));
+  if (ImGui::Button("CLEAR", size)) a.wantClear = true;
+  ImGui::PopStyleColor(2);
+  if (sameLine) ImGui::SameLine();
+  if (Toggle("BLACKOUT", a.blackout, size, kDanger)) a.blackout = !a.blackout;
+}
+
+// The effect buttons, in kEffectOrder. size.x = 0 means "fill the row".
+void EffectButtons(App& a, int cols, ImVec2 size) {
+  Look& l = a.st.look;
+  float sp = ImGui::GetStyle().ItemSpacing.x;
+  float w = size.x > 0 ? size.x : (ImGui::GetContentRegionAvail().x - sp * (cols - 1)) / cols;
+  for (int k = 0; k < FX_COUNT; ++k) {
+    int i = kEffectOrder[k];
+    if (k % cols) ImGui::SameLine();
+    if (Toggle(kEffectNames[i], l.effect == i, ImVec2(w, size.y))) l.effect = i;
+  }
+}
+
 // ---------------------------------------------------------------------------
 void LivePanel(App& a) {
   Look& l = a.st.look;
@@ -756,22 +914,13 @@ void LivePanel(App& a) {
     }
   }
 
-  // ---- effects + clear / blackout ----
-  {
-    float w = (ImGui::GetContentRegionAvail().x - sp * 3) / 4;
-    float h = 52 * s;
-    for (int k = 0; k < FX_COUNT; ++k) {
-      int i = kEffectOrder[k];
-      if (k % 4) ImGui::SameLine();
-      if (Toggle(kEffectNames[i], l.effect == i, ImVec2(w, h))) l.effect = i;
-    }
-    ImGui::SameLine();
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.30f, 0.12f, 0.12f, 1));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.30f, 0.12f, 0.12f, 1));
-    if (ImGui::Button("CLEAR", ImVec2(w, h))) a.wantClear = true;
-    ImGui::PopStyleColor(2);
-    ImGui::SameLine();
-    if (Toggle("BLACKOUT", a.blackout, ImVec2(w, h), kDanger)) a.blackout = !a.blackout;
+  // ---- effects in the panel (when they are not under the canvas) ----
+  if (!a.st.layout.effectStrip) {
+    ImGui::PushFont(a.fontSmall);
+    EffectButtons(a, 4, ImVec2(0, 42 * s));
+    ImGui::PopFont();
+    float w = (ImGui::GetContentRegionAvail().x - sp) / 2;
+    ClearBlackout(a, ImVec2(w, 42 * s), true);
   }
 
   // ---- everything below scrolls ----
@@ -959,6 +1108,7 @@ void SettingsPanel(App& a) {
         std::snprintf(buf, sizeof(buf), "%.0f %%", a.st.layout.panelWidth * 100.f);
         TouchSlider("Panel width", &a.st.layout.panelWidth, 0.6f, 1.8f, buf);
       }
+      OnOff("EFFECTS UNDER CANVAS", &a.st.layout.effectStrip);
       OnOff("SCENES UNDER CANVAS", &a.st.layout.sceneStrip);
       {
         char buf[32];
@@ -1046,6 +1196,39 @@ void SceneStrip(App& a) {
     if (i % cols) ImGui::SameLine();
     SceneButton(a, i, ImVec2(bw, bh));
   }
+  ImGui::EndGroup();
+  ImGui::End();
+  ImGui::PopStyleVar(3);
+}
+
+// Effect bar under the canvas: CLEAR / BLACKOUT on the left, then the 16 effects.
+void EffectStrip(App& a) {
+  if (!a.st.layout.effectStrip || a.fxStrip.w <= 0) return;
+  float s = S();
+  ImGui::SetNextWindowPos(ImVec2(a.fxStrip.x, a.fxStrip.y));
+  ImGui::SetNextWindowSize(ImVec2(a.fxStrip.w, a.fxStrip.h));
+  ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8 * s, 8 * s));
+  ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8 * s);
+  ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(6 * s, 6 * s));
+  ImGui::Begin("##fxstrip", nullptr,
+               ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
+                   ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoScrollWithMouse);
+  float sp = 6 * s;
+  float avail = ImGui::GetContentRegionAvail().x;
+  float rowsH = ImGui::GetContentRegionAvail().y;
+  int rows = rowsH > 90 * s ? 2 : 1;
+  int cols = FX_COUNT / rows;
+  float ctlW = ImGui::CalcTextSize("BLACKOUT").x + 28 * s;
+  float bw = (avail - ctlW - sp - sp * (cols - 1)) / cols;
+  float bh = (rowsH - sp * (rows - 1)) / rows;
+  ImGui::BeginGroup();
+  ClearBlackout(a, ImVec2(ctlW, rows == 2 ? bh : (rowsH - sp) / 2), false);
+  ImGui::EndGroup();
+  ImGui::SameLine();
+  ImGui::BeginGroup();
+  ImGui::PushFont(bw < 96 * s ? a.fontSmall : a.fontMain);
+  EffectButtons(a, cols, ImVec2(bw, bh));
+  ImGui::PopFont();
   ImGui::EndGroup();
   ImGui::End();
   ImGui::PopStyleVar(3);
@@ -1167,6 +1350,7 @@ void drawUI(App& a) {
   g_sliding = false;
 
   Canvas(a);
+  EffectStrip(a);
   SceneStrip(a);
 
   ImGui::SetNextWindowPos(ImVec2(a.panel.x, a.panel.y));

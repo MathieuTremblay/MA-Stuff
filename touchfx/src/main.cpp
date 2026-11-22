@@ -270,19 +270,33 @@ void layout(App& a) {
   Rect area = L.panelLeft ? Rect{pw, 0, W - pw, H} : Rect{0, 0, W - pw, H};
   float m = 12.f * s;
 
-  float stripH = 0;
+  // Bars under the canvas: effects, then scenes.
+  float innerW = area.w - 2 * m;
+  float bottom = area.y + area.h - m;
+  float used = 0;
   if (L.sceneStrip) {
-    float innerW = area.w - 2 * m;
     int cols = innerW / kNumScenes >= 92.f * s ? kNumScenes : kNumScenes / 2;
     int rows = kNumScenes / cols;
-    stripH = rows * 60.f * s + (rows - 1) * 6.f * s + 16.f * s;
-    a.strip = Rect{area.x + m, area.y + area.h - m - stripH, innerW, stripH};
+    float h = rows * 60.f * s + (rows - 1) * 6.f * s + 16.f * s;
+    a.strip = Rect{area.x + m, bottom - h, innerW, h};
+    bottom -= h + m * 0.6f;
+    used += h + m * 0.6f;
   } else {
     a.strip = Rect{};
   }
+  if (L.effectStrip) {
+    int cols = innerW / FX_COUNT >= 100.f * s ? FX_COUNT : FX_COUNT / 2;
+    int rows = FX_COUNT / cols;
+    float h = rows * 50.f * s + (rows - 1) * 6.f * s + 16.f * s;
+    a.fxStrip = Rect{area.x + m, bottom - h, innerW, h};
+    used += h + m * 0.6f;
+  } else {
+    a.fxStrip = Rect{};
+  }
+  float stripH = used;
 
   float areaW = std::max(50.f, area.w - m * 2);
-  float areaH = std::max(50.f, area.h - m * 2 - (stripH > 0 ? stripH + m : 0));
+  float areaH = std::max(50.f, area.h - m * 2 - stripH);
   float aspect = float(a.st.output.width) / a.st.output.height;
   float w = areaW, h = areaW / aspect;
   if (h > areaH) {
@@ -398,6 +412,12 @@ const SelftestStep kSteps[] = {
     {FX_LASERS, LASER_FAN, MIRROR_LR, 6, 2}, {FX_LASERS, LASER_AIM, MIRROR_OFF, 1, 2},
     {FX_LASERS, LASER_TUNNEL, MIRROR_LR, 3, 2}, {FX_LASERS, LASER_WAVE, MIRROR_OFF, 6, 3},
     {FX_STROBE, 0, MIRROR_LR, 1, 6},
+    {FX_RIPPLES, 0, MIRROR_LR, 0, 2},          {FX_RIBBONS, 0, MIRROR_LR, 1, 2},
+    {FX_GEOMETRY, 0, MIRROR_QUAD, 6, 2},       {FX_TUNNEL, 0, MIRROR_OFF, 4, 1},
+    {FX_LIGHTNING, 0, MIRROR_OFF, 5, 3},       {FX_PLEXUS, 0, MIRROR_LR, 5, 2},
+    {FX_FIREWORKS, 0, MIRROR_OFF, 2, 3},       {FX_STARFIELD, 0, MIRROR_OFF, 6, 1},
+    {FX_SPECTRUM, 0, MIRROR_LR, 1, 0, true},   {FX_GRID, 0, MIRROR_LR, 7, 2},
+    {FX_STROBE, STROBE_SHOCKWAVE, MIRROR_LR, 3, 2},
     {FX_PARTICLES, 0, MIRROR_LR, 4, 0, true},    {FX_LASERS, LASER_TUNNEL, MIRROR_QUAD, 6, 0, true},
     {FX_FLUID, 0, MIRROR_LR, 0, 0, false, 1},    {FX_FLUID, 0, MIRROR_LR, 0, 2, false, 2},
 };
@@ -538,6 +558,16 @@ int main(int argc, char** argv) {
   a.fx[FX_LASERS] = makeLasers();
   a.fx[FX_STROBE] = makeStrobe();
   a.fx[FX_SPARKLES] = makeSparkles();
+  a.fx[FX_RIPPLES] = makeRipples();
+  a.fx[FX_RIBBONS] = makeRibbons();
+  a.fx[FX_GEOMETRY] = makeGeometry();
+  a.fx[FX_TUNNEL] = makeTunnel();
+  a.fx[FX_LIGHTNING] = makeLightning();
+  a.fx[FX_PLEXUS] = makePlexus();
+  a.fx[FX_FIREWORKS] = makeFireworks();
+  a.fx[FX_STARFIELD] = makeStarfield();
+  a.fx[FX_SPECTRUM] = makeSpectrum();
+  a.fx[FX_GRID] = makeGrid();
   for (auto& f : a.fx) shadersOk &= f->init();
   if (!shadersOk) SDL_Log("Some shaders failed to compile; see the log above.");
 
@@ -577,7 +607,7 @@ int main(int argc, char** argv) {
           a.st.look.mirror = sp.mirror;
           a.st.look.palette = sp.palette;
         }
-        if (sp.effect == FX_STROBE) a.st.look.strobe.shape = STROBE_SPARKLE;
+        if (sp.effect == FX_STROBE) a.st.look.strobe.shape = sp.laserMode ? sp.laserMode : STROBE_SPARKLE;
         a.st.audio.enabled = sp.audio;
         a.st.audio.device = kAudioTest;
         a.st.audio.points = 2;
@@ -680,6 +710,7 @@ int main(int argc, char** argv) {
       c.high = f.high;
       c.pulse = f.pulse;
       c.onset = f.onset;
+      c.spectrum = a.af.spectrum;
       c.drive = mixf(1.f, 0.2f + 1.5f * f.level + 0.8f * f.pulse, r);
       c.speed *= 1.f + r * f.bass * 0.6f;          // bass pushes the motion
       post.bloom = std::min(1.f, post.bloom + r * f.pulse * 0.35f);  // glow kicks on hits
@@ -713,7 +744,7 @@ int main(int argc, char** argv) {
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
     if (a.selftest) {
-      bool capture = (frame < fxFrames && frame % kStepFrames == kStepFrames - 1) ||
+      bool capture = (frame < fxFrames && frame % kStepFrames == 110) ||  // 110: inside a strobe flash at 120 BPM
                      (frame >= fxFrames && (frame - fxFrames) % 20 == 19);
       if (capture) writePpm(selftestDir + "/shot" + std::to_string(shot++) + ".ppm", dw, dh);
       if (frame >= fxFrames + kUiShots * 20 - 1) running = false;

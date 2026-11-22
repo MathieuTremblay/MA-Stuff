@@ -5,13 +5,25 @@
 using Color3 = std::array<float, 3>;
 
 // Values are stored in settings files: only ever append.
-enum EffectId { FX_FLUID, FX_PARTICLES, FX_KALEIDO, FX_LASERS, FX_STROBE, FX_SPARKLES, FX_COUNT };
+enum EffectId {
+  FX_FLUID, FX_PARTICLES, FX_KALEIDO, FX_LASERS, FX_STROBE, FX_SPARKLES,
+  FX_RIPPLES, FX_RIBBONS, FX_GEOMETRY, FX_TUNNEL, FX_LIGHTNING, FX_PLEXUS, FX_FIREWORKS, FX_STARFIELD,
+  FX_SPECTRUM, FX_GRID,
+  FX_COUNT
+};
+constexpr int kDmxEffects = 6;  // effects reachable from the DMX effect channel (profile unchanged for now)
 enum MirrorMode { MIRROR_OFF, MIRROR_LR, MIRROR_UD, MIRROR_QUAD, MIRROR_RADIAL6, MIRROR_RADIAL8, MIRROR_COUNT };
 enum ReleaseMode { RELEASE_FADE, RELEASE_SNAP };
 enum ColorMode { COLOR_GRADIENT, COLOR_SPEED, COLOR_POSITION, COLOR_BEAT, COLOR_RANDOM, COLOR_COUNT };
 enum LaserMode { LASER_FAN, LASER_AIM, LASER_WEB, LASER_SCAN, LASER_TUNNEL, LASER_WAVE, LASER_COUNT };
 enum LaserChase { CHASE_OFF, CHASE_STEP, CHASE_ALTERNATE, CHASE_RANDOM, CHASE_COUNT };
-enum StrobeShape { STROBE_FULL, STROBE_SPOT, STROBE_HBAR, STROBE_VBAR, STROBE_SPARKLE, STROBE_COUNT };
+enum StrobeShape {
+  STROBE_FULL, STROBE_SPOT, STROBE_HBAR, STROBE_VBAR, STROBE_SPARKLE,
+  STROBE_SHOCKWAVE, STROBE_WIPE, STROBE_BLINDER, STROBE_BLOCKS, STROBE_COUNT
+};
+enum ShapeType { SHAPE_TRI, SHAPE_SQUARE, SHAPE_PENT, SHAPE_HEX, SHAPE_CIRCLE, SHAPE_STAR, SHAPE_MIX, SHAPE_COUNT };
+enum SpectrumMode { SPEC_CIRCLE, SPEC_BARS, SPEC_WAVE, SPEC_COUNT };
+enum GridMode { GRID_TRAIL, GRID_RINGS, GRID_SPARKLE, GRID_COUNT };
 enum ParticleStrobe { PSTROBE_OFF, PSTROBE_SYNC, PSTROBE_SPARKLE, PSTROBE_COUNT };
 
 // Flashes per beat for the strobe "rate" buttons.
@@ -55,6 +67,46 @@ struct SparkleSettings {
   float amount = 0.5f, size = 0.5f, spread = 0.35f, twinkle = 0.5f, life = 0.5f, drift = 0.25f, rays = 0.6f,
         trail = 0.1f;
 };
+struct RippleSettings {
+  float size = 0.4f, strength = 0.55f, decay = 0.5f, shine = 0.6f;
+  bool beatDrops = true;
+};
+struct RibbonSettings {
+  int strands = 3;
+  float length = 0.5f, width = 0.4f, wave = 0.4f, glow = 0.5f, trail = 0.15f;
+};
+struct GeometrySettings {
+  int shape = SHAPE_MIX, rate = 3;
+  float size = 0.5f, spin = 0.65f /*centered*/, width = 0.3f, life = 0.5f, glow = 0.5f;
+};
+struct TunnelSettings {
+  int sides = 0;  // 0 = round, 3..8 = polygon
+  float speed = 0.5f, density = 0.5f, twist = 0.5f /*centered*/, width = 0.35f, depth = 0.5f;
+};
+struct LightningSettings {
+  float branches = 0.5f, chaos = 0.5f, rate = 0.5f, width = 0.3f, glow = 0.6f, reach = 0.6f, trail = 0.25f;
+};
+struct PlexusSettings {
+  float amount = 0.5f, range = 0.5f, size = 0.4f, drift = 0.4f, spread = 0.5f, trail = 0.1f;
+};
+struct FireworkSettings {
+  int rate = 2;
+  bool rockets = true;
+  float size = 0.5f, amount = 0.5f, gravity = 0.5f, trail = 0.5f, sparkle = 0.5f;
+};
+struct StarfieldSettings {
+  float amount = 0.5f, speed = 0.5f, streak = 0.5f, size = 0.4f, twinkle = 0.3f;
+};
+struct SpectrumSettings {
+  int mode = SPEC_CIRCLE, bars = 48;
+  bool symmetric = true;
+  float size = 0.5f, gain = 0.5f, width = 0.4f, glow = 0.5f;
+};
+struct GridSettings {
+  int mode = GRID_TRAIL;
+  float tile = 0.4f, gap = 0.3f, decay = 0.5f, round = 0.3f, radius = 0.4f;
+};
+
 // Global look applied after every effect.
 struct PostSettings {
   float bloom = 0.55f, bloomSize = 0.6f;
@@ -78,6 +130,16 @@ struct Look {
   LaserSettings lasers;
   StrobeSettings strobe;
   SparkleSettings sparkles;
+  RippleSettings ripples;
+  RibbonSettings ribbons;
+  GeometrySettings geometry;
+  TunnelSettings tunnel;
+  LightningSettings lightning;
+  PlexusSettings plexus;
+  FireworkSettings fireworks;
+  StarfieldSettings starfield;
+  SpectrumSettings spectrum;
+  GridSettings grid;
   PostSettings post;
   int mirror = MIRROR_LR;
   int release = RELEASE_FADE;
@@ -134,6 +196,7 @@ struct LayoutSettings {
   bool panelLeft = false;
   float panelWidth = 1.0f;  // multiplier
   bool sceneStrip = true;   // scenes bar under the canvas (otherwise in the LIVE tab)
+  bool effectStrip = true;  // effect buttons under the canvas (otherwise in the LIVE tab)
 };
 
 constexpr int kNumPalettes = 10;

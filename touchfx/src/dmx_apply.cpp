@@ -142,7 +142,7 @@ void applyDmx(App& a, float dt) {
   // ---- discrete: last change wins (the panel keeps control until the console changes the value) ----
   bool effectChanged = false;
   if (changed(DMX_EFFECT)) {
-    int s = slotOf(vals[DMX_EFFECT], FX_COUNT);
+    int s = slotOf(vals[DMX_EFFECT], kDmxEffects);
     if (s >= 0 && s != l.effect) {
       l.effect = s;
       effectChanged = true;

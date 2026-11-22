@@ -10,19 +10,42 @@ const char* kShapeFS = R"(
 in vec2 vUv; out vec4 o;
 uniform int uShape, uCount;
 uniform vec2 uPts[64];
-uniform float uAspect, uSize;
+uniform float uAspect, uSize, uProgress, uFlash;
 uniform vec3 uColor;
 void main() {
   float m = 0.0;
+  float p = uProgress;  // 0..1 through the flash (animated flash types)
   if (uShape == 0) {
     m = 1.0;
+  } else if (uShape == 7) {  // blinder: full frame, fast attack, smooth decay
+    m = exp(-p * 4.0);
+  } else if (uShape == 8) {  // blocks: a new random set of tiles each flash
+    vec2 grid = vec2(8.0, max(2.0, floor(8.0 / uAspect + 0.5)));
+    vec2 cell = floor(vUv * grid);
+    vec2 f = fract(vUv * grid);
+    float on = step(hash12(cell + uFlash * 17.13), mix(0.12, 0.7, uSize));
+    float edge = smoothstep(0.0, 0.04, min(min(f.x, f.y), min(1.0 - f.x, 1.0 - f.y)));
+    m = on * edge * (1.0 - p);
   } else {
     for (int i = 0; i < uCount; ++i) {
-      vec2 p = uPts[i];
+      vec2 pt = uPts[i];
       float d;
-      if (uShape == 1)      d = length((vUv - p) * vec2(uAspect, 1.0));
-      else if (uShape == 2) d = abs(vUv.y - p.y);
-      else                  d = abs(vUv.x - p.x) * uAspect;
+      vec2 q = (vUv - pt) * vec2(uAspect, 1.0);
+      if (uShape == 5) {  // shockwave: expanding ring
+        float r = p * uSize * 2.2;
+        float w = 0.015 + 0.05 * p;
+        m = max(m, (1.0 - smoothstep(0.0, w, abs(length(q) - r))) * (1.0 - p));
+        continue;
+      }
+      if (uShape == 6) {  // radial wipe: a sweep growing around the finger
+        float a = fract(atan(q.x, q.y) / 6.2831853 + 0.5);
+        float inside = 1.0 - smoothstep(uSize * 1.6, uSize * 1.6 + 0.02, length(q));
+        m = max(m, step(a, p) * inside * (1.0 - p * 0.6));
+        continue;
+      }
+      if (uShape == 1)      d = length(q);
+      else if (uShape == 2) d = abs(vUv.y - pt.y);
+      else                  d = abs(vUv.x - pt.x) * uAspect;
       float r = (uShape == 1) ? uSize : uSize * 0.35;
       m = max(m, 1.0 - smoothstep(r * 0.75, r, d));
     }
@@ -51,6 +74,8 @@ class Strobe : public Effect {
     // Flash phase: synced to the beat, or free-running in Hz.
     uint32_t flash;
     bool on;
+    float progress;  // 0..1 through the flash, for the animated types
+    bool animated = s.shape >= STROBE_SHOCKWAVE;
     if (s.audioHits && c.audioOn) {
       // one flash per detected hit in the music
       if (c.onset) {
@@ -59,12 +84,17 @@ class Strobe : public Effect {
       }
       hitTime += c.dt;
       flash = hitCount;
-      on = hitTime < mixf(0.03f, 0.25f, s.duty);
+      float len = animated ? mixf(0.12f, 0.9f, s.duty) : mixf(0.03f, 0.25f, s.duty);
+      on = hitTime < len;
+      progress = std::min(1.f, hitTime / len);
     } else {
       double cycles = s.freeHz ? double(c.time) * s.hz : c.beat * kDivisions[s.rate];
       flash = uint32_t(std::floor(cycles));
       float ph = float(cycles - std::floor(cycles));
-      on = ph < std::max(0.03f, s.duty);
+      float len = animated ? std::max(0.1f, s.duty * 1.5f) : std::max(0.03f, s.duty);
+      if (s.shape == STROBE_BLINDER) len = 1.f;  // the blinder decays over the whole cycle
+      on = ph < len;
+      progress = std::min(1.f, ph / len);
     }
     if (!on) return;
 
@@ -115,6 +145,8 @@ class Strobe : public Effect {
     prog.setf("uAspect", float(c.W) / c.H);
     prog.setf("uSize", mixf(0.04f, 0.7f, s.size));
     prog.set3f("uColor", col.x, col.y, col.z);
+    prog.setf("uProgress", progress);
+    prog.setf("uFlash", float(flash % 1000));
     drawFullscreen();
   }
 

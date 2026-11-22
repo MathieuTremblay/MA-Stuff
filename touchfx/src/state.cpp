@@ -22,11 +22,23 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(LaserSettings, mode, beams, rota
                                                 trail, chase)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(SparkleSettings, amount, size, spread, twinkle, life, drift, rays, trail)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(PostSettings, bloom, bloomSize, saturation)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(RippleSettings, size, strength, decay, shine, beatDrops)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(RibbonSettings, strands, length, width, wave, glow, trail)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(GeometrySettings, shape, rate, size, spin, width, life, glow)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(TunnelSettings, sides, speed, density, twist, width, depth)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(LightningSettings, branches, chaos, rate, width, glow, reach, trail)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(PlexusSettings, amount, range, size, drift, spread, trail)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(FireworkSettings, rate, rockets, size, amount, gravity, trail, sparkle)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(StarfieldSettings, amount, speed, streak, size, twinkle)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(SpectrumSettings, mode, bars, symmetric, size, gain, width, glow)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(GridSettings, mode, tile, gap, decay, round, radius)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(StrobeSettings, shape, rate, freeHz, hz, duty, size, colorCycle,
                                                 audioHits)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(AudioSettings, enabled, device, sensitivity, autoBpm, autoPlay, points,
                                                 motion, reactivity)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Look, effect, fluid, particles, kaleido, lasers, strobe, sparkles, post,
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Look, effect, fluid, particles, kaleido, lasers, strobe, sparkles, ripples,
+                                                ribbons, geometry, tunnel, lightning, plexus, fireworks, starfield,
+                                                spectrum, grid, post,
                                                 mirror,
                                                 release, fadeTime, colorMode, palette, brightness, bpm, speedMult)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene, used, look)
@@ -34,7 +46,7 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(OutputSettings, width, height, f
                                                 premultiplied)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(DmxSettings, protocol, sacnUniverse, artnetUniverse, address, mode, lock)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(ExternalSettings, enabled, display, fit, windowed)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(LayoutSettings, panelLeft, panelWidth, sceneStrip)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(LayoutSettings, panelLeft, panelWidth, sceneStrip, effectStrip)
 
 static Color3 hex(unsigned v) {
   return {((v >> 16) & 255) / 255.f, ((v >> 8) & 255) / 255.f, (v & 255) / 255.f};
@@ -80,6 +92,15 @@ static void sanitizeLook(Look& l) {
   clampRef(l.lasers.chase, 0, CHASE_COUNT - 1);
   clampRef(l.strobe.shape, 0, STROBE_COUNT - 1);
   clampRef(l.strobe.rate, 0, kNumDivisions - 1);
+  clampRef(l.ribbons.strands, 1, 6);
+  clampRef(l.geometry.shape, 0, SHAPE_COUNT - 1);
+  clampRef(l.geometry.rate, 0, kNumDivisions - 1);
+  clampRef(l.tunnel.sides, 0, 8);
+  if (l.tunnel.sides > 0 && l.tunnel.sides < 3) l.tunnel.sides = 3;
+  clampRef(l.fireworks.rate, 0, kNumDivisions - 1);
+  clampRef(l.spectrum.mode, 0, SPEC_COUNT - 1);
+  clampRef(l.spectrum.bars, 8, 128);
+  clampRef(l.grid.mode, 0, GRID_COUNT - 1);
   clampRef(l.strobe.hz, 0.5f, 25.f);
 }
 

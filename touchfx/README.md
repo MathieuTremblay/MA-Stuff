@@ -24,10 +24,11 @@ Swipe up/down anywhere in the panel to scroll (sliders: swipe sideways to change
 |---|---|
 | **BPM** | Tap **TAP** (or press SPACE) to set the tempo; **-/+** nudge it. `x1/4 … x4` scale effect speed. The 4 lights show the beat. |
 | **AUDIO** | Turns audio reactive mode on (blue button, with a level bar). See *Audio reactive* below. |
-| **Effects** | Fluid / smoke, Particles, Sparkles, Kaleidoscope, Lasers, Strobe / flash. **CLEAR** wipes the canvas, **BLACKOUT** kills the output. |
+| **Effects** | 16 effects in the bar under the canvas (or in the LIVE tab, see *SCREEN*): Fluid, Particles, Sparkles, Ribbons, Fireworks, Starfield, Plexus, Kaleido, Lasers, Lightning, Tunnel, Shapes, Ripples, Spectrum, LED grid, Strobe. **CLEAR** wipes the canvas, **BLACKOUT** kills the output. |
 | **Mirror** | Off, left/right, up/down, quad (both), radial 6, radial 8. Guides are drawn on the preview only. |
 | **On release** | **FADE**: the effect fades out over the chosen time after you lift your fingers. **SNAP**: it goes off instantly. |
 | **Effect settings** | Sliders for the current effect (size, trail, speed, glow, strobe rate…) and a reset button. |
+| **New in 0.5** | **Ripples** (water surface, drops on the beat), **Ribbons** (glowing strands following the fingers), **Shapes** (neon polygons / stars popping on the beat), **Tunnel** (full-screen tunnel, vanishing point under the finger), **Lightning** (arcs between fingers), **Plexus** (connected points), **Fireworks** (rockets bursting at the finger), **Starfield** (hyperspace streaks), **Spectrum** (audio equaliser: circle, bars or wave), **LED grid** (LED-wall tiles: trail, rings, sparkle). Strobe gains **Shockwave**, **Wipe**, **Blinder** and **Blocks**. |
 | **Lasers** | Laser-show modes: **FAN** (fan of beams from the finger), **AIM** (projectors along the bottom converge on your finger), **TUNNEL** (rings on the beat), **WAVE**, **SCAN**, **WEB**. *Swing* sweeps on the beat, *Chase* makes beams blink in sequence / alternate / random. |
 | **Palette / colour mode** | Pick one of the 10 palettes. Colour mode: Gradient (over the effect's life), Speed (finger speed), Position (left to right), Beat (steps each beat), Random. |
 | **Look** | Glow (bloom), glow size, saturation and brightness, applied to every effect. Saved in scenes. |
@@ -40,7 +41,7 @@ Swipe up/down anywhere in the panel to scroll (sliders: swipe sideways to change
 | **PALETTES** | Edit the **LOW / MID / HIGH** colours and name of each palette. |
 | **AUDIO** | Audio source (default input, any input device, system audio, test beat), sensitivity, auto BPM, auto play. |
 | **OUTPUT** | Resolution (1920x1080, 1280x720, 960x540 or custom, max 1920x1080), 30 / 60 fps, NDI on/off and source name, **alpha channel** (straight or premultiplied). |
-| **SCREEN** | **External display**: show the output fullscreen on another screen (fit / fill / stretch, or windowed). Layout: panel left or right, panel width, scenes under the canvas, UI size, fullscreen. |
+| **SCREEN** | **External display**: show the output fullscreen on another screen (fit / fill / stretch, or windowed). Layout: panel left or right, panel width, effects / scenes under the canvas, UI size, fullscreen. |
 | **DMX** | Control from a lighting console: sACN or Art-Net, universe, start address, Basic / Advanced profile, DMX lock, live channel monitor. |
 | **SYSTEM** | Block Windows 3/4-finger gestures, number of touch points (1–10), touch markers on the preview, reset everything. |
 
@@ -48,6 +49,8 @@ Swipe up/down anywhere in the panel to scroll (sliders: swipe sideways to change
 
 1. In *SETTINGS → DMX* pick **sACN** or **ART-NET**, the universe (default **sACN universe 100**, Art-Net 99) and the
    start address (default **1**), and the profile mode.
+   The DMX effect channel controls the first six effects (Fluid, Particles, Kaleido, Lasers, Strobe, Sparkles);
+   the newer ones are reached through scenes until the profile is extended.
 2. Import `gdtf/TouchFX@TouchFX.gdtf` (in the download zip) into grandMA3 and patch **TouchFX** in the same mode at
    the same address.
 3. The **DMX** light in the header turns green when data arrives (yellow = signal lost, TouchFX keeps the last look).
