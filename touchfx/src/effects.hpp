@@ -30,6 +30,11 @@ struct FxCtx {
   bool touching = false;
   float gain = 1;     // 1 while touching, falls to 0 while fading out
   float fadeMul = 1;  // per-frame attenuation while fading out (1 = not fading)
+  // audio reactive
+  bool audioOn = false;
+  float level = 0, bass = 0, mid = 0, high = 0, pulse = 0;
+  bool onset = false;
+  float drive = 1;    // multiplies how much each effect emits (1 = no audio influence)
 
   // Emitters to draw "shape" effects from: live ones, or the held ones while fading.
   const std::vector<Emitter>& shapeEmitters() const { return touching ? live : held; }

@@ -22,7 +22,10 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(LaserSettings, mode, beams, rota
                                                 trail, chase)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(SparkleSettings, amount, size, spread, twinkle, life, drift, rays, trail)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(PostSettings, bloom, bloomSize, saturation)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(StrobeSettings, shape, rate, freeHz, hz, duty, size, colorCycle)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(StrobeSettings, shape, rate, freeHz, hz, duty, size, colorCycle,
+                                                audioHits)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(AudioSettings, enabled, device, sensitivity, autoBpm, autoPlay, points,
+                                                motion, reactivity)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Look, effect, fluid, particles, kaleido, lasers, strobe, sparkles, post,
                                                 mirror,
                                                 release, fadeTime, colorMode, palette, brightness, bpm, speedMult)
@@ -90,7 +93,8 @@ void sanitize(AppState& s) {
   if (s.output.ndiName.empty()) s.output.ndiName = "TouchFX";
   clampRef(s.uiScale, 0.5f, 3.f);
   clampRef(s.tab, 0, 1);
-  clampRef(s.settingsTab, 0, 3);
+  clampRef(s.settingsTab, 0, 4);
+  clampRef(s.audio.points, 1, 4);
   clampRef(s.maxTouches, 1, kMaxTouches);
   clampRef(s.external.display, 0, 15);
   clampRef(s.external.fit, 0, FIT_COUNT - 1);
@@ -106,6 +110,9 @@ std::string serializeState(const AppState& s) {
   j["output"] = s.output;
   j["external"] = s.external;
   j["layout"] = s.layout;
+  j["audio"] = s.audio;
+  j["blockGestures"] = s.blockGestures;
+  j["gestureRestore"] = s.gestureRestore;
   j["maxTouches"] = s.maxTouches;
   j["showTouches"] = s.showTouches;
   j["settingsTab"] = s.settingsTab;
@@ -139,6 +146,9 @@ bool loadState(const std::string& path, AppState& s) {
     if (j.contains("output")) d.output = j["output"].get<OutputSettings>();
     if (j.contains("external")) d.external = j["external"].get<ExternalSettings>();
     if (j.contains("layout")) d.layout = j["layout"].get<LayoutSettings>();
+    if (j.contains("audio")) d.audio = j["audio"].get<AudioSettings>();
+    d.blockGestures = j.value("blockGestures", d.blockGestures);
+    d.gestureRestore = j.value("gestureRestore", d.gestureRestore);
     d.maxTouches = j.value("maxTouches", d.maxTouches);
     d.showTouches = j.value("showTouches", d.showTouches);
     d.settingsTab = j.value("settingsTab", d.settingsTab);

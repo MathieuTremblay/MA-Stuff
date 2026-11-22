@@ -9,6 +9,7 @@
 #include "imgui.h"
 #include "imgui_impl_opengl3.h"
 #include "imgui_internal.h"
+#include "platform.hpp"
 
 extern const unsigned char kFontData[];
 extern const std::size_t kFontSize;
@@ -330,6 +331,8 @@ void EffectParams(App& a) {
       Pct("Flash length", &t.duty);
       Pct("Size", &t.size);
       OnOff("COLOUR CYCLE", &t.colorCycle, 44 * s);
+      OnOff("FLASH ON AUDIO HITS", &t.audioHits, 44 * s);
+      if (t.audioHits && !a.st.audio.enabled) Hint("Turn AUDIO on to flash on the hits of the music.");
       if (ImGui::Button("RESET STROBE", ImVec2(-1, 40 * s))) t = StrobeSettings();
       break;
     }
@@ -464,6 +467,115 @@ void ScenesGrid(App& a) {
   Hint("STORE then tap a slot to save the whole look. Tap a slot to recall it.");
 }
 
+// Small level meter: BASS / MID / HIGH bars + a hit light.
+void AudioMeter(App& a, float h) {
+  float s = S();
+  ImVec2 p = ImGui::GetCursorScreenPos();
+  float w = ImGui::GetContentRegionAvail().x;
+  ImGui::Dummy(ImVec2(w, h));
+  ImDrawList* dl = ImGui::GetWindowDrawList();
+  const char* names[3] = {"BASS", "MID", "HIGH"};
+  float vals[3] = {a.af.bass, a.af.mid, a.af.high};
+  ImU32 cols[3] = {IM_COL32(255, 110, 40, 255), IM_COL32(255, 210, 60, 255), IM_COL32(80, 200, 255, 255)};
+  float lightW = h;
+  float bw = (w - lightW - 8 * s) / 3 - 6 * s;
+  ImGui::PushFont(a.fontSmall);
+  for (int i = 0; i < 3; ++i) {
+    float x = p.x + i * (bw + 6 * s);
+    dl->AddRectFilled(ImVec2(x, p.y), ImVec2(x + bw, p.y + h), IM_COL32(30, 30, 36, 255), 5 * s);
+    dl->AddRectFilled(ImVec2(x, p.y), ImVec2(x + bw * std::clamp(vals[i], 0.f, 1.f), p.y + h), cols[i], 5 * s);
+    dl->AddText(ImVec2(x + 8 * s, p.y + (h - ImGui::GetFontSize()) * 0.5f), IM_COL32(255, 255, 255, 230), names[i]);
+  }
+  ImGui::PopFont();
+  float cx = p.x + w - lightW * 0.5f, cy = p.y + h * 0.5f;
+  float pl = std::clamp(a.af.pulse, 0.f, 1.f);
+  dl->AddCircleFilled(ImVec2(cx, cy), h * 0.42f, IM_COL32(60 + int(195 * pl), 60 + int(140 * pl), 70, 255));
+}
+
+const char* AudioSourceName(const std::string& dev) {
+  if (dev.empty()) return "Default input";
+  if (dev == kAudioLoopback) return "System audio (this PC)";
+  if (dev == kAudioTest) return "Test beat (128 BPM)";
+  return dev.c_str();
+}
+
+void AudioStatus(App& a) {
+  if (!a.audio.error().empty()) {
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 0.45f, 0.4f, 1));
+    ImGui::TextWrapped("%s", a.audio.error().c_str());
+    ImGui::PopStyleColor();
+  } else if (a.audio.isOpen()) {
+    char buf[200];
+    std::snprintf(buf, sizeof(buf), "Listening: %s  (%d Hz)%s", AudioSourceName(a.st.audio.device),
+                  a.audio.sampleRate(), a.af.active ? "" : "  -  no signal");
+    Hint(buf);
+  }
+}
+
+void AudioLive(App& a) {
+  AudioSettings& as = a.st.audio;
+  float s = S();
+  SectionLabel("AUDIO REACTIVE");
+  AudioMeter(a, 30 * s);
+  AudioStatus(a);
+  float w = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2;
+  if (Toggle(as.autoBpm ? "AUTO BPM: ON" : "AUTO BPM: OFF", as.autoBpm, ImVec2(w, 44 * s))) as.autoBpm = !as.autoBpm;
+  ImGui::SameLine();
+  if (Toggle(as.autoPlay ? "AUTO PLAY: ON" : "AUTO PLAY: OFF", as.autoPlay, ImVec2(w, 44 * s))) as.autoPlay = !as.autoPlay;
+  Pct("Reactivity", &as.reactivity);
+  if (as.autoPlay) {
+    IntSlider("Auto points", &as.points, 1, 4);
+    Pct("Auto motion", &as.motion);
+  }
+  Hint("AUTO PLAY draws by itself with the music (no touch needed, it stops when the music stops). "
+       "Your fingers still work on top.");
+}
+
+void AudioSettingsTab(App& a) {
+  AudioSettings& as = a.st.audio;
+  float s = S();
+  SectionLabel("AUDIO REACTIVE");
+  OnOff("AUDIO", &as.enabled, 50 * s);
+  SectionLabel("SOURCE");
+  static std::vector<std::string> devices;
+  static double listedAt = -100;
+  if (a.time - listedAt > 3.0) {  // refresh the list now and then (USB interfaces come and go)
+    devices = AudioInput::captureDevices();
+    listedAt = a.time;
+  }
+  auto sourceButton = [&](const std::string& dev, const char* label) {
+    if (Toggle(label, as.device == dev, ImVec2(-1, 44 * s))) as.device = dev;
+  };
+  sourceButton("", "Default input");
+  for (size_t i = 0; i < devices.size(); ++i) {
+    char label[160];
+    std::snprintf(label, sizeof(label), "%s##dev%d", devices[i].c_str(), int(i));
+    sourceButton(devices[i], label);
+  }
+  if (AudioInput::loopbackSupported()) sourceButton(kAudioLoopback, "System audio (what this PC is playing)");
+  sourceButton(kAudioTest, "Test beat (128 BPM, no music needed)");
+  Hint("Use a line input from the sound desk (or a microphone) for the live show. System audio follows "
+       "music playing on this computer.");
+  if (as.enabled) {
+    AudioMeter(a, 30 * s);
+    AudioStatus(a);
+  }
+  SectionLabel("ANALYSIS");
+  Pct("Sensitivity", &as.sensitivity);
+  Hint("Raise it if quiet music doesn't trigger anything; lower it if room noise triggers the effects.");
+  OnOff("AUTO BPM (follow the music)", &as.autoBpm);
+  if (as.enabled && a.af.bpm > 0) {
+    char buf[64];
+    std::snprintf(buf, sizeof(buf), "Detected tempo: %.0f BPM", a.af.bpm);
+    Hint(buf);
+  }
+  SectionLabel("AUTO PLAY");
+  OnOff("AUTO PLAY (draw without touch)", &as.autoPlay);
+  IntSlider("Auto points", &as.points, 1, 4);
+  Pct("Auto motion", &as.motion);
+  Pct("Reactivity", &as.reactivity);
+}
+
 // ---------------------------------------------------------------------------
 void LivePanel(App& a) {
   Look& l = a.st.look;
@@ -501,7 +613,31 @@ void LivePanel(App& a) {
     ImGui::PushStyleColor(ImGuiCol_ButtonActive, kAccent);
     if (ImGui::Button("TAP", ImVec2(std::max(60.f * s, tapW), bh))) a.tempo.tap(a.time, l.bpm);
     ImGui::PopStyleColor(3);
-    Choice("speed", kSpeedMultLabels, kNumSpeedMults, &l.speedMult, 0, 38 * s);
+    // speed multipliers + AUDIO toggle (with a live level bar)
+    float audioW = 92 * s;
+    ImGui::BeginGroup();
+    ImGui::PushItemWidth(-1);
+    {
+      float full = ImGui::GetContentRegionAvail().x;
+      ImGui::BeginChild("##speedrow", ImVec2(full - audioW - sp, 38 * s), ImGuiChildFlags_None,
+                        ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoBackground);
+      ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2 * s, 2 * s));
+      Choice("speed", kSpeedMultLabels, kNumSpeedMults, &l.speedMult, 0, 38 * s);
+      ImGui::PopStyleVar();
+      ImGui::EndChild();
+    }
+    ImGui::PopItemWidth();
+    ImGui::EndGroup();
+    ImGui::SameLine();
+    ImVec2 ap = ImGui::GetCursorScreenPos();
+    AudioSettings& as = a.st.audio;
+    if (Toggle("AUDIO", as.enabled, ImVec2(audioW, 38 * s), ImVec4(0.2f, 0.75f, 1.f, 1.f))) as.enabled = !as.enabled;
+    if (as.enabled) {
+      float lv = std::clamp(a.af.level, 0.f, 1.f);
+      ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(ap.x + 4 * s, ap.y + 32 * s),
+                                                ImVec2(ap.x + 4 * s + (audioW - 8 * s) * lv, ap.y + 35 * s),
+                                                IM_COL32(20, 20, 30, 255));
+    }
   }
 
   // ---- effects + clear / blackout ----
@@ -524,6 +660,7 @@ void LivePanel(App& a) {
 
   // ---- everything below scrolls ----
   ImGui::BeginChild("##live", ImVec2(0, 0), ImGuiChildFlags_AlwaysUseWindowPadding);
+  if (a.st.audio.enabled) AudioLive(a);
   SectionLabel("MIRROR");
   static const char* mirrors[] = {"OFF", "L | R", "U | D", "QUAD", "RAD 6", "RAD 8"};
   Choice("mirror", mirrors, MIRROR_COUNT, &l.mirror, 0, 44 * s);
@@ -573,8 +710,10 @@ void LivePanel(App& a) {
 
 void SettingsPanel(App& a) {
   float s = S();
-  static const char* tabs[] = {"PALETTES", "OUTPUT", "SCREEN", "SYSTEM"};
-  Choice("stabs", tabs, 4, &a.st.settingsTab, 0, 42 * s);
+  static const char* tabs[] = {"COLOURS", "OUTPUT", "SCREEN", "AUDIO", "SYSTEM"};
+  ImGui::PushFont(a.fontSmall);
+  Choice("stabs", tabs, 5, &a.st.settingsTab, 0, 42 * s);
+  ImGui::PopFont();
   ImGui::BeginChild("##settings", ImVec2(0, 0), ImGuiChildFlags_AlwaysUseWindowPadding);
   float sp = ImGui::GetStyle().ItemSpacing.x;
   switch (a.st.settingsTab) {
@@ -717,7 +856,16 @@ void SettingsPanel(App& a) {
         SDL_SetWindowFullscreen(a.window, a.st.fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
       break;
     }
+    case 3: AudioSettingsTab(a); break;
     default: {
+      if (platformHasSystemGestures()) {
+        SectionLabel("WINDOWS TOUCH GESTURES");
+        OnOff("BLOCK 3/4-FINGER GESTURES", &a.st.blockGestures, 50 * s);
+        Hint("While TouchFX runs, Windows' 3- and 4-finger swipes (switch apps, show desktop) are turned off "
+             "and put back when you quit. Edge swipes are blocked while TouchFX is fullscreen (F11). "
+             "If 3/4-finger swipes still work, turn them off once in Windows touch settings:");
+        if (ImGui::Button("OPEN WINDOWS TOUCH SETTINGS", ImVec2(-1, 44 * s))) platformOpenTouchSettings();
+      }
       SectionLabel("TOUCH");
       IntSlider("Touch points", &a.st.maxTouches, 1, kMaxTouches);
       Hint("How many fingers can draw at once (up to 10, if your screen supports it). Each finger is "
@@ -772,13 +920,11 @@ void SceneStrip(App& a) {
   float rowsH = ImGui::GetContentRegionAvail().y;
   int rows = rowsH > 100 * s ? 2 : 1;
   int cols = kNumScenes / rows;
-  float ctlW = 96 * s;
-  float bw = (avail - ctlW - sp * cols) / cols;
+  float ctlW = ImGui::CalcTextSize("DELETE...").x + 28 * s;
+  float bw = (avail - (ctlW + sp) * 2 - sp * (cols - 1)) / cols;
   float bh = (rowsH - sp * (rows - 1)) / rows;
-  // STORE / DELETE stacked on the left
-  ImGui::BeginGroup();
-  StoreDeleteButtons(a, ImVec2(ctlW, (rowsH - sp) / 2), false);
-  ImGui::EndGroup();
+  // STORE / DELETE side by side, full height, on the left
+  StoreDeleteButtons(a, ImVec2(ctlW, rowsH), true);
   ImGui::SameLine();
   ImGui::BeginGroup();
   for (int i = 0; i < kNumScenes; ++i) {
@@ -824,8 +970,9 @@ void Canvas(App& a) {
   if (a.st.showTouches) {
     for (const Emitter& e : a.live) {
       ImVec2 c(a.canvas.x + e.pos.x * a.canvas.w, a.canvas.y + (1.f - e.pos.y) * a.canvas.h);
+      bool virt = e.touch >= kMaxTouches;
       if (e.mirror == 0)
-        dl->AddCircle(c, 26 * S(), IM_COL32(255, 255, 255, 150), 32, 2.f * S());
+        dl->AddCircle(c, 26 * S(), virt ? IM_COL32(80, 200, 255, 150) : IM_COL32(255, 255, 255, 150), 32, 2.f * S());
       else
         dl->AddCircle(c, 12 * S(), IM_COL32(255, 255, 255, 60), 24, 1.5f * S());
     }

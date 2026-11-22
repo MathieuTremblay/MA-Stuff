@@ -66,6 +66,7 @@ struct StrobeSettings {
   float hz = 8.0f;  // 1..25
   float duty = 0.3f, size = 0.4f;
   bool colorCycle = true;
+  bool audioHits = false;  // flash on detected audio hits instead of the rate
 };
 
 // Everything a scene stores.
@@ -109,6 +110,17 @@ struct ExternalSettings {
   bool windowed = false;  // a movable window instead of fullscreen (handy with one screen)
 };
 
+struct AudioSettings {
+  bool enabled = false;
+  std::string device;        // "" = default input, "@loopback" = system audio, "@test" = test beat
+  float sensitivity = 0.6f;
+  bool autoBpm = true;       // follow the detected tempo
+  bool autoPlay = true;      // virtual fingers driven by the music (no touch needed)
+  int points = 2;            // number of virtual fingers 1..4
+  float motion = 0.5f;       // how fast they move
+  float reactivity = 0.7f;   // how strongly the audio drives the effects
+};
+
 struct LayoutSettings {
   bool panelLeft = false;
   float panelWidth = 1.0f;  // multiplier
@@ -127,7 +139,10 @@ struct AppState {
   OutputSettings output;
   ExternalSettings external;
   LayoutSettings layout;
+  AudioSettings audio;
   int maxTouches = 4;  // 1..10
+  bool blockGestures = true;  // turn off Windows 3/4-finger gestures while running
+  int gestureRestore = -1;    // original Windows value to put back (-1 = nothing to restore)
   bool showTouches = true;
   int settingsTab = 0;
   float uiScale = 1.0f;  // multiplier on top of the monitor DPI scale

@@ -144,7 +144,7 @@ class Fluid : public Effect {
     if (!c.live.empty()) {
       std::vector<Vec2> pts;
       std::vector<Vec3> vels, cols;
-      float force = mixf(0.6f, 4.0f, s.force);
+      float force = mixf(0.6f, 4.0f, s.force) * std::sqrt(c.drive);
       float cyc = c.time * 0.12f * c.speed;  // gradient = colours cycle over time, offset per finger
       for (const Emitter& e : c.live) {
         if (int(pts.size()) >= kMaxSplats) break;
@@ -156,7 +156,7 @@ class Fluid : public Effect {
         float g = fractf(cyc + e.touch * 0.37f);
         g = g < 0.5f ? g * 2.f : 2.f - g * 2.f;
         float ct = c.colorT(&e, g, hash01(uint32_t(c.time * 4.f) * 31u + e.touch));
-        float amt = mixf(0.02f, 0.28f, s.intensity) * (0.6f + std::min(e.speed, 2.f)) * (realDt * 60.f);
+        float amt = mixf(0.02f, 0.28f, s.intensity) * (0.6f + std::min(e.speed, 2.f)) * (realDt * 60.f) * c.drive;
         cols.push_back(c.color(ct) * amt);
       }
       float radius = mixf(0.0002f, 0.006f, s.size * s.size);

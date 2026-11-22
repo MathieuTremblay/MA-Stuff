@@ -23,6 +23,7 @@ Swipe up/down anywhere in the panel to scroll (sliders: swipe sideways to change
 | Area | What it does |
 |---|---|
 | **BPM** | Tap **TAP** (or press SPACE) to set the tempo; **-/+** nudge it. `x1/4 … x4` scale effect speed. The 4 lights show the beat. |
+| **AUDIO** | Turns audio reactive mode on (blue button, with a level bar). See *Audio reactive* below. |
 | **Effects** | Fluid / smoke, Particles, Sparkles, Kaleidoscope, Lasers, Strobe / flash. **CLEAR** wipes the canvas, **BLACKOUT** kills the output. |
 | **Mirror** | Off, left/right, up/down, quad (both), radial 6, radial 8. Guides are drawn on the preview only. |
 | **On release** | **FADE**: the effect fades out over the chosen time after you lift your fingers. **SNAP**: it goes off instantly. |
@@ -37,9 +38,32 @@ Swipe up/down anywhere in the panel to scroll (sliders: swipe sideways to change
 | Tab | What it does |
 |---|---|
 | **PALETTES** | Edit the **LOW / MID / HIGH** colours and name of each palette. |
+| **AUDIO** | Audio source (default input, any input device, system audio, test beat), sensitivity, auto BPM, auto play. |
 | **OUTPUT** | Resolution (1920x1080, 1280x720, 960x540 or custom, max 1920x1080), 30 / 60 fps, NDI on/off and source name, **alpha channel** (straight or premultiplied). |
 | **SCREEN** | **External display**: show the output fullscreen on another screen (fit / fill / stretch, or windowed). Layout: panel left or right, panel width, scenes under the canvas, UI size, fullscreen. |
-| **SYSTEM** | Number of touch points (1–10), touch markers on the preview, reset everything. |
+| **SYSTEM** | Block Windows 3/4-finger gestures, number of touch points (1–10), touch markers on the preview, reset everything. |
+
+### Audio reactive
+
+Turn on **AUDIO** and pick a source in *SETTINGS → AUDIO*:
+- an input device: a line input from the sound desk (best for shows) or a microphone,
+- **System audio**: whatever this PC is playing,
+- **Test beat**: a built-in 128 BPM loop to try things without music.
+
+With **AUTO PLAY** on, virtual fingers (blue circles on the preview) draw the current effect by themselves, moved
+by the music; they disappear when the music stops, so the effect fades/snaps like a released finger.
+Real fingers still work on top. **Reactivity** sets how much the music drives the effect (amount, speed, glow kicks
+on hits). **AUTO BPM** follows the detected tempo and lines the beat up with the hits. The strobe can also
+**flash on audio hits**.
+
+### Windows touch gestures
+
+Windows uses 3- and 4-finger swipes for itself (switch apps, show desktop), which gets in the way when drawing with
+several fingers. TouchFX turns those off while it runs and puts your setting back when you quit
+(*SETTINGS → SYSTEM → BLOCK 3/4-FINGER GESTURES*). Edge swipes are blocked while TouchFX is fullscreen (F11).
+On some Windows builds the gesture change only applies after signing out; if swipes still work, turn off
+*Settings → Bluetooth & devices → Touch → Three- and four-finger touch gestures* once on the show PC
+(the *OPEN WINDOWS TOUCH SETTINGS* button goes straight there).
 
 Keyboard: `SPACE` tap tempo, `C` clear, `B` blackout, `F11` fullscreen, `Esc` leave fullscreen.
 
@@ -68,6 +92,9 @@ Developer self-test (renders every effect with fake fingers and saves screenshot
 - `src/ui.cpp`: the touch control panel
 - `src/fx_*.cpp`: one file per effect (GPU shaders)
 - `src/post.cpp`: glow (bloom), saturation, tonemapping, alpha
+- `src/audio.cpp`: audio capture (SDL inputs, WASAPI system audio), band levels, hit and tempo detection
+- `src/platform.cpp`: Windows touch tweaks (gestures, edge swipes, press-and-hold)
+- `res/`: app icon (`make_icon.py` regenerates it) and Windows resources
 - `src/ndi.cpp`: NDI sender (runtime-loaded, runs on its own thread)
 - `src/state.cpp`: settings, palettes, scenes and saving
 

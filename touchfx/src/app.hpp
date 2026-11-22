@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "audio.hpp"
 #include "effects.hpp"
 #include "ndi.hpp"
 #include "post.hpp"
@@ -73,6 +74,18 @@ struct App {
   SDL_Window* extWindow = nullptr;
   int extDisplay = -1;
   bool extWindowed = false;
+
+  // Audio reactive
+  AudioInput audio;
+  AudioFeatures af;
+  double audioRetry = 0;
+  std::string audioDeviceOpen;
+  struct VirtualPoint {
+    Vec2 pos, lastPos, vel;
+    float phase = 0;
+  } vpts[4];
+  bool vActive = false;
+  bool gesturesBlocked = false;
 
   TouchSlot touches[kMaxTouches];
   std::vector<Emitter> live, held;

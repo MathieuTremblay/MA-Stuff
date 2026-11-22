@@ -93,7 +93,7 @@ class Lasers : public Effect {
     float coreW = mixf(1.2f, 7.f, s.width) * px;
     float halfW = coreW * 0.5f + mixf(2.f, 34.f, s.glow) * px;
     verts.clear();
-    for (const Seg& sg : segs) addQuad(sg, halfW, coreW, c.gain);
+    for (const Seg& sg : segs) addQuad(sg, halfW, coreW, c.gain * std::min(c.drive, 1.2f));
     if (!verts.empty()) {
       trail.bind();
       glEnable(GL_BLEND);

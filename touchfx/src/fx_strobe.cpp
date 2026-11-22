@@ -49,10 +49,23 @@ class Strobe : public Effect {
     if (em.empty() || c.gain <= 0.001f) return;
 
     // Flash phase: synced to the beat, or free-running in Hz.
-    double cycles = s.freeHz ? double(c.time) * s.hz : c.beat * kDivisions[s.rate];
-    uint32_t flash = uint32_t(std::floor(cycles));
-    float ph = float(cycles - std::floor(cycles));
-    bool on = ph < std::max(0.03f, s.duty);
+    uint32_t flash;
+    bool on;
+    if (s.audioHits && c.audioOn) {
+      // one flash per detected hit in the music
+      if (c.onset) {
+        ++hitCount;
+        hitTime = 0;
+      }
+      hitTime += c.dt;
+      flash = hitCount;
+      on = hitTime < mixf(0.03f, 0.25f, s.duty);
+    } else {
+      double cycles = s.freeHz ? double(c.time) * s.hz : c.beat * kDivisions[s.rate];
+      flash = uint32_t(std::floor(cycles));
+      float ph = float(cycles - std::floor(cycles));
+      on = ph < std::max(0.03f, s.duty);
+    }
     if (!on) return;
 
     Vec3 col;
@@ -108,6 +121,8 @@ class Strobe : public Effect {
  private:
   Program prog;
   std::vector<PointVertex> verts;
+  uint32_t hitCount = 0;
+  float hitTime = 10.f;
 };
 
 }  // namespace

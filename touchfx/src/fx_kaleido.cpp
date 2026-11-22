@@ -97,7 +97,7 @@ class Kaleido : public Effect {
         Vec2 p(r * std::cos(a), r * std::sin(a));
         pts.push_back(Vec2(p.x / (2.f * D) + 0.5f, p.y / (2.f * D) + 0.5f));
         float ct = c.colorT(&e, t, hash01(uint32_t(c.beat * 2.0) + e.touch * 7u));
-        float amt = 0.18f * (0.5f + std::min(e.speed, 1.5f)) * (dt * 60.f);
+        float amt = 0.18f * (0.5f + std::min(e.speed, 1.5f)) * (dt * 60.f) * c.drive;
         cols.push_back(c.color(ct) * amt);
       }
       float radius = mixf(0.00004f, 0.0025f, s.brush * s.brush) / (4.f * D * D);

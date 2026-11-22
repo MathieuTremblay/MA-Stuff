@@ -292,10 +292,49 @@ void layout(App& a) {
   a.canvas = Rect{area.x + m + (areaW - w) * 0.5f, area.y + m + (areaH - h) * 0.5f, w, h};
 }
 
+void addEmitters(App& a, const std::vector<Mat2>& mats, float aspect, Vec2 pos, Vec2 vel, int touchIndex) {
+  Vec2 q((pos.x - 0.5f) * aspect, pos.y - 0.5f);
+  for (size_t k = 0; k < mats.size() && int(a.live.size()) < kMaxSplats; ++k) {
+    Emitter e;
+    Vec2 mq = mats[k] * q;
+    e.pos = Vec2(mq.x / aspect + 0.5f, mq.y + 0.5f);
+    e.vel = mats[k] * vel;
+    e.speed = length(vel);
+    e.touch = touchIndex;
+    e.mirror = int(k);
+    e.m = mats[k];
+    a.live.push_back(e);
+  }
+}
+
+// Audio auto-play: virtual fingers that wander over the canvas, pushed along by the music.
+void updateVirtualPoints(App& a, float dt, float aspect, const std::vector<Mat2>& mats) {
+  const AudioSettings& as = a.st.audio;
+  a.vActive = as.enabled && as.autoPlay && a.af.active;
+  if (!a.vActive) return;
+  float energy = 0.35f + a.af.level * 1.1f + a.af.pulse * 0.6f * as.reactivity;
+  for (int k = 0; k < as.points; ++k) {
+    App::VirtualPoint& v = a.vpts[k];
+    v.phase += dt * (0.2f + as.motion * 1.6f) * energy;
+    if (a.af.onset) v.phase += 0.25f * as.reactivity * as.motion;
+    float ph = v.phase + k * 2.1f;
+    Vec2 p(0.5f + 0.36f * std::cos(ph * 1.0f) * (0.65f + 0.35f * std::sin(ph * 0.37f + k)),
+           0.5f + 0.32f * std::sin(ph * 1.37f + k * 1.3f));
+    Vec2 d = p - v.pos;
+    Vec2 inst(d.x * aspect / std::max(dt, 1e-3f), d.y / std::max(dt, 1e-3f));
+    if (length(d) > 0.2f) inst = Vec2();  // first frame: no jump velocity
+    v.vel = v.vel + (inst - v.vel) * 0.35f;
+    v.pos = p;
+    // louder music = faster smoke / particle bursts
+    addEmitters(a, mats, aspect, v.pos, v.vel * (0.6f + a.af.level * 1.5f), kMaxTouches + k);
+  }
+}
+
 void buildEmitters(App& a, float dt) {
   float aspect = float(a.st.output.width) / a.st.output.height;
   std::vector<Mat2> mats = mirrorMatrices(a.st.look.mirror);
   a.live.clear();
+  updateVirtualPoints(a, dt, aspect, mats);
   for (int i = 0; i < kMaxTouches; ++i) {
     TouchSlot& t = a.touches[i];
     if (!t.active) continue;
@@ -307,24 +346,40 @@ void buildEmitters(App& a, float dt) {
     Vec2 inst(d.x * aspect / std::max(dt, 1e-3f), d.y / std::max(dt, 1e-3f));
     t.vel = t.vel + (inst - t.vel) * 0.35f;
     t.lastPos = t.pos;
-    Vec2 q((t.pos.x - 0.5f) * aspect, t.pos.y - 0.5f);
-    for (size_t k = 0; k < mats.size() && int(a.live.size()) < kMaxSplats; ++k) {
-      Emitter e;
-      Vec2 mq = mats[k] * q;
-      e.pos = Vec2(mq.x / aspect + 0.5f, mq.y + 0.5f);
-      e.vel = mats[k] * t.vel;
-      e.speed = length(t.vel);
-      e.touch = i;
-      e.mirror = int(k);
-      e.m = mats[k];
-      a.live.push_back(e);
+    addEmitters(a, mats, aspect, t.pos, t.vel, i);
+  }
+}
+
+void updateAudio(App& a, float dt) {
+  AudioSettings& as = a.st.audio;
+  if (!as.enabled) {
+    if (a.audio.isOpen()) a.audio.close();
+    a.af = AudioFeatures();
+    return;
+  }
+  if (!a.audio.isOpen() || a.audioDeviceOpen != as.device) {
+    a.audioRetry -= dt;
+    if (a.audioRetry <= 0 || a.audioDeviceOpen != as.device) {
+      a.audioDeviceOpen = as.device;
+      a.audio.open(as.device);
+      a.audioRetry = 3.0;
     }
+  }
+  a.audio.update(dt, as.sensitivity);
+  a.af = a.audio.features();
+  // Follow the music's tempo and line the beat up with the hits.
+  if (as.autoBpm && a.af.onset) {
+    Look& l = a.st.look;
+    if (a.af.bpm > 0) l.bpm = std::round((l.bpm + (a.af.bpm - l.bpm) * 0.3f) * 10.f) / 10.f;
+    double b = a.tempo.beat, nearest = std::floor(b + 0.5);
+    a.tempo.beat = b + (nearest - b) * 0.5;
   }
 }
 
 // ---- developer self-test: fake fingers, every effect, screenshots ----
 struct SelftestStep {
   int effect, laserMode, mirror, palette, fingers;
+  bool audio = false;
 };
 const SelftestStep kSteps[] = {
     {FX_FLUID, 0, MIRROR_LR, 0, 2},          {FX_PARTICLES, 0, MIRROR_LR, 2, 2},
@@ -332,6 +387,7 @@ const SelftestStep kSteps[] = {
     {FX_LASERS, LASER_FAN, MIRROR_LR, 6, 2}, {FX_LASERS, LASER_AIM, MIRROR_OFF, 1, 2},
     {FX_LASERS, LASER_TUNNEL, MIRROR_LR, 3, 2}, {FX_LASERS, LASER_WAVE, MIRROR_OFF, 6, 3},
     {FX_STROBE, 0, MIRROR_LR, 1, 6},
+    {FX_PARTICLES, 0, MIRROR_LR, 4, 0, true},    {FX_LASERS, LASER_TUNNEL, MIRROR_QUAD, 6, 0, true},
 };
 constexpr int kStepFrames = 120;
 constexpr int kNumSteps = int(sizeof(kSteps) / sizeof(kSteps[0]));
@@ -434,6 +490,22 @@ int main(int argc, char** argv) {
   SDL_GL_MakeCurrent(a.window, a.gl);
   SDL_GL_SetSwapInterval(a.selftest ? 0 : 1);
   platformSetupWindow(a.window);
+  auto setGestureBlock = [&](bool on) {
+    if (on && !a.gesturesBlocked) {
+      int orig = platformBlockSystemGestures();
+      if (orig >= 0 && a.st.gestureRestore < 0) a.st.gestureRestore = orig;  // keep the value from a crashed run
+      a.gesturesBlocked = true;
+    } else if (!on && a.gesturesBlocked) {
+      platformRestoreSystemGestures(a.st.gestureRestore);
+      a.st.gestureRestore = -1;
+      a.gesturesBlocked = false;
+    }
+    if (!a.settingsPath.empty()) {
+      a.lastSaved = serializeState(a.st);
+      saveStateText(a.settingsPath, a.lastSaved);  // save now so a crash can't lose the original value
+    }
+  };
+  if (!a.selftest && a.st.blockGestures) setGestureBlock(true);
   if (a.st.fullscreen && !a.selftest) setFullscreen(a, true);
 
   float ddpi = 0;
@@ -488,14 +560,19 @@ int main(int argc, char** argv) {
         a.st.look.mirror = sp.mirror;
         a.st.look.palette = sp.palette;
         if (sp.effect == FX_STROBE) a.st.look.strobe.shape = STROBE_SPARKLE;
+        a.st.audio.enabled = sp.audio;
+        a.st.audio.device = kAudioTest;
+        a.st.audio.points = 2;
         a.st.output.alpha = frame >= kStepFrames * 7;  // test the alpha path on the last steps
         a.st.tab = 0;
         selftestTouches(a, frame, sp.fingers);
       } else {
         int k = (frame - fxFrames) / 20;
+        a.st.audio.enabled = true;  // so the UI shots show the audio controls
         a.st.layout.sceneStrip = k != 0;
         a.st.tab = (k >= 1 && k <= 4) ? 1 : 0;
-        a.st.settingsTab = std::clamp(k - 1, 0, 3);
+        static const int tabsShown[4] = {0, 1, 3, 4};  // palettes, output, audio, system
+        a.st.settingsTab = tabsShown[std::clamp(k - 1, 0, 3)];
         a.st.layout.panelLeft = k == 5;
         if (k == 0) {
           a.st.scenes[0].used = a.st.scenes[3].used = true;
@@ -525,6 +602,8 @@ int main(int argc, char** argv) {
 
     // ---- tempo, fingers, release ----
     a.tempo.advance(dt, look.bpm);
+    if (!a.selftest && a.st.blockGestures != a.gesturesBlocked) setGestureBlock(a.st.blockGestures);
+    updateAudio(a, dt);
     buildEmitters(a, dt);
     bool touching = !a.live.empty();
     float fadeMul = 1.f;
@@ -564,9 +643,24 @@ int main(int argc, char** argv) {
     c.touching = touching;
     c.gain = a.gain;
     c.fadeMul = fadeMul;
+    PostSettings post = look.post;
+    if (a.st.audio.enabled && a.audio.isOpen()) {
+      const AudioFeatures& f = a.af;
+      float r = a.st.audio.reactivity;
+      c.audioOn = true;
+      c.level = f.level;
+      c.bass = f.bass;
+      c.mid = f.mid;
+      c.high = f.high;
+      c.pulse = f.pulse;
+      c.onset = f.onset;
+      c.drive = mixf(1.f, 0.2f + 1.5f * f.level + 0.8f * f.pulse, r);
+      c.speed *= 1.f + r * f.bass * 0.6f;          // bass pushes the motion
+      post.bloom = std::min(1.f, post.bloom + r * f.pulse * 0.35f);  // glow kicks on hits
+    }
 
     a.fx[a.curFx]->frame(c, a.scene);
-    a.post.run(a.scene, a.out, look.post, a.st.output.alpha, a.st.output.premultiplied);
+    a.post.run(a.scene, a.out, post, a.st.output.alpha, a.st.output.premultiplied);
     if (a.blackout) a.out.clear(0, 0, 0, a.st.output.alpha ? 0.f : 1.f);
 
     updateNdi(a, dt);
@@ -609,8 +703,13 @@ int main(int argc, char** argv) {
     }
   }
 
+  if (a.gesturesBlocked) {
+    platformRestoreSystemGestures(a.st.gestureRestore);
+    a.st.gestureRestore = -1;
+  }
   if (!a.selftest && !a.settingsPath.empty()) saveStateText(a.settingsPath, serializeState(a.st));
   a.ndi.stop();
+  a.audio.close();
   destroyExternal(a);
   ImGui_ImplOpenGL3_Shutdown();
   ImGui_ImplSDL2_Shutdown();

@@ -40,7 +40,7 @@ class Particles : public Effect {
     else alphaScale *= c.fadeMul;
 
     // ---- spawn ----
-    float rate = mixf(30.f, 2500.f, s.amount * s.amount);
+    float rate = mixf(30.f, 2500.f, s.amount * s.amount) * c.drive;
     int perEmitter = int(c.live.size());
     if (perEmitter > 0) {
       rate /= std::sqrt(float(perEmitter));  // keep the total sensible with many mirrors

@@ -39,7 +39,7 @@ class Sparkles : public Effect {
 
     // ---- spawn around each finger ----
     if (!c.live.empty()) {
-      float rate = mixf(15.f, 900.f, s.amount * s.amount) / std::sqrt(float(c.live.size()));
+      float rate = mixf(15.f, 900.f, s.amount * s.amount) * c.drive / std::sqrt(float(c.live.size()));
       float radius = mixf(0.01f, 0.45f, s.spread);
       for (size_t i = 0; i < c.live.size(); ++i) {
         const Emitter& e = c.live[i];
