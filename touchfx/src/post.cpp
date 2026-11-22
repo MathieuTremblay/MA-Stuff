@@ -38,10 +38,10 @@ void main() {
 const char* kFinalFS = R"(
 in vec2 vUv; out vec4 o;
 uniform sampler2D uScene; uniform sampler2D uBloom;
-uniform float uBloomAmt, uSat;
+uniform float uBloomAmt, uSat, uMaster;
 uniform int uAlpha, uPremult;
 void main() {
-  vec3 c = max(texture(uScene, vUv).rgb, vec3(0.0)) + texture(uBloom, vUv).rgb * uBloomAmt;
+  vec3 c = (max(texture(uScene, vUv).rgb, vec3(0.0)) + texture(uBloom, vUv).rgb * uBloomAmt) * uMaster;
   float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
   c = max(mix(vec3(l), c, uSat), vec3(0.0));
   c = tonemap(c);
@@ -75,7 +75,8 @@ void Post::resize(int W, int H) {
   }
 }
 
-void Post::run(const Target& scene, const Target& out, const PostSettings& p, bool alpha, bool premultiplied) {
+void Post::run(const Target& scene, const Target& out, const PostSettings& p, bool alpha, bool premultiplied,
+               float master) {
   glDisable(GL_BLEND);
   bool bloom = p.bloom > 0.001f && levels > 0;
   if (bloom) {
@@ -116,6 +117,7 @@ void Post::run(const Target& scene, const Target& out, const PostSettings& p, bo
   pFinal.seti("uBloom", 1);
   pFinal.setf("uBloomAmt", bloom ? p.bloom * 0.9f : 0.f);
   pFinal.setf("uSat", p.saturation * 2.f);
+  pFinal.setf("uMaster", master);
   pFinal.seti("uAlpha", alpha ? 1 : 0);
   pFinal.seti("uPremult", premultiplied ? 1 : 0);
   drawFullscreen();

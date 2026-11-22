@@ -121,6 +121,15 @@ struct AudioSettings {
   float reactivity = 0.7f;   // how strongly the audio drives the effects
 };
 
+struct DmxSettings {
+  int protocol = 1;          // 0 off, 1 sACN, 2 Art-Net
+  int sacnUniverse = 100;    // 1..63999
+  int artnetUniverse = 99;   // Art-Net port-address 0..32767 (counts from 0: MA universe 100 = Art-Net 99)
+  int address = 1;           // 1..512
+  int mode = 1;              // 0 Basic, 1 Advanced
+  bool lock = false;         // DMX always wins over the panel
+};
+
 struct LayoutSettings {
   bool panelLeft = false;
   float panelWidth = 1.0f;  // multiplier
@@ -140,6 +149,7 @@ struct AppState {
   ExternalSettings external;
   LayoutSettings layout;
   AudioSettings audio;
+  DmxSettings dmx;
   int maxTouches = 4;  // 1..10
   bool blockGestures = true;  // turn off Windows 3/4-finger gestures while running
   int gestureRestore = -1;    // original Windows value to put back (-1 = nothing to restore)

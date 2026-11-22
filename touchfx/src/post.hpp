@@ -8,7 +8,8 @@ class Post {
  public:
   bool init();
   void resize(int W, int H);
-  void run(const Target& scene, const Target& out, const PostSettings& p, bool alpha, bool premultiplied);
+  void run(const Target& scene, const Target& out, const PostSettings& p, bool alpha, bool premultiplied,
+           float master = 1.f);
 
  private:
   static constexpr int kLevels = 6;

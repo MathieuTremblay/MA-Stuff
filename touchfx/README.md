@@ -41,7 +41,27 @@ Swipe up/down anywhere in the panel to scroll (sliders: swipe sideways to change
 | **AUDIO** | Audio source (default input, any input device, system audio, test beat), sensitivity, auto BPM, auto play. |
 | **OUTPUT** | Resolution (1920x1080, 1280x720, 960x540 or custom, max 1920x1080), 30 / 60 fps, NDI on/off and source name, **alpha channel** (straight or premultiplied). |
 | **SCREEN** | **External display**: show the output fullscreen on another screen (fit / fill / stretch, or windowed). Layout: panel left or right, panel width, scenes under the canvas, UI size, fullscreen. |
+| **DMX** | Control from a lighting console: sACN or Art-Net, universe, start address, Basic / Advanced profile, DMX lock, live channel monitor. |
 | **SYSTEM** | Block Windows 3/4-finger gestures, number of touch points (1–10), touch markers on the preview, reset everything. |
+
+### DMX control (grandMA3 and other consoles)
+
+1. In *SETTINGS → DMX* pick **sACN** or **ART-NET**, the universe (default **sACN universe 100**, Art-Net 99) and the
+   start address (default **1**), and the profile mode.
+2. Import `gdtf/TouchFX@TouchFX.gdtf` (in the download zip) into grandMA3 and patch **TouchFX** in the same mode at
+   the same address.
+3. The **DMX** light in the header turns green when data arrives (yellow = signal lost, TouchFX keeps the last look).
+
+Two modes:
+- **Basic (12 ch)**: dimmer, effect, scene, palette, mirror, BPM, speed, shutter / strobe, size / amount, glow, control.
+- **Advanced (36 ch)**: everything, with **instances**: *Low*, *Mid*, *High* colours (RGB, so colour presets, pickers
+  and colour phasers work) and *Cursor 1 / Cursor 2* (dimmer + 16-bit Pan/Tilt = X/Y on the canvas, so position
+  presets and position effects draw on the canvas; a cursor draws while its dimmer is up).
+
+Channel chart: [`docs/DMX.md`](docs/DMX.md). *Last change wins* between console and panel; **DMX LOCK** makes the
+console the only master. No console at hand? `python3 tools/dmx_test_sender.py <TouchFX-PC-IP>` sends test DMX.
+
+The header also shows the **clock**, and **CPU / GPU / RAM** usage (GPU = Windows' 3D engine load, like Task Manager).
 
 ### Audio reactive
 
@@ -93,6 +113,9 @@ Developer self-test (renders every effect with fake fingers and saves screenshot
 - `src/fx_*.cpp`: one file per effect (GPU shaders)
 - `src/post.cpp`: glow (bloom), saturation, tonemapping, alpha
 - `src/audio.cpp`: audio capture (SDL inputs, WASAPI system audio), band levels, hit and tempo detection
+- `src/dmx.cpp`, `src/dmx_apply.cpp`: sACN / Art-Net receiver and channel mapping
+- `tools/dmx_profile.py`: the DMX profiles; generates `src/dmx_profile.inc`, `gdtf/TouchFX@TouchFX.gdtf`, `docs/DMX.md`
+- `src/sysstats.cpp`: CPU / GPU / RAM sampling
 - `src/platform.cpp`: Windows touch tweaks (gestures, edge swipes, press-and-hold)
 - `res/`: app icon (`make_icon.py` regenerates it) and Windows resources
 - `src/ndi.cpp`: NDI sender (runtime-loaded, runs on its own thread)

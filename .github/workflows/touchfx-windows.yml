@@ -33,6 +33,9 @@ jobs:
           New-Item -ItemType Directory -Force dist/TouchFX | Out-Null
           Copy-Item build/Release/TouchFX.exe dist/TouchFX/
           Copy-Item touchfx/README.md dist/TouchFX/README.md
+          New-Item -ItemType Directory -Force dist/TouchFX/gdtf | Out-Null
+          Copy-Item touchfx/gdtf/*.gdtf dist/TouchFX/gdtf/
+          Copy-Item touchfx/docs/DMX.md dist/TouchFX/gdtf/DMX-chart.md
           Compress-Archive -Path dist/TouchFX -DestinationPath TouchFX-windows-x64.zip -Force
 
       - name: Upload build

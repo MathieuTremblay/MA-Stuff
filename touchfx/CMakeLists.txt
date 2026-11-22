@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(TouchFX VERSION 0.3.0 LANGUAGES C CXX)
+project(TouchFX VERSION 0.4.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -59,6 +59,9 @@ add_executable(TouchFX WIN32
   src/fx_sparkles.cpp
   src/post.cpp
   src/audio.cpp
+  src/dmx.cpp
+  src/dmx_apply.cpp
+  src/sysstats.cpp
   src/ndi.cpp
   src/platform.cpp
   third_party/glad/src/gl.c
@@ -84,7 +87,7 @@ target_link_libraries(TouchFX PRIVATE ${TOUCHFX_SDL_LIBS} nlohmann_json::nlohman
 
 if(WIN32)
   target_sources(TouchFX PRIVATE res/touchfx.rc)
-  target_link_libraries(TouchFX PRIVATE ole32 shell32)
+  target_link_libraries(TouchFX PRIVATE ole32 shell32 ws2_32)
   target_compile_definitions(TouchFX PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)
   if(MINGW)
     target_link_options(TouchFX PRIVATE -static -static-libgcc -static-libstdc++)

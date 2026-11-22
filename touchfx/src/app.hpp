@@ -8,6 +8,8 @@
 #include <vector>
 
 #include "audio.hpp"
+#include "dmx.hpp"
+#include "sysstats.hpp"
 #include "effects.hpp"
 #include "ndi.hpp"
 #include "post.hpp"
@@ -87,6 +89,27 @@ struct App {
   bool vActive = false;
   bool gesturesBlocked = false;
 
+  // DMX control
+  DmxInput dmx;
+  int dmxRunProtocol = -1, dmxRunUniverse = -1;
+  bool dmxActive = false;     // data has been received (TouchFX holds the last look if it stops)
+  bool dmxPrimed = false;
+  int dmxLast[64] = {};
+  float dmxDim = 1;           // master dimmer
+  float dmxStrobeHz = 0;      // shutter strobe (0 = open)
+  double dmxStrobePhase = 0;
+  bool dmxBlackout = false;
+  bool dmxColors = false;     // use the Low/Mid/High colours from DMX
+  bool dmxBpm = false;        // tempo comes from DMX
+  Palette dmxPalette;
+  struct Cursor {
+    bool active = false;
+    Vec2 pos, lastPos, vel;
+  } dmxCursor[2];
+  uint8_t dmxFrame[512] = {};
+
+  SysStats stats;
+
   TouchSlot touches[kMaxTouches];
   std::vector<Emitter> live, held;
   bool wasTouching = false, fading = false;
@@ -116,4 +139,6 @@ struct App {
 };
 
 void drawUI(App& a);
+void applyDmx(App& a, float dt);
+int dmxFootprint(int mode);
 void rebuildFonts(App& a, float scale);

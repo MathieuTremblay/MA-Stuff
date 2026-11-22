@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <ctime>
 #include <unordered_map>
 
 #include "app.hpp"
@@ -350,7 +351,10 @@ void PaletteGrid(App& a) {
     if (i % 5) ImGui::SameLine();
     ImGui::PushID(i);
     ImVec2 p = ImGui::GetCursorScreenPos();
-    if (ImGui::InvisibleButton("pal", ImVec2(w, h))) l.palette = i;
+    if (ImGui::InvisibleButton("pal", ImVec2(w, h))) {
+      l.palette = i;
+      a.dmxColors = false;
+    }
     const Palette& pal = a.st.palettes[i];
     float th = h - 18 * s;
     float bw = w / 3;
@@ -576,6 +580,118 @@ void AudioSettingsTab(App& a) {
   Pct("Reactivity", &as.reactivity);
 }
 
+// A number with big - / + buttons (hold to repeat) and a typed value.
+bool Stepper(const char* label, int* v, int lo, int hi) {
+  float s = S();
+  ImGui::PushID(label);
+  ImGui::AlignTextToFramePadding();
+  ImGui::TextUnformatted(label);
+  float bw = 54 * s, h = 44 * s;
+  ImGui::SameLine(ImGui::GetContentRegionAvail().x * 0.34f);
+  bool ch = false;
+  ImGui::PushItemFlag(ImGuiItemFlags_ButtonRepeat, true);
+  if (ImGui::Button("-", ImVec2(bw, h)) && *v > lo) { --*v; ch = true; }
+  ImGui::SameLine();
+  float w = ImGui::GetContentRegionAvail().x - bw - ImGui::GetStyle().ItemSpacing.x;
+  ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10 * s, (h - ImGui::GetFontSize()) * 0.5f));
+  ImGui::SetNextItemWidth(w);
+  int t = *v;
+  ImGui::InputInt("##v", &t, 0, 0);
+  if (ImGui::IsItemDeactivatedAfterEdit()) { *v = std::clamp(t, lo, hi); ch = true; }
+  ImGui::PopStyleVar();
+  ImGui::SameLine();
+  if (ImGui::Button("+", ImVec2(bw, h)) && *v < hi) { ++*v; ch = true; }
+  ImGui::PopItemFlag();
+  ImGui::PopID();
+  return ch;
+}
+
+void DmxTab(App& a) {
+  DmxSettings& d = a.st.dmx;
+  float s = S();
+  SectionLabel("DMX INPUT (control TouchFX from a lighting console)");
+  static const char* protos[] = {"OFF", "sACN", "ART-NET"};
+  Choice("proto", protos, 3, &d.protocol);
+  if (d.protocol == DMXP_SACN) {
+    Stepper("Universe", &d.sacnUniverse, 1, 63999);
+  } else if (d.protocol == DMXP_ARTNET) {
+    Stepper("Art-Net univ.", &d.artnetUniverse, 0, 32767);
+    char buf[160];
+    std::snprintf(buf, sizeof(buf),
+                  "Net %d / Sub-Net %d / Universe %d. Art-Net counts from 0: grandMA3 universe %d is usually "
+                  "Art-Net %d.", (d.artnetUniverse >> 8) & 0x7F, (d.artnetUniverse >> 4) & 0xF, d.artnetUniverse & 0xF,
+                  d.artnetUniverse + 1, d.artnetUniverse);
+    Hint(buf);
+  }
+  Stepper("Start address", &d.address, 1, 512);
+  SectionLabel("PROFILE (GDTF mode)");
+  static const char* modes[] = {"BASIC (12 ch)", "ADVANCED (36 ch)"};
+  Choice("dmode", modes, 2, &d.mode);
+  int foot = dmxFootprint(d.mode);
+  int last = d.address + foot - 1;
+  char buf[200];
+  if (last > 512) {
+    std::snprintf(buf, sizeof(buf), "Does not fit: %d channels from address %d would end at %d. Use address %d or lower.",
+                  foot, d.address, last, 512 - foot + 1);
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 0.45f, 0.4f, 1));
+    ImGui::TextWrapped("%s", buf);
+    ImGui::PopStyleColor();
+  } else {
+    std::snprintf(buf, sizeof(buf), "Uses channels %d-%d. Patch the \"TouchFX\" fixture (gdtf folder next to TouchFX.exe) "
+                  "in mode %s.", d.address, last, d.mode == 0 ? "Basic" : "Advanced");
+    Hint(buf);
+  }
+  OnOff("DMX LOCK (console always wins)", &d.lock);
+  Hint("Without lock, the last change wins: the panel stays usable and a DMX channel only takes over when its value "
+       "changes. If the signal stops, TouchFX keeps the last look.");
+
+  SectionLabel("STATUS");
+  if (d.protocol == DMXP_OFF) {
+    Hint("DMX input is off.");
+  } else {
+    double age = a.dmx.secondsSinceData();
+    if (!a.dmx.error().empty()) {
+      ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 0.45f, 0.4f, 1));
+      ImGui::TextWrapped("%s", a.dmx.error().c_str());
+      ImGui::PopStyleColor();
+    }
+    if (age > 1e8) {
+      Hint("Waiting for data on this universe...");
+    } else {
+      std::snprintf(buf, sizeof(buf), "%s from %s - %d packets/s%s", age < 1.0 ? "Receiving" : "Signal lost (holding)",
+                    a.dmx.sourceInfo().c_str(), a.dmx.packetsPerSecond(), age < 1.0 ? "" : "");
+      ImGui::PushStyleColor(ImGuiCol_Text, age < 1.0 ? ImVec4(0.3f, 0.9f, 0.4f, 1) : ImVec4(1, 0.8f, 0.3f, 1));
+      ImGui::TextWrapped("%s", buf);
+      ImGui::PopStyleColor();
+      // channel monitor for the footprint
+      ImGui::PushFont(a.fontSmall);
+      ImDrawList* dl = ImGui::GetWindowDrawList();
+      int cols = 9;
+      float cw = (ImGui::GetContentRegionAvail().x - 4 * s * (cols - 1)) / cols, chh = 34 * s;
+      for (int i = 0; i < foot && d.address - 1 + i < 512; ++i) {
+        if (i % cols) ImGui::SameLine(0, 4 * s);
+        ImVec2 p = ImGui::GetCursorScreenPos();
+        ImGui::Dummy(ImVec2(cw, chh));
+        int v = a.dmxFrame[d.address - 1 + i];
+        dl->AddRectFilled(p, ImVec2(p.x + cw, p.y + chh), IM_COL32(30, 30, 36, 255), 4 * s);
+        dl->AddRectFilled(ImVec2(p.x, p.y + chh * (1.f - v / 255.f)), ImVec2(p.x + cw, p.y + chh),
+                          IM_COL32(255, 120, 30, 120), 4 * s);
+        char t[24];
+        std::snprintf(t, sizeof(t), "%d", d.address + i);
+        dl->AddText(ImVec2(p.x + 3 * s, p.y + 1 * s), IM_COL32(150, 150, 160, 255), t);
+        std::snprintf(t, sizeof(t), "%d", v);
+        ImVec2 ts = ImGui::CalcTextSize(t);
+        dl->AddText(ImVec2(p.x + cw - ts.x - 3 * s, p.y + chh - ts.y - 1 * s), IM_COL32(255, 255, 255, 255), t);
+      }
+      ImGui::PopFont();
+      std::snprintf(buf, sizeof(buf), "Master dimmer %.0f%%%s%s", a.dmxDim * 100.f, a.dmxStrobeHz > 0 ? ", shutter strobe" : "",
+                    a.dmxColors ? ", DMX colours" : "");
+      Hint(buf);
+    }
+  }
+  (void)s;
+}
+
 // ---------------------------------------------------------------------------
 void LivePanel(App& a) {
   Look& l = a.st.look;
@@ -710,10 +826,8 @@ void LivePanel(App& a) {
 
 void SettingsPanel(App& a) {
   float s = S();
-  static const char* tabs[] = {"COLOURS", "OUTPUT", "SCREEN", "AUDIO", "SYSTEM"};
-  ImGui::PushFont(a.fontSmall);
-  Choice("stabs", tabs, 5, &a.st.settingsTab, 0, 42 * s);
-  ImGui::PopFont();
+  static const char* tabs[] = {"COLOURS", "OUTPUT", "SCREEN", "AUDIO", "DMX", "SYSTEM"};
+  Choice("stabs", tabs, 6, &a.st.settingsTab, 3, 40 * s);
   ImGui::BeginChild("##settings", ImVec2(0, 0), ImGuiChildFlags_AlwaysUseWindowPadding);
   float sp = ImGui::GetStyle().ItemSpacing.x;
   switch (a.st.settingsTab) {
@@ -857,6 +971,7 @@ void SettingsPanel(App& a) {
       break;
     }
     case 3: AudioSettingsTab(a); break;
+    case 4: DmxTab(a); break;
     default: {
       if (platformHasSystemGestures()) {
         SectionLabel("WINDOWS TOUCH GESTURES");
@@ -971,11 +1086,18 @@ void Canvas(App& a) {
     for (const Emitter& e : a.live) {
       ImVec2 c(a.canvas.x + e.pos.x * a.canvas.w, a.canvas.y + (1.f - e.pos.y) * a.canvas.h);
       bool virt = e.touch >= kMaxTouches;
+      bool cursor = e.touch >= kMaxTouches + 4;
+      ImU32 col = cursor ? IM_COL32(120, 255, 140, 170) : virt ? IM_COL32(80, 200, 255, 150) : IM_COL32(255, 255, 255, 150);
       if (e.mirror == 0)
-        dl->AddCircle(c, 26 * S(), virt ? IM_COL32(80, 200, 255, 150) : IM_COL32(255, 255, 255, 150), 32, 2.f * S());
+        dl->AddCircle(c, 26 * S(), col, 32, 2.f * S());
       else
         dl->AddCircle(c, 12 * S(), IM_COL32(255, 255, 255, 60), 24, 1.5f * S());
     }
+  }
+  if (a.dmxActive && (a.dmxDim < 0.02f || a.dmxBlackout) && !a.blackout) {
+    const char* t = a.dmxBlackout ? "DMX BLACKOUT" : "DMX DIMMER AT 0";
+    ImVec2 ts = ImGui::CalcTextSize(t);
+    dl->AddText(ImVec2(mx - ts.x * 0.5f, my - ts.y * 0.5f), IM_COL32(255, 180, 60, 230), t);
   }
   if (a.blackout) {
     const char* t = "BLACKOUT";
@@ -1055,28 +1177,65 @@ void drawUI(App& a) {
                    ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar |
                    ImGuiWindowFlags_NoScrollWithMouse);
 
-  // ---- header: title + NDI status ----
+  // ---- header: title + clock, then NDI / DMX status lights and system stats ----
   ImGui::TextColored(kAccent, "TOUCHFX");
   ImGui::SameLine();
   {
+    std::time_t now = std::time(nullptr);
+    char clk[16];
+    std::strftime(clk, sizeof(clk), "%H:%M:%S", std::localtime(&now));
+    float tw = ImGui::CalcTextSize(clk).x;
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(0.f, ImGui::GetContentRegionAvail().x - tw));
+    ImGui::TextUnformatted(clk);
+  }
+  ImGui::PushFont(a.fontSmall);
+  {
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    auto light = [&](ImU32 col, const char* text) {
+      ImVec2 p = ImGui::GetCursorScreenPos();
+      dl->AddCircleFilled(ImVec2(p.x + 6 * s, p.y + ImGui::GetFontSize() * 0.5f), 5.5f * s, col);
+      ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 16 * s);
+      ImGui::TextUnformatted(text);
+    };
+    const ImU32 grey = IM_COL32(110, 110, 120, 255), red = IM_COL32(230, 70, 60, 255),
+                green = IM_COL32(60, 220, 100, 255), yellow = IM_COL32(240, 190, 40, 255);
     const OutputSettings& o = a.st.output;
     bool ok = o.ndiEnabled && a.ndi.running();
     int n = a.ndi.connections();
     char status[96];
     if (!o.ndiEnabled) std::snprintf(status, sizeof(status), "NDI OFF");
-    else if (!ok) std::snprintf(status, sizeof(status), "NDI NOT RUNNING");
-    else std::snprintf(status, sizeof(status), "NDI  %dx%d%s  %d rx", a.out.w, a.out.h, o.alpha ? " A" : "", n);
-    float tw = ImGui::CalcTextSize(status).x + 22 * s;
-    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(0.f, ImGui::GetContentRegionAvail().x - tw));
-    ImVec2 p = ImGui::GetCursorScreenPos();
-    ImU32 dot = !o.ndiEnabled ? IM_COL32(110, 110, 120, 255)
-                : !ok        ? IM_COL32(230, 70, 60, 255)
-                : n > 0      ? IM_COL32(60, 220, 100, 255)
-                             : IM_COL32(240, 190, 40, 255);
-    ImGui::GetWindowDrawList()->AddCircleFilled(ImVec2(p.x + 7 * s, p.y + ImGui::GetFontSize() * 0.5f), 6 * s, dot);
-    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 20 * s);
-    ImGui::TextUnformatted(status);
+    else if (!ok) std::snprintf(status, sizeof(status), "NDI ERROR");
+    else std::snprintf(status, sizeof(status), "NDI %dx%d%s %d rx", a.out.w, a.out.h, o.alpha ? " A" : "", n);
+    light(!o.ndiEnabled ? grey : !ok ? red : n > 0 ? green : yellow, status);
+    ImGui::SameLine(0, 14 * s);
+    // DMX: green = receiving, yellow = signal stopped (last look held), red = error / nothing yet
+    const DmxSettings& d = a.st.dmx;
+    double age = a.dmx.secondsSinceData();
+    char dmxs[96];
+    ImU32 dcol;
+    if (d.protocol == DMXP_OFF) {
+      std::snprintf(dmxs, sizeof(dmxs), "DMX OFF");
+      dcol = grey;
+    } else {
+      const char* proto = d.protocol == DMXP_SACN ? "sACN" : "ART-NET";
+      int u = d.protocol == DMXP_SACN ? d.sacnUniverse : d.artnetUniverse;
+      std::snprintf(dmxs, sizeof(dmxs), "%s U%d.%d", proto, u, d.address);
+      dcol = !a.dmx.error().empty() && age > 1e8 ? red : age < 1.0 ? green : age < 1e8 ? yellow : red;
+    }
+    light(dcol, dmxs);
+    // system stats
+    char st[128];
+    float cpu = a.stats.cpu(), gpu = a.stats.gpu();
+    char cpuS[16], gpuS[16];
+    if (cpu >= 0) std::snprintf(cpuS, sizeof(cpuS), "%.0f%%", cpu); else std::snprintf(cpuS, sizeof(cpuS), "--");
+    if (gpu >= 0) std::snprintf(gpuS, sizeof(gpuS), "%.0f%%", gpu); else std::snprintf(gpuS, sizeof(gpuS), "--");
+    std::snprintf(st, sizeof(st), "CPU %s   GPU %s   RAM %.1f/%.0f GB   %.0f FPS", cpuS, gpuS, a.stats.ramUsed(),
+                  a.stats.ramTotal(), a.fps);
+    ImGui::PushStyleColor(ImGuiCol_Text, kTextDim);
+    ImGui::TextUnformatted(st);
+    ImGui::PopStyleColor();
   }
+  ImGui::PopFont();
   static const char* tabs[] = {"LIVE", "SETTINGS"};
   Choice("maintabs", tabs, 2, &a.st.tab, 0, 46 * s);
   ImGui::Separator();

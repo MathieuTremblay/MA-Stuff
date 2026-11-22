@@ -335,6 +335,16 @@ void buildEmitters(App& a, float dt) {
   std::vector<Mat2> mats = mirrorMatrices(a.st.look.mirror);
   a.live.clear();
   updateVirtualPoints(a, dt, aspect, mats);
+  // DMX cursors (Advanced mode): the console moves them with Pan/Tilt.
+  for (int k = 0; k < 2; ++k) {
+    App::Cursor& c = a.dmxCursor[k];
+    if (!c.active) continue;
+    Vec2 d = c.pos - c.lastPos;
+    Vec2 inst(d.x * aspect / std::max(dt, 1e-3f), d.y / std::max(dt, 1e-3f));
+    c.vel = c.vel + (inst - c.vel) * 0.35f;
+    c.lastPos = c.pos;
+    addEmitters(a, mats, aspect, c.pos, c.vel, kMaxTouches + 4 + k);
+  }
   for (int i = 0; i < kMaxTouches; ++i) {
     TouchSlot& t = a.touches[i];
     if (!t.active) continue;
@@ -368,7 +378,7 @@ void updateAudio(App& a, float dt) {
   a.audio.update(dt, as.sensitivity);
   a.af = a.audio.features();
   // Follow the music's tempo and line the beat up with the hits.
-  if (as.autoBpm && a.af.onset) {
+  if (as.autoBpm && a.af.onset && !a.dmxBpm) {
     Look& l = a.st.look;
     if (a.af.bpm > 0) l.bpm = std::round((l.bpm + (a.af.bpm - l.bpm) * 0.3f) * 10.f) / 10.f;
     double b = a.tempo.beat, nearest = std::floor(b + 0.5);
@@ -380,6 +390,7 @@ void updateAudio(App& a, float dt) {
 struct SelftestStep {
   int effect, laserMode, mirror, palette, fingers;
   bool audio = false;
+  int dmx = 0;  // 1: sACN Advanced @1 (universe 100), 2: Art-Net Basic @101 (universe 99) - see tools/dmx_test_sender.py
 };
 const SelftestStep kSteps[] = {
     {FX_FLUID, 0, MIRROR_LR, 0, 2},          {FX_PARTICLES, 0, MIRROR_LR, 2, 2},
@@ -388,6 +399,7 @@ const SelftestStep kSteps[] = {
     {FX_LASERS, LASER_TUNNEL, MIRROR_LR, 3, 2}, {FX_LASERS, LASER_WAVE, MIRROR_OFF, 6, 3},
     {FX_STROBE, 0, MIRROR_LR, 1, 6},
     {FX_PARTICLES, 0, MIRROR_LR, 4, 0, true},    {FX_LASERS, LASER_TUNNEL, MIRROR_QUAD, 6, 0, true},
+    {FX_FLUID, 0, MIRROR_LR, 0, 0, false, 1},    {FX_FLUID, 0, MIRROR_LR, 0, 2, false, 2},
 };
 constexpr int kStepFrames = 120;
 constexpr int kNumSteps = int(sizeof(kSteps) / sizeof(kSteps[0]));
@@ -555,10 +567,16 @@ int main(int argc, char** argv) {
     if (a.selftest) {
       if (frame < fxFrames) {
         const SelftestStep& sp = kSteps[frame / kStepFrames];
-        a.st.look.effect = sp.effect;
-        a.st.look.lasers.mode = sp.laserMode;
-        a.st.look.mirror = sp.mirror;
-        a.st.look.palette = sp.palette;
+        a.st.dmx.protocol = sp.dmx == 1 ? 1 : (sp.dmx == 2 ? 2 : 0);
+        a.st.dmx.mode = sp.dmx == 2 ? 0 : 1;
+        a.st.dmx.address = sp.dmx == 2 ? 101 : 1;
+        if (frame % kStepFrames == 0 && sp.dmx) a.st.look = Look();  // start from defaults, DMX drives the rest
+        if (!sp.dmx) {
+          a.st.look.effect = sp.effect;
+          a.st.look.lasers.mode = sp.laserMode;
+          a.st.look.mirror = sp.mirror;
+          a.st.look.palette = sp.palette;
+        }
         if (sp.effect == FX_STROBE) a.st.look.strobe.shape = STROBE_SPARKLE;
         a.st.audio.enabled = sp.audio;
         a.st.audio.device = kAudioTest;
@@ -569,9 +587,10 @@ int main(int argc, char** argv) {
       } else {
         int k = (frame - fxFrames) / 20;
         a.st.audio.enabled = true;  // so the UI shots show the audio controls
+        a.st.dmx.protocol = 1;
         a.st.layout.sceneStrip = k != 0;
         a.st.tab = (k >= 1 && k <= 4) ? 1 : 0;
-        static const int tabsShown[4] = {0, 1, 3, 4};  // palettes, output, audio, system
+        static const int tabsShown[4] = {1, 3, 4, 5};  // output, audio, dmx, system
         a.st.settingsTab = tabsShown[std::clamp(k - 1, 0, 3)];
         a.st.layout.panelLeft = k == 5;
         if (k == 0) {
@@ -604,6 +623,13 @@ int main(int argc, char** argv) {
     a.tempo.advance(dt, look.bpm);
     if (!a.selftest && a.st.blockGestures != a.gesturesBlocked) setGestureBlock(a.st.blockGestures);
     updateAudio(a, dt);
+    applyDmx(a, dt);
+    if (look.effect != a.curFx) {  // DMX may have changed the effect
+      a.curFx = look.effect;
+      a.fx[a.curFx]->clear();
+      a.fading = false;
+      a.held.clear();
+    }
     buildEmitters(a, dt);
     bool touching = !a.live.empty();
     float fadeMul = 1.f;
@@ -637,7 +663,7 @@ int main(int argc, char** argv) {
     c.H = a.out.h;
     c.aspect = float(c.W) / c.H;
     c.look = &look;
-    c.pal = &a.st.palettes[look.palette];
+    c.pal = (a.dmxActive && a.dmxColors && a.st.dmx.mode == 1) ? &a.dmxPalette : &a.st.palettes[look.palette];
     c.live = a.live;
     c.held = a.held;
     c.touching = touching;
@@ -660,8 +686,13 @@ int main(int argc, char** argv) {
     }
 
     a.fx[a.curFx]->frame(c, a.scene);
-    a.post.run(a.scene, a.out, post, a.st.output.alpha, a.st.output.premultiplied);
-    if (a.blackout) a.out.clear(0, 0, 0, a.st.output.alpha ? 0.f : 1.f);
+    float master = 1.f;
+    if (a.dmxActive) {
+      master = a.dmxDim;
+      if (a.dmxStrobeHz > 0 && a.dmxStrobePhase > 0.3) master = 0.f;  // shutter strobe
+    }
+    a.post.run(a.scene, a.out, post, a.st.output.alpha, a.st.output.premultiplied, master);
+    if (a.blackout || a.dmxBlackout) a.out.clear(0, 0, 0, a.st.output.alpha ? 0.f : 1.f);
 
     updateNdi(a, dt);
 

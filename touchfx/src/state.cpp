@@ -32,6 +32,7 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Look, effect, fluid, particles, 
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene, used, look)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(OutputSettings, width, height, fps, ndiEnabled, ndiName, alpha,
                                                 premultiplied)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(DmxSettings, protocol, sacnUniverse, artnetUniverse, address, mode, lock)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(ExternalSettings, enabled, display, fit, windowed)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(LayoutSettings, panelLeft, panelWidth, sceneStrip)
 
@@ -93,7 +94,12 @@ void sanitize(AppState& s) {
   if (s.output.ndiName.empty()) s.output.ndiName = "TouchFX";
   clampRef(s.uiScale, 0.5f, 3.f);
   clampRef(s.tab, 0, 1);
-  clampRef(s.settingsTab, 0, 4);
+  clampRef(s.settingsTab, 0, 5);
+  clampRef(s.dmx.protocol, 0, 2);
+  clampRef(s.dmx.sacnUniverse, 1, 63999);
+  clampRef(s.dmx.artnetUniverse, 0, 32767);
+  clampRef(s.dmx.address, 1, 512);
+  clampRef(s.dmx.mode, 0, 1);
   clampRef(s.audio.points, 1, 4);
   clampRef(s.maxTouches, 1, kMaxTouches);
   clampRef(s.external.display, 0, 15);
@@ -111,6 +117,7 @@ std::string serializeState(const AppState& s) {
   j["external"] = s.external;
   j["layout"] = s.layout;
   j["audio"] = s.audio;
+  j["dmx"] = s.dmx;
   j["blockGestures"] = s.blockGestures;
   j["gestureRestore"] = s.gestureRestore;
   j["maxTouches"] = s.maxTouches;
@@ -147,6 +154,7 @@ bool loadState(const std::string& path, AppState& s) {
     if (j.contains("external")) d.external = j["external"].get<ExternalSettings>();
     if (j.contains("layout")) d.layout = j["layout"].get<LayoutSettings>();
     if (j.contains("audio")) d.audio = j["audio"].get<AudioSettings>();
+    if (j.contains("dmx")) d.dmx = j["dmx"].get<DmxSettings>();
     d.blockGestures = j.value("blockGestures", d.blockGestures);
     d.gestureRestore = j.value("gestureRestore", d.gestureRestore);
     d.maxTouches = j.value("maxTouches", d.maxTouches);
