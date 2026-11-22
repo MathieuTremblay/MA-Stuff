@@ -88,7 +88,7 @@ On some Windows builds the gesture change only applies after signing out; if swi
 *Settings → Bluetooth & devices → Touch → Three- and four-finger touch gestures* once on the show PC
 (the *OPEN WINDOWS TOUCH SETTINGS* button goes straight there).
 
-Keyboard: `SPACE` tap tempo, `C` clear, `B` blackout, `F11` fullscreen, `Esc` leave fullscreen.
+Keyboard: `SPACE` tap tempo, `C` clear, `B` blackout, `F11` or `Alt+Enter` fullscreen, `Esc` leave fullscreen. The **FULL** button next to the clock does the same by touch.
 
 Everything (settings, palettes, scenes) is saved automatically to `%APPDATA%\TouchFX\TouchFX\settings.json`.
 Delete that file to go back to factory defaults.

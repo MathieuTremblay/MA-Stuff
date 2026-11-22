@@ -132,6 +132,9 @@ struct App {
   float fps = 60;
   double time = 0;
   bool wantClear = false;
+  bool isFullscreen = false, wasMaximized = false;
+  SDL_Rect savedRect{0, 0, 0, 0};
+  char lastKey[32] = "-";
   bool selftest = false;
 
   void clearEffect();
@@ -139,6 +142,7 @@ struct App {
 };
 
 void drawUI(App& a);
+void setFullscreen(App& a, bool on);
 void applyDmx(App& a, float dt);
 int dmxFootprint(int mode);
 void rebuildFonts(App& a, float scale);

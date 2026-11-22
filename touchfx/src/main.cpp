@@ -20,6 +20,42 @@ void App::clearEffect() {
   gain = 0;
 }
 
+// Fullscreen = a borderless window covering the whole screen TouchFX is on. More reliable than SDL's
+// "desktop fullscreen" (which silently did nothing on some setups) and plays well with touch and
+// a second output screen.
+void setFullscreen(App& a, bool on) {
+  if (on == a.isFullscreen) {
+    a.st.fullscreen = on;
+    return;
+  }
+  SDL_Window* w = a.window;
+  if (on) {
+    Uint32 f = SDL_GetWindowFlags(w);
+    a.wasMaximized = (f & SDL_WINDOW_MAXIMIZED) != 0;
+    if (a.wasMaximized) SDL_RestoreWindow(w);
+    SDL_GetWindowPosition(w, &a.savedRect.x, &a.savedRect.y);
+    SDL_GetWindowSize(w, &a.savedRect.w, &a.savedRect.h);
+    int disp = std::max(0, SDL_GetWindowDisplayIndex(w));
+    SDL_Rect b;
+    SDL_GetDisplayBounds(disp, &b);
+    SDL_SetWindowBordered(w, SDL_FALSE);
+    SDL_SetWindowResizable(w, SDL_FALSE);
+    SDL_SetWindowPosition(w, b.x, b.y);
+    SDL_SetWindowSize(w, b.w, b.h);
+    SDL_RaiseWindow(w);
+  } else {
+    SDL_SetWindowBordered(w, SDL_TRUE);
+    SDL_SetWindowResizable(w, SDL_TRUE);
+    if (a.savedRect.w > 0) {
+      SDL_SetWindowSize(w, a.savedRect.w, a.savedRect.h);
+      SDL_SetWindowPosition(w, a.savedRect.x, a.savedRect.y);
+    }
+    if (a.wasMaximized) SDL_MaximizeWindow(w);
+  }
+  a.isFullscreen = on;
+  a.st.fullscreen = on;
+}
+
 void App::recallScene(int i) {
   if (i < 0 || i >= kNumScenes || !st.scenes[i].used) return;
   st.look = st.scenes[i].look;
@@ -63,11 +99,6 @@ void touchUp(App& a, int64_t id) {
     if (t.active && t.id == id) t.active = false;
 }
 
-void setFullscreen(App& a, bool on) {
-  SDL_SetWindowFullscreen(a.window, on ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
-  a.st.fullscreen = on;
-}
-
 void destroyExternal(App& a) {
   if (a.extWindow) SDL_DestroyWindow(a.extWindow);
   a.extWindow = nullptr;
@@ -108,12 +139,19 @@ void handleEvent(App& a, const SDL_Event& ev, bool& running) {
       if (ev.button.which != SDL_TOUCH_MOUSEID && ev.button.button == SDL_BUTTON_LEFT) touchUp(a, kMouseTouchId);
       break;
     case SDL_KEYDOWN:
+      std::snprintf(a.lastKey, sizeof(a.lastKey), "%s", SDL_GetKeyName(ev.key.keysym.sym));
       if (io.WantTextInput || ev.key.repeat) break;
+      // F11 by key code or by key position (some keyboards remap the F-row); Alt+Enter as well
+      if (ev.key.keysym.scancode == SDL_SCANCODE_F11 ||
+          ((ev.key.keysym.sym == SDLK_RETURN || ev.key.keysym.sym == SDLK_KP_ENTER) && (ev.key.keysym.mod & KMOD_ALT))) {
+        setFullscreen(a, !a.isFullscreen);
+        break;
+      }
       switch (ev.key.keysym.sym) {
         case SDLK_SPACE: a.tempo.tap(a.time, a.st.look.bpm); break;
-        case SDLK_F11: setFullscreen(a, !a.st.fullscreen); break;
+        case SDLK_F11: setFullscreen(a, !a.isFullscreen); break;
         case SDLK_ESCAPE:
-          if (a.st.fullscreen) setFullscreen(a, false);
+          if (a.isFullscreen) setFullscreen(a, false);
           break;
         case SDLK_c: a.wantClear = true; break;
         case SDLK_b: a.blackout = !a.blackout; break;

@@ -1116,8 +1116,10 @@ void SettingsPanel(App& a) {
         TouchSlider("UI size", &a.uiScaleEdit, 0.6f, 2.f, buf);
         if (!ImGui::IsItemActive() && a.uiScaleEdit != a.st.uiScale) a.st.uiScale = a.uiScaleEdit;
       }
-      if (OnOff("FULLSCREEN (F11)", &a.st.fullscreen))
-        SDL_SetWindowFullscreen(a.window, a.st.fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
+      {
+        bool fs = a.isFullscreen;
+        if (OnOff("FULLSCREEN (F11 / Alt+Enter)", &fs)) setFullscreen(a, fs);
+      }
       break;
     }
     case 3: AudioSettingsTab(a); break;
@@ -1141,7 +1143,8 @@ void SettingsPanel(App& a) {
       ImGui::PushFont(a.fontSmall);
       ImGui::TextWrapped("TouchFX %s  -  %.0f fps", TOUCHFX_VERSION, a.fps);
       ImGui::TextWrapped("Settings save automatically to: %s", a.settingsPath.c_str());
-      ImGui::TextWrapped("Keys: SPACE tap tempo, C clear, B blackout, F11 fullscreen.");
+      ImGui::TextWrapped("Keys: SPACE tap tempo, C clear, B blackout, F11 or Alt+Enter fullscreen, Esc leave "
+                         "fullscreen. Last key pressed: %s", a.lastKey);
       ImGui::TextWrapped("NDI(R) is a registered trademark of Vizrt NDI AB.");
       ImGui::PopFont();
       ImGui::PopStyleColor();
@@ -1369,7 +1372,18 @@ void drawUI(App& a) {
     char clk[16];
     std::strftime(clk, sizeof(clk), "%H:%M:%S", std::localtime(&now));
     float tw = ImGui::CalcTextSize(clk).x;
-    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(0.f, ImGui::GetContentRegionAvail().x - tw));
+    const char* fsLabel = a.isFullscreen ? "EXIT FULL" : "FULL";
+    ImGui::PushFont(a.fontSmall);
+    float bw = ImGui::CalcTextSize("EXIT FULL").x + 16 * s;
+    ImGui::PopFont();
+    float sp2 = ImGui::GetStyle().ItemSpacing.x;
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(0.f, ImGui::GetContentRegionAvail().x - tw - bw - sp2));
+    ImGui::PushFont(a.fontSmall);
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4 * s, 2 * s));
+    if (Toggle(fsLabel, a.isFullscreen, ImVec2(bw, ImGui::GetFontSize() * 1.25f + 4 * s))) setFullscreen(a, !a.isFullscreen);
+    ImGui::PopStyleVar();
+    ImGui::PopFont();
+    ImGui::SameLine();
     ImGui::TextUnformatted(clk);
   }
   ImGui::PushFont(a.fontSmall);
