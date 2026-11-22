@@ -854,6 +854,19 @@ void EffectButtons(App& a, int cols, ImVec2 size) {
   }
 }
 
+// Text on a colour swatch: black on light colours, white on dark ones, with a soft shadow.
+void SwatchLabel(ImVec2 p, ImVec4 col, const char* text) {
+  float s = S();
+  float lum = 0.2126f * col.x + 0.7152f * col.y + 0.0722f * col.z;
+  bool light = lum > 0.55f;
+  ImU32 fg = light ? IM_COL32(10, 10, 12, 255) : IM_COL32(255, 255, 255, 255);
+  ImU32 shadow = light ? IM_COL32(255, 255, 255, 110) : IM_COL32(0, 0, 0, 160);
+  ImDrawList* dl = ImGui::GetWindowDrawList();
+  ImVec2 at(p.x + 7 * s, p.y + 5 * s);
+  dl->AddText(ImVec2(at.x + 1, at.y + 1), shadow, text);
+  dl->AddText(at, fg, text);
+}
+
 // ---- BPM keypad (tap the BPM number) ----
 char g_bpmEntry[8] = {};
 
@@ -862,8 +875,12 @@ void BpmKeypad(App& a) {
   ImGui::SetNextWindowSize(ImVec2(330 * s, 0));
   if (!ImGui::BeginPopup("bpmpad")) return;
   ImGui::PushFont(a.fontBig);
-  ImGui::Text("%s", g_bpmEntry[0] ? g_bpmEntry : "BPM");
+  if (g_bpmEntry[0]) ImGui::Text("%s", g_bpmEntry);
+  else ImGui::TextColored(kTextDim, "BPM");
   ImGui::PopFont();
+  ImGui::PushStyleColor(ImGuiCol_Text, kTextDim);
+  ImGui::TextUnformatted("Type a tempo between 20 and 300");
+  ImGui::PopStyleColor();
   static const char* keys[] = {"7", "8", "9", "4", "5", "6", "1", "2", "3", ".", "0", "<"};
   float sp = ImGui::GetStyle().ItemSpacing.x;
   float w = (ImGui::GetContentRegionAvail().x - sp * 2) / 3, h = 58 * s;
@@ -884,10 +901,12 @@ void BpmKeypad(App& a) {
   ImGui::SameLine();
   float v = float(std::atof(g_bpmEntry));
   bool valid = v >= 20.f && v <= 300.f;
-  if (Toggle(valid ? "OK" : "20 - 300", valid, ImVec2(half, h)) && valid) {
+  ImGui::BeginDisabled(!valid);  // greyed out until the number is a valid tempo
+  if (Toggle("OK", valid, ImVec2(half, h))) {
     a.st.look.bpm = std::round(v * 10.f) / 10.f;
     ImGui::CloseCurrentPopup();
   }
+  ImGui::EndDisabled();
   ImGui::EndPopup();
 }
 
@@ -906,7 +925,14 @@ void QuickColours(App& a) {
     if (i) ImGui::SameLine();
     ImGui::PushID(i);
     ImVec4 v((*cols[i])[0], (*cols[i])[1], (*cols[i])[2], 1);
-    if (ImGui::ColorButton(names[i], v, ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_NoAlpha, ImVec2(w, 48 * s))) {
+    bool clicked = ImGui::ColorButton(names[i], v, ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_NoAlpha,
+                                      ImVec2(w, 48 * s));
+    ImVec2 p = ImGui::GetItemRectMin();
+    ImGui::PushFont(a.fontSmall);
+    SwatchLabel(p, v, names[i]);
+    ImGui::PopFont();
+    ImGui::PopID();
+    if (clicked) {  // opened outside PushID so BeginPopup below finds the same popup
       if (!l.useCustom) {  // start from the current palette
         l.custom = a.st.palettes[l.palette];
         l.useCustom = true;
@@ -914,11 +940,6 @@ void QuickColours(App& a) {
       editing = i;
       ImGui::OpenPopup("quickpick");
     }
-    ImVec2 p = ImGui::GetItemRectMin();
-    ImGui::PushFont(a.fontSmall);
-    ImGui::GetWindowDrawList()->AddText(ImVec2(p.x + 6 * s, p.y + 4 * s), IM_COL32(255, 255, 255, 220), names[i]);
-    ImGui::PopFont();
-    ImGui::PopID();
   }
   if (ImGui::BeginPopup("quickpick")) {
     Color3* target[3] = {&l.custom.low, &l.custom.mid, &l.custom.high};

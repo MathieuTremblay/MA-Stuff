@@ -525,8 +525,10 @@ bool writePpm(const std::string& path, int w, int h) {
 int main(int argc, char** argv) {
   App a;
   std::string selftestDir;
+  int selftestFrom = 0;  // start the self-test at this step (debugging)
   for (int i = 1; i < argc; ++i) {
     if (std::string(argv[i]) == "--selftest" && i + 1 < argc) selftestDir = argv[++i];
+    if (std::string(argv[i]) == "--selftest-from" && i + 1 < argc) selftestFrom = std::atoi(argv[++i]);
   }
   a.selftest = !selftestDir.empty();
 
@@ -643,7 +645,7 @@ int main(int argc, char** argv) {
   Uint64 freq = SDL_GetPerformanceFrequency();
   Uint64 last = SDL_GetPerformanceCounter();
   bool running = true;
-  int frame = 0;
+  int frame = selftestFrom * kStepFrames;
   int shot = 0;
   const int fxFrames = kNumSteps * kStepFrames;
 
@@ -683,6 +685,10 @@ int main(int argc, char** argv) {
         a.st.output.alpha = frame >= kStepFrames * 7;  // test the alpha path on the last steps
         a.st.tab = 0;
         selftestTouches(a, frame, sp.fingers);
+        if (sp.effect == FX_RIBBONS) {  // change the length while a released ribbon is still drifting
+          int local = frame % kStepFrames;
+          a.st.look.ribbons.length = local < 75 ? 0.5f : (local < 100 ? 0.9f : 0.15f);
+        }
       } else {
         int k = (frame - fxFrames) / 20;
         a.st.audio.enabled = true;  // so the UI shots show the audio controls

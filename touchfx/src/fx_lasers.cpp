@@ -31,7 +31,7 @@ void main() {
 const char* kBeamFS = R"(
 in vec2 vSideAlong; in vec3 vCol; in vec2 vWidth;
 out vec4 o;
-uniform float uGlow;
+uniform float uGlow, uGain;
 void main() {
   float d = abs(vSideAlong.x) * vWidth.x;               // pixel distance from the centre line
   float halfCore = vWidth.y * 0.5;
@@ -39,7 +39,7 @@ void main() {
   float glowW = max(vWidth.x - halfCore, 0.001);
   float glow = exp(-max(d - halfCore, 0.0) / glowW * 4.0) * uGlow;
   float fall = 1.0 - 0.35 * vSideAlong.y;                // beams dim slightly with distance
-  vec3 c = vCol * (core * 3.2 + glow * 1.3) * fall + vec3(core * 1.1 * fall);  // white-hot core
+  vec3 c = vCol * (core * 3.2 + glow * 1.3) * fall + vec3(core * 1.1 * fall * uGain);  // white-hot core fades too
   o = vec4(c, 1.0);
 }
 )";
@@ -101,6 +101,7 @@ class Lasers : public Effect {
       prog.use();
       prog.set2f("uRes", float(c.W), float(c.H));
       prog.setf("uGlow", 0.2f + s.glow * 0.8f);
+      prog.setf("uGain", c.gain * std::min(c.drive, 1.2f));
       glBindVertexArray(vao);
       glBindBuffer(GL_ARRAY_BUFFER, vbo);
       glBufferData(GL_ARRAY_BUFFER, verts.size() * sizeof(BeamVertex), verts.data(), GL_STREAM_DRAW);

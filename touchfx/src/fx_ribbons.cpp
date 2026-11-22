@@ -121,12 +121,13 @@ class Ribbons : public Effect {
     float h = dt / sub;
     for (auto& kv : ribbons) {
       Ribbon& r = kv.second;
+      const int n = int(r.p.size());  // each ribbon keeps its own length (released ones keep the old one)
       Vec2 windDir = r.m * Vec2(-0.85f, -0.35f);
       Vec2 perp(-windDir.y, windDir.x);
-      for (int st = 0; st < sub; ++st) {
+      for (int st = 0; st < sub && n >= 2; ++st) {
         int first = r.anchored ? 1 : 0;
-        for (int i = first; i < nodes; ++i) {
-          float u = float(i) / (nodes - 1);
+        for (int i = first; i < n; ++i) {
+          float u = float(i) / (n - 1);
           // gusts: the wind breathes; flutter: a travelling wave down the ribbon, stronger at the tail
           float gust = 0.7f + 0.3f * std::sin(t * 0.7f + r.phase);
           float wave = std::sin(t * mixf(3.f, 9.f, s.flutter) * c.speed - i * 0.45f + r.phase);
@@ -137,7 +138,7 @@ class Ribbons : public Effect {
           r.p[i] += vel + acc * (h * h);
         }
         for (int it = 0; it < iterations; ++it) {
-          for (int i = 0; i + 1 < nodes; ++i) {
+          for (int i = 0; i + 1 < n; ++i) {
             Vec2 d = r.p[i + 1] - r.p[i];
             float l = std::max(0.001f, length(d));
             Vec2 corr = d * ((l - seg) / l);
@@ -156,13 +157,14 @@ class Ribbons : public Effect {
     verts.clear();
     for (auto& kv : ribbons) {
       const Ribbon& r = kv.second;
+      const int n = int(r.p.size());
       float a = r.alpha * c.gain;
-      if (a < 0.005f) continue;
+      if (a < 0.005f || n < 2) continue;
       Vec2 lastL, lastR;
       Vec3 lastC;
-      for (int i = 0; i < nodes; ++i) {
-        float u = float(i) / (nodes - 1);
-        Vec2 tan = r.p[std::min(nodes - 1, i + 1)] - r.p[std::max(0, i - 1)];
+      for (int i = 0; i < n; ++i) {
+        float u = float(i) / (n - 1);
+        Vec2 tan = r.p[std::min(n - 1, i + 1)] - r.p[std::max(0, i - 1)];
         float tl = std::max(0.001f, length(tan));
         Vec2 n(-tan.y / tl, tan.x / tl);
         float twist = t * mixf(0.6f, 2.5f, s.flutter) + i * 0.16f + r.phase;
