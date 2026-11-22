@@ -1,6 +1,7 @@
 #pragma once
 #include <array>
 #include <string>
+#include <vector>
 
 using Color3 = std::array<float, 3>;
 
@@ -72,8 +73,8 @@ struct RippleSettings {
   bool beatDrops = true;
 };
 struct RibbonSettings {
-  int strands = 3;
-  float length = 0.5f, width = 0.4f, wave = 0.4f, glow = 0.5f, trail = 0.15f;
+  int strands = 2;
+  float length = 0.5f, width = 0.5f, wind = 0.45f, flutter = 0.5f, stiffness = 0.5f, sheen = 0.5f;
 };
 struct GeometrySettings {
   int shape = SHAPE_MIX, rate = 3;
@@ -81,6 +82,7 @@ struct GeometrySettings {
 };
 struct TunnelSettings {
   int sides = 0;  // 0 = round, 3..8 = polygon
+  bool merge = false;  // one tunnel for all fingers instead of one per finger
   float speed = 0.5f, density = 0.5f, twist = 0.5f /*centered*/, width = 0.35f, depth = 0.5f;
 };
 struct LightningSettings {
@@ -95,7 +97,7 @@ struct FireworkSettings {
   float size = 0.5f, amount = 0.5f, gravity = 0.5f, trail = 0.5f, sparkle = 0.5f;
 };
 struct StarfieldSettings {
-  float amount = 0.5f, speed = 0.5f, streak = 0.5f, size = 0.4f, twinkle = 0.3f;
+  float amount = 0.3f, speed = 0.4f, streak = 0.35f, size = 0.3f, twinkle = 0.3f, brightness = 0.5f;
 };
 struct SpectrumSettings {
   int mode = SPEC_CIRCLE, bars = 48;
@@ -142,8 +144,12 @@ struct Look {
   GridSettings grid;
   PostSettings post;
   int mirror = MIRROR_LR;
-  int release = RELEASE_FADE;
-  float fadeTime = 1.5f;  // seconds
+  int release = RELEASE_FADE;    // v0.5 and older (migrated into releaseFx / fadeFx)
+  float fadeTime = 1.5f;
+  std::vector<int> releaseFx = std::vector<int>(FX_COUNT, RELEASE_FADE);  // per effect: fade / snap
+  std::vector<float> fadeFx = std::vector<float>(FX_COUNT, 1.5f);         // per effect: fade time (s)
+  bool useCustom = false;        // quick colours from the LIVE tab override the palette
+  Palette custom;
   int colorMode = COLOR_GRADIENT;
   int palette = 0;
   float brightness = 1.0f;
@@ -160,6 +166,8 @@ struct OutputSettings {
   int width = 1920, height = 1080, fps = 60;
   bool ndiEnabled = true;
   std::string ndiName = "TouchFX";
+  bool spout = false;          // Spout output (Windows, same PC)
+  std::string spoutName = "TouchFX";
   bool alpha = false;          // send an alpha channel (transparent background)
   bool premultiplied = false;  // premultiplied instead of straight alpha
 };
@@ -213,6 +221,7 @@ struct AppState {
   LayoutSettings layout;
   AudioSettings audio;
   DmxSettings dmx;
+  float effectFade = 0.5f;  // seconds to fade out the old effect when switching (0 = cut)
   int maxTouches = 4;  // 1..10
   bool blockGestures = true;  // turn off Windows 3/4-finger gestures while running
   int gestureRestore = -1;    // original Windows value to put back (-1 = nothing to restore)

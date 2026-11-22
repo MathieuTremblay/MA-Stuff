@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(TouchFX VERSION 0.5.1 LANGUAGES C CXX)
+project(TouchFX VERSION 0.6.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -35,6 +35,22 @@ FetchContent_MakeAvailable(imgui)
 FetchContent_Declare(json
   URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz)
 FetchContent_MakeAvailable(json)
+
+# Spout (Windows only): the SpoutGL sender sources are compiled straight into TouchFX.
+if(WIN32)
+  FetchContent_Declare(spout2
+    URL https://github.com/leadedge/Spout2/archive/6b68a5b4fdeca6130b851e5f9366467a844860e5.tar.gz)  # 2.007.018
+  FetchContent_GetProperties(spout2)
+  if(NOT spout2_POPULATED)
+    FetchContent_Populate(spout2)  # sources only, Spout's own CMake is not used
+  endif()
+  set(TOUCHFX_SPOUT_DIR ${spout2_SOURCE_DIR}/SPOUTSDK/SpoutGL)
+  set(TOUCHFX_SPOUT_SOURCES)
+  foreach(f Spout SpoutCopy SpoutDirectX SpoutFrameCount SpoutGL SpoutGLextensions SpoutReceiver SpoutSender
+            SpoutSenderNames SpoutSharedMemory SpoutUtils)
+    list(APPEND TOUCHFX_SPOUT_SOURCES ${TOUCHFX_SPOUT_DIR}/${f}.cpp)
+  endforeach()
+endif()
 
 # Embed the UI font into the executable so the app is a single portable .exe
 set(TOUCHFX_FONT_SRC ${imgui_SOURCE_DIR}/misc/fonts/Roboto-Medium.ttf)
@@ -72,6 +88,7 @@ add_executable(TouchFX WIN32
   src/dmx.cpp
   src/dmx_apply.cpp
   src/sysstats.cpp
+  src/spout_out.cpp
   src/ndi.cpp
   src/platform.cpp
   third_party/glad/src/gl.c
@@ -96,7 +113,16 @@ target_compile_definitions(TouchFX PRIVATE
 target_link_libraries(TouchFX PRIVATE ${TOUCHFX_SDL_LIBS} nlohmann_json::nlohmann_json)
 
 if(WIN32)
-  target_sources(TouchFX PRIVATE res/touchfx.rc)
+  target_sources(TouchFX PRIVATE res/touchfx.rc ${TOUCHFX_SPOUT_SOURCES})
+  target_include_directories(TouchFX PRIVATE ${TOUCHFX_SPOUT_DIR})
+  target_compile_definitions(TouchFX PRIVATE TOUCHFX_SPOUT)
+  target_link_libraries(TouchFX PRIVATE opengl32 d3d11 dxgi winmm comctl32 comdlg32 version)
+  if(MINGW)
+    set_source_files_properties(${TOUCHFX_SPOUT_SOURCES} PROPERTIES COMPILE_OPTIONS "-msse4.1")
+    if(CMAKE_HOST_UNIX)
+      target_include_directories(TouchFX PRIVATE cmake/glshim)
+    endif()
+  endif()
   target_link_libraries(TouchFX PRIVATE ole32 shell32 ws2_32)
   target_compile_definitions(TouchFX PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)
   if(MINGW)

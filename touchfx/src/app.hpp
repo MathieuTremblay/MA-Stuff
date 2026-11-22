@@ -13,6 +13,7 @@
 #include "effects.hpp"
 #include "ndi.hpp"
 #include "post.hpp"
+#include "spout_out.hpp"
 #include "state.hpp"
 
 struct ImFont;
@@ -61,6 +62,11 @@ struct App {
   std::unique_ptr<Effect> fx[FX_COUNT];
   int curFx = -1;
   Target scene;  // HDR render of the current effect
+  Target scenePrev;  // the previous effect while it fades out after a switch
+  int prevFx = -1;
+  float xfade = 0, prevGain = 1;
+  std::vector<Emitter> prevHeld;
+  SpoutOut spout;
   Target out;    // final 8-bit output (preview, NDI, external display)
   Post post;
 
@@ -138,8 +144,11 @@ struct App {
   bool selftest = false;
 
   void clearEffect();
+  bool touching() const { return !live.empty(); }
   void recallScene(int i);
 };
+
+enum SettingsTab { ST_COLOURS, ST_LOOK, ST_OUTPUT, ST_SCREEN, ST_AUDIO, ST_DMX, ST_SYSTEM, ST_COUNT };
 
 void drawUI(App& a);
 void setFullscreen(App& a, bool on);

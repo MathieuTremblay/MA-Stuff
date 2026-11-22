@@ -92,6 +92,34 @@ void platformOpenTouchSettings() {
 
 bool platformHasSystemGestures() { return true; }
 
+// The classic Win32 way: drop the frame and cover the monitor; restore the saved placement on exit.
+static WINDOWPLACEMENT g_placement = {sizeof(WINDOWPLACEMENT)};
+static LONG g_style = 0;
+
+bool platformSetFullscreen(SDL_Window* window, bool on) {
+  SDL_SysWMinfo info;
+  SDL_VERSION(&info.version);
+  if (!SDL_GetWindowWMInfo(window, &info)) return false;
+  HWND hwnd = info.info.win.window;
+  if (on) {
+    g_style = GetWindowLongW(hwnd, GWL_STYLE);
+    g_placement.length = sizeof(g_placement);
+    GetWindowPlacement(hwnd, &g_placement);
+    if (IsZoomed(hwnd)) ShowWindow(hwnd, SW_RESTORE);  // a maximized window would stay clamped to the work area
+    MONITORINFO mi = {sizeof(mi)};
+    GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &mi);
+    SetWindowLongW(hwnd, GWL_STYLE, (g_style & ~WS_OVERLAPPEDWINDOW) | WS_POPUP | WS_VISIBLE);
+    SetWindowPos(hwnd, HWND_TOP, mi.rcMonitor.left, mi.rcMonitor.top, mi.rcMonitor.right - mi.rcMonitor.left,
+                 mi.rcMonitor.bottom - mi.rcMonitor.top, SWP_NOOWNERZORDER | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+  } else {
+    SetWindowLongW(hwnd, GWL_STYLE, g_style ? g_style : (WS_OVERLAPPEDWINDOW | WS_VISIBLE));
+    SetWindowPlacement(hwnd, &g_placement);
+    SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+  }
+  return true;
+}
+
 #else
 
 void platformSetupWindow(SDL_Window*) {}
@@ -99,5 +127,6 @@ int platformBlockSystemGestures() { return -1; }
 void platformRestoreSystemGestures(int) {}
 void platformOpenTouchSettings() {}
 bool platformHasSystemGestures() { return false; }
+bool platformSetFullscreen(SDL_Window*, bool) { return false; }
 
 #endif

@@ -11,3 +11,5 @@ void platformRestoreSystemGestures(int original);
 // Opens the Windows touch settings page.
 void platformOpenTouchSettings();
 bool platformHasSystemGestures();  // false on non-Windows builds
+// Native borderless fullscreen on the window's monitor (Windows). Returns false if not handled here.
+bool platformSetFullscreen(SDL_Window* window, bool on);

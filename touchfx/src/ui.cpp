@@ -331,12 +331,13 @@ void EffectParams(App& a) {
     case FX_RIBBONS: {
       RibbonSettings& p = l.ribbons;
       SectionLabel("RIBBONS");
-      IntSlider("Strands", &p.strands, 1, 6);
+      IntSlider("Ribbons per finger", &p.strands, 1, 6);
       Pct("Length", &p.length);
       Pct("Width", &p.width);
-      Pct("Wave", &p.wave);
-      Pct("Glow", &p.glow);
-      Pct("Trail", &p.trail);
+      Pct("Wind", &p.wind);
+      Pct("Flutter", &p.flutter);
+      Pct("Stiffness", &p.stiffness);
+      Pct("Sheen", &p.sheen);
       if (ImGui::Button("RESET RIBBONS", ImVec2(-1, 40 * s))) p = RibbonSettings();
       break;
     }
@@ -364,6 +365,7 @@ void EffectParams(App& a) {
       for (int i = 0; i < 5; ++i)
         if (sideVals[i] == p.sides) idx = i;
       if (Choice("tsides", sides, 5, &idx, 3)) p.sides = sideVals[idx];
+      OnOff("MERGE (one tunnel for all fingers)", &p.merge, 44 * s);
       Pct("Speed", &p.speed);
       Pct("Ring density", &p.density);
       Centered("Spin", &p.twist);
@@ -419,6 +421,7 @@ void EffectParams(App& a) {
       Pct("Streaks", &p.streak);
       Pct("Size", &p.size);
       Pct("Twinkle", &p.twinkle);
+      Pct("Brightness", &p.brightness);
       if (ImGui::Button("RESET STARFIELD", ImVec2(-1, 40 * s))) p = StarfieldSettings();
       break;
     }
@@ -490,6 +493,7 @@ void PaletteGrid(App& a) {
     ImVec2 p = ImGui::GetCursorScreenPos();
     if (ImGui::InvisibleButton("pal", ImVec2(w, h))) {
       l.palette = i;
+      l.useCustom = false;
       a.dmxColors = false;
     }
     const Palette& pal = a.st.palettes[i];
@@ -697,10 +701,10 @@ void AudioSettingsTab(App& a) {
   sourceButton(kAudioTest, "Test beat (128 BPM, no music needed)");
   Hint("Use a line input from the sound desk (or a microphone) for the live show. System audio follows "
        "music playing on this computer.");
-  if (as.enabled) {
-    AudioMeter(a, 30 * s);
-    AudioStatus(a);
-  }
+  SectionLabel("INPUT LEVEL");
+  AudioMeter(a, 30 * s);
+  AudioStatus(a);
+  if (!as.enabled) Hint("Listening while this tab is open, to check the input. Turn AUDIO on to drive the visuals.");
   SectionLabel("ANALYSIS");
   Pct("Sensitivity", &as.sensitivity);
   Hint("Raise it if quiet music doesn't trigger anything; lower it if room noise triggers the effects.");
@@ -850,6 +854,125 @@ void EffectButtons(App& a, int cols, ImVec2 size) {
   }
 }
 
+// ---- BPM keypad (tap the BPM number) ----
+char g_bpmEntry[8] = {};
+
+void BpmKeypad(App& a) {
+  float s = S();
+  ImGui::SetNextWindowSize(ImVec2(330 * s, 0));
+  if (!ImGui::BeginPopup("bpmpad")) return;
+  ImGui::PushFont(a.fontBig);
+  ImGui::Text("%s", g_bpmEntry[0] ? g_bpmEntry : "BPM");
+  ImGui::PopFont();
+  static const char* keys[] = {"7", "8", "9", "4", "5", "6", "1", "2", "3", ".", "0", "<"};
+  float sp = ImGui::GetStyle().ItemSpacing.x;
+  float w = (ImGui::GetContentRegionAvail().x - sp * 2) / 3, h = 58 * s;
+  for (int i = 0; i < 12; ++i) {
+    if (i % 3) ImGui::SameLine();
+    if (ImGui::Button(keys[i], ImVec2(w, h))) {
+      size_t n = std::strlen(g_bpmEntry);
+      if (keys[i][0] == '<') {
+        if (n) g_bpmEntry[n - 1] = 0;
+      } else if (n < 5 && !(keys[i][0] == '.' && std::strchr(g_bpmEntry, '.'))) {
+        g_bpmEntry[n] = keys[i][0];
+        g_bpmEntry[n + 1] = 0;
+      }
+    }
+  }
+  float half = (ImGui::GetContentRegionAvail().x - sp) / 2;
+  if (ImGui::Button("CANCEL", ImVec2(half, h))) ImGui::CloseCurrentPopup();
+  ImGui::SameLine();
+  float v = float(std::atof(g_bpmEntry));
+  bool valid = v >= 20.f && v <= 300.f;
+  if (Toggle(valid ? "OK" : "20 - 300", valid, ImVec2(half, h)) && valid) {
+    a.st.look.bpm = std::round(v * 10.f) / 10.f;
+    ImGui::CloseCurrentPopup();
+  }
+  ImGui::EndPopup();
+}
+
+// ---- quick colours: override the palette's Low / Mid / High live ----
+void QuickColours(App& a) {
+  Look& l = a.st.look;
+  float s = S();
+  float sp = ImGui::GetStyle().ItemSpacing.x;
+  const Palette& shown = l.useCustom ? l.custom : a.st.palettes[l.palette];
+  SectionLabel(l.useCustom ? "QUICK COLOURS (override active)" : "QUICK COLOURS (tap to override)");
+  float w = (ImGui::GetContentRegionAvail().x - sp * 2) / 3;
+  const char* names[3] = {"LOW", "MID", "HIGH"};
+  const Color3* cols[3] = {&shown.low, &shown.mid, &shown.high};
+  static int editing = 0;
+  for (int i = 0; i < 3; ++i) {
+    if (i) ImGui::SameLine();
+    ImGui::PushID(i);
+    ImVec4 v((*cols[i])[0], (*cols[i])[1], (*cols[i])[2], 1);
+    if (ImGui::ColorButton(names[i], v, ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_NoAlpha, ImVec2(w, 48 * s))) {
+      if (!l.useCustom) {  // start from the current palette
+        l.custom = a.st.palettes[l.palette];
+        l.useCustom = true;
+      }
+      editing = i;
+      ImGui::OpenPopup("quickpick");
+    }
+    ImVec2 p = ImGui::GetItemRectMin();
+    ImGui::PushFont(a.fontSmall);
+    ImGui::GetWindowDrawList()->AddText(ImVec2(p.x + 6 * s, p.y + 4 * s), IM_COL32(255, 255, 255, 220), names[i]);
+    ImGui::PopFont();
+    ImGui::PopID();
+  }
+  if (ImGui::BeginPopup("quickpick")) {
+    Color3* target[3] = {&l.custom.low, &l.custom.mid, &l.custom.high};
+    ImGui::TextUnformatted(names[editing]);
+    ImGui::SetNextItemWidth(340 * s);
+    ImGui::ColorPicker3("##qp", target[editing]->data(),
+                        ImGuiColorEditFlags_PickerHueWheel | ImGuiColorEditFlags_NoSidePreview |
+                            ImGuiColorEditFlags_DisplayHex);
+    if (ImGui::Button("DONE", ImVec2(-1, 48 * s))) ImGui::CloseCurrentPopup();
+    ImGui::EndPopup();
+  }
+  if (l.useCustom) {
+    float half = (ImGui::GetContentRegionAvail().x - sp) / 2;
+    char save[64];
+    std::snprintf(save, sizeof(save), "SAVE TO %.12s", a.st.palettes[l.palette].name.c_str());
+    if (ImGui::Button(save, ImVec2(half, 40 * s))) {
+      std::string name = a.st.palettes[l.palette].name;
+      a.st.palettes[l.palette] = l.custom;
+      a.st.palettes[l.palette].name = name;
+      l.useCustom = false;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("BACK TO PALETTE", ImVec2(half, 40 * s))) l.useCustom = false;
+  }
+}
+
+// ---- SETTINGS > LOOK ----
+void LookTab(App& a) {
+  Look& l = a.st.look;
+  float s = S();
+  SectionLabel("LOOK (applies to every effect, saved in scenes)");
+  PostSettings& p = l.post;
+  Pct("Glow", &p.bloom);
+  Pct("Glow size", &p.bloomSize);
+  Centered("Saturation", &p.saturation);
+  {
+    char buf[32];
+    std::snprintf(buf, sizeof(buf), "%.0f %%", l.brightness * 100.f);
+    TouchSlider("Brightness", &l.brightness, 0.f, 2.f, buf);
+  }
+  if (ImGui::Button("RESET LOOK", ImVec2(-1, 40 * s))) {
+    p = PostSettings();
+    l.brightness = 1.f;
+  }
+  SectionLabel("EFFECT CHANGE");
+  {
+    char buf[32];
+    if (a.st.effectFade < 0.02f) std::snprintf(buf, sizeof(buf), "cut");
+    else std::snprintf(buf, sizeof(buf), "%.2f s", a.st.effectFade);
+    TouchSlider("Crossfade", &a.st.effectFade, 0.f, 3.f, buf);
+  }
+  Hint("When you switch effect, the old one fades out over this time instead of disappearing at once.");
+}
+
 // ---------------------------------------------------------------------------
 void LivePanel(App& a) {
   Look& l = a.st.look;
@@ -861,6 +984,11 @@ void LivePanel(App& a) {
     ImGui::PushFont(a.fontBig);
     ImGui::Text("%5.1f", l.bpm);
     ImGui::PopFont();
+    if (ImGui::IsItemClicked()) {  // tap the number to type a tempo
+      g_bpmEntry[0] = 0;
+      ImGui::OpenPopup("bpmpad");
+    }
+    BpmKeypad(a);
     ImGui::SameLine();
     ImVec2 p = ImGui::GetCursorScreenPos();
     float bigH = a.fontBig->FontSize;
@@ -924,24 +1052,36 @@ void LivePanel(App& a) {
   }
 
   // ---- everything below scrolls ----
+  // mirror stays at the top with the tempo
+  {
+    static const char* mirrors[] = {"OFF", "L | R", "U | D", "QUAD", "RAD 6", "RAD 8"};
+    ImGui::PushStyleColor(ImGuiCol_Text, kTextDim);
+    ImGui::PushFont(a.fontSmall);
+    ImGui::TextUnformatted("MIRROR");
+    ImGui::PopFont();
+    ImGui::PopStyleColor();
+    Choice("mirror", mirrors, MIRROR_COUNT, &l.mirror, 0, 40 * s);
+  }
+
   ImGui::BeginChild("##live", ImVec2(0, 0), ImGuiChildFlags_AlwaysUseWindowPadding);
   if (a.st.audio.enabled) AudioLive(a);
-  SectionLabel("MIRROR");
-  static const char* mirrors[] = {"OFF", "L | R", "U | D", "QUAD", "RAD 6", "RAD 8"};
-  Choice("mirror", mirrors, MIRROR_COUNT, &l.mirror, 0, 44 * s);
 
-  SectionLabel("ON RELEASE");
   {
+    char lbl[64];
+    std::snprintf(lbl, sizeof(lbl), "ON RELEASE (%s)", kEffectNames[l.effect]);
+    SectionLabel(lbl);
+    int& rel = l.releaseFx[l.effect];
+    float& ft = l.fadeFx[l.effect];
     float w = (ImGui::GetContentRegionAvail().x - sp) / 2;
-    if (Toggle("FADE", l.release == RELEASE_FADE, ImVec2(w, 44 * s))) l.release = RELEASE_FADE;
+    if (Toggle("FADE", rel == RELEASE_FADE, ImVec2(w, 44 * s))) rel = RELEASE_FADE;
     ImGui::SameLine();
-    if (Toggle("SNAP", l.release == RELEASE_SNAP, ImVec2(w, 44 * s))) l.release = RELEASE_SNAP;
-    if (l.release == RELEASE_FADE) {
+    if (Toggle("SNAP", rel == RELEASE_SNAP, ImVec2(w, 44 * s))) rel = RELEASE_SNAP;
+    if (rel == RELEASE_FADE) {
       // logarithmic 0.1 .. 10 s
-      float t = std::log10(std::clamp(l.fadeTime, 0.1f, 10.f) / 0.1f) / 2.f;
+      float t = std::log10(std::clamp(ft, 0.1f, 10.f) / 0.1f) / 2.f;
       char buf[32];
-      std::snprintf(buf, sizeof(buf), "%.1f s", l.fadeTime);
-      if (TouchSlider("Fade time", &t, 0.f, 1.f, buf)) l.fadeTime = 0.1f * std::pow(10.f, t * 2.f);
+      std::snprintf(buf, sizeof(buf), "%.1f s", ft);
+      if (TouchSlider("Fade time", &t, 0.f, 1.f, buf)) ft = 0.1f * std::pow(10.f, t * 2.f);
     }
   }
 
@@ -949,23 +1089,9 @@ void LivePanel(App& a) {
 
   SectionLabel("PALETTE");
   PaletteGrid(a);
+  QuickColours(a);
   SectionLabel("COLOUR MODE");
   ColorModeChoice(a);
-
-  SectionLabel("LOOK");
-  PostSettings& p = l.post;
-  Pct("Glow", &p.bloom);
-  Pct("Glow size", &p.bloomSize);
-  Centered("Saturation", &p.saturation);
-  {
-    char buf[32];
-    std::snprintf(buf, sizeof(buf), "%.0f %%", l.brightness * 100.f);
-    TouchSlider("Brightness", &l.brightness, 0.f, 2.f, buf);
-  }
-  if (ImGui::Button("RESET LOOK", ImVec2(-1, 40 * s))) {
-    p = PostSettings();
-    l.brightness = 1.f;
-  }
 
   if (!a.st.layout.sceneStrip) ScenesGrid(a);
   ImGui::Dummy(ImVec2(0, 24 * s));
@@ -975,12 +1101,13 @@ void LivePanel(App& a) {
 
 void SettingsPanel(App& a) {
   float s = S();
-  static const char* tabs[] = {"COLOURS", "OUTPUT", "SCREEN", "AUDIO", "DMX", "SYSTEM"};
-  Choice("stabs", tabs, 6, &a.st.settingsTab, 3, 40 * s);
+  static const char* tabs[ST_COUNT] = {"COLOURS", "LOOK", "OUTPUT", "SCREEN", "AUDIO", "DMX", "SYSTEM"};
+  Choice("stabs", tabs, ST_COUNT, &a.st.settingsTab, 4, 40 * s);
   ImGui::BeginChild("##settings", ImVec2(0, 0), ImGuiChildFlags_AlwaysUseWindowPadding);
   float sp = ImGui::GetStyle().ItemSpacing.x;
   switch (a.st.settingsTab) {
-    case 0: {
+    case ST_LOOK: LookTab(a); break;
+    case ST_COLOURS: {
       Look& l = a.st.look;
       SectionLabel("PALETTES (tap to select, then edit below)");
       PaletteGrid(a);
@@ -1002,7 +1129,7 @@ void SettingsPanel(App& a) {
       ColorModeChoice(a);
       break;
     }
-    case 1: {
+    case ST_OUTPUT: {
       OutputSettings& o = a.st.output;
       SectionLabel("RESOLUTION (max 1920 x 1080)");
       static const int presets[3][2] = {{1920, 1080}, {1280, 720}, {960, 540}};
@@ -1065,6 +1192,35 @@ void SettingsPanel(App& a) {
         ImGui::TextWrapped("%s", a.ndi.error().empty() ? "Starting NDI..." : a.ndi.error().c_str());
         ImGui::PopStyleColor();
       }
+      SectionLabel("SPOUT OUTPUT (same PC: Resolume, TouchDesigner, OBS...)");
+      if (SpoutOut::available()) {
+        OnOff("SPOUT", &o.spout, 50 * s);
+        {
+          static char spName[64] = {};
+          if (!ImGui::IsAnyItemActive() || spName[0] == 0) std::snprintf(spName, sizeof(spName), "%s", o.spoutName.c_str());
+          ImGui::AlignTextToFramePadding();
+          ImGui::TextUnformatted("Sender name");
+          ImGui::SameLine();
+          ImGui::SetNextItemWidth(-1);
+          ImGui::InputText("##spoutname", spName, sizeof(spName));
+          if (ImGui::IsItemDeactivatedAfterEdit()) o.spoutName = spName[0] ? spName : "TouchFX";
+        }
+        if (o.spout) {
+          if (!a.spout.error().empty()) {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 0.45f, 0.4f, 1));
+            ImGui::TextWrapped("%s", a.spout.error().c_str());
+            ImGui::PopStyleColor();
+          } else if (a.spout.running()) {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.3f, 0.9f, 0.4f, 1));
+            ImGui::TextWrapped("Sending \"%s\" %dx%d", o.spoutName.c_str(), a.out.w, a.out.h);
+            ImGui::PopStyleColor();
+          }
+        }
+        Hint("Spout shares the output GPU to GPU with apps on this computer, with no network and no extra "
+             "latency. In Resolume: Sources > Spout > TouchFX. Use NDI for another computer.");
+      } else {
+        Hint("Spout is only available in the Windows version.");
+      }
       SectionLabel("ALPHA CHANNEL");
       OnOff("ALPHA", &o.alpha);
       if (o.alpha) {
@@ -1076,7 +1232,7 @@ void SettingsPanel(App& a) {
            "Use STRAIGHT for Resolume; switch to PREMULTIPLIED if edges look dark or haloed in your receiver.");
       break;
     }
-    case 2: {
+    case ST_SCREEN: {
       ExternalSettings& e = a.st.external;
       SectionLabel("EXTERNAL DISPLAY (shows the output on another screen)");
       OnOff("EXTERNAL OUTPUT", &e.enabled, 50 * s);
@@ -1122,8 +1278,8 @@ void SettingsPanel(App& a) {
       }
       break;
     }
-    case 3: AudioSettingsTab(a); break;
-    case 4: DmxTab(a); break;
+    case ST_AUDIO: AudioSettingsTab(a); break;
+    case ST_DMX: DmxTab(a); break;
     default: {
       if (platformHasSystemGestures()) {
         SectionLabel("WINDOWS TOUCH GESTURES");

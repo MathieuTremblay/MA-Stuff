@@ -23,13 +23,13 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(LaserSettings, mode, beams, rota
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(SparkleSettings, amount, size, spread, twinkle, life, drift, rays, trail)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(PostSettings, bloom, bloomSize, saturation)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(RippleSettings, size, strength, decay, shine, beatDrops)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(RibbonSettings, strands, length, width, wave, glow, trail)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(RibbonSettings, strands, length, width, wind, flutter, stiffness, sheen)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(GeometrySettings, shape, rate, size, spin, width, life, glow)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(TunnelSettings, sides, speed, density, twist, width, depth)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(TunnelSettings, sides, merge, speed, density, twist, width, depth)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(LightningSettings, branches, chaos, rate, width, glow, reach, trail)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(PlexusSettings, amount, range, size, drift, spread, trail)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(FireworkSettings, rate, rockets, size, amount, gravity, trail, sparkle)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(StarfieldSettings, amount, speed, streak, size, twinkle)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(StarfieldSettings, amount, speed, streak, size, twinkle, brightness)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(SpectrumSettings, mode, bars, symmetric, size, gain, width, glow)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(GridSettings, mode, tile, gap, decay, round, radius)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(StrobeSettings, shape, rate, freeHz, hz, duty, size, colorCycle,
@@ -39,10 +39,10 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(AudioSettings, enabled, device, 
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Look, effect, fluid, particles, kaleido, lasers, strobe, sparkles, ripples,
                                                 ribbons, geometry, tunnel, lightning, plexus, fireworks, starfield,
                                                 spectrum, grid, post,
-                                                mirror,
+                                                mirror, releaseFx, fadeFx, useCustom, custom,
                                                 release, fadeTime, colorMode, palette, brightness, bpm, speedMult)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene, used, look)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(OutputSettings, width, height, fps, ndiEnabled, ndiName, alpha,
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(OutputSettings, width, height, fps, ndiEnabled, ndiName, spout, spoutName, alpha,
                                                 premultiplied)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(DmxSettings, protocol, sacnUniverse, artnetUniverse, address, mode, lock)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(ExternalSettings, enabled, display, fit, windowed)
@@ -68,6 +68,7 @@ Palette defaultPalette(int i) {
 AppState defaultState() {
   AppState s;
   for (int i = 0; i < kNumPalettes; ++i) s.palettes[i] = defaultPalette(i);
+  sanitize(s);  // fills the per-effect release lists
   return s;
 }
 
@@ -75,6 +76,13 @@ template <class T>
 static void clampRef(T& v, T lo, T hi) { v = std::clamp(v, lo, hi); }
 
 static void sanitizeLook(Look& l) {
+  // per-effect release: older files only had one global setting, which becomes every effect's start value
+  if (int(l.releaseFx.size()) < FX_COUNT) l.releaseFx.resize(FX_COUNT, l.release);
+  if (int(l.fadeFx.size()) < FX_COUNT) l.fadeFx.resize(FX_COUNT, l.fadeTime);
+  l.releaseFx.resize(FX_COUNT);
+  l.fadeFx.resize(FX_COUNT);
+  for (int& r : l.releaseFx) r = std::clamp(r, 0, 1);
+  for (float& f : l.fadeFx) f = std::clamp(f, 0.05f, 10.f);
   clampRef(l.effect, 0, FX_COUNT - 1);
   clampRef(l.mirror, 0, MIRROR_COUNT - 1);
   clampRef(l.release, 0, 1);
@@ -115,7 +123,9 @@ void sanitize(AppState& s) {
   if (s.output.ndiName.empty()) s.output.ndiName = "TouchFX";
   clampRef(s.uiScale, 0.5f, 3.f);
   clampRef(s.tab, 0, 1);
-  clampRef(s.settingsTab, 0, 5);
+  clampRef(s.settingsTab, 0, 6);
+  clampRef(s.effectFade, 0.f, 3.f);
+  if (s.output.spoutName.empty()) s.output.spoutName = "TouchFX";
   clampRef(s.dmx.protocol, 0, 2);
   clampRef(s.dmx.sacnUniverse, 1, 63999);
   clampRef(s.dmx.artnetUniverse, 0, 32767);
@@ -142,6 +152,7 @@ std::string serializeState(const AppState& s) {
   j["blockGestures"] = s.blockGestures;
   j["gestureRestore"] = s.gestureRestore;
   j["maxTouches"] = s.maxTouches;
+  j["effectFade"] = s.effectFade;
   j["showTouches"] = s.showTouches;
   j["settingsTab"] = s.settingsTab;
   j["uiScale"] = s.uiScale;
@@ -168,9 +179,20 @@ bool loadState(const std::string& path, AppState& s) {
   try {
     json j = json::parse(f);
     AppState d = defaultState();
-    if (j.contains("look")) d.look = j["look"].get<Look>();
+    // Files from before per-effect release: every effect starts from the old global setting.
+    auto migrate = [](const json& lj, Look& l) {
+      if (!lj.contains("releaseFx")) l.releaseFx.assign(FX_COUNT, l.release);
+      if (!lj.contains("fadeFx")) l.fadeFx.assign(FX_COUNT, l.fadeTime);
+    };
+    if (j.contains("look")) {
+      d.look = j["look"].get<Look>();
+      migrate(j["look"], d.look);
+    }
     readArray(j, "palettes", d.palettes);
     readArray(j, "scenes", d.scenes);
+    if (j.contains("scenes") && j["scenes"].is_array())
+      for (size_t i = 0; i < d.scenes.size() && i < j["scenes"].size(); ++i)
+        if (j["scenes"][i].contains("look")) migrate(j["scenes"][i]["look"], d.scenes[i].look);
     if (j.contains("output")) d.output = j["output"].get<OutputSettings>();
     if (j.contains("external")) d.external = j["external"].get<ExternalSettings>();
     if (j.contains("layout")) d.layout = j["layout"].get<LayoutSettings>();
@@ -179,6 +201,7 @@ bool loadState(const std::string& path, AppState& s) {
     d.blockGestures = j.value("blockGestures", d.blockGestures);
     d.gestureRestore = j.value("gestureRestore", d.gestureRestore);
     d.maxTouches = j.value("maxTouches", d.maxTouches);
+    d.effectFade = j.value("effectFade", d.effectFade);
     d.showTouches = j.value("showTouches", d.showTouches);
     d.settingsTab = j.value("settingsTab", d.settingsTab);
     d.uiScale = j.value("uiScale", d.uiScale);

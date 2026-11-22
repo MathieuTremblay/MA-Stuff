@@ -192,8 +192,8 @@ void applyDmx(App& a, float dt) {
     else if (v >= 70 && v <= 89) a.st.audio.enabled = false;
     else if (v >= 90 && v <= 109) a.st.audio.autoPlay = true;
     else if (v >= 110 && v <= 129) a.st.audio.autoPlay = false;
-    else if (v >= 130 && v <= 149) l.release = RELEASE_FADE;
-    else if (v >= 150 && v <= 169) l.release = RELEASE_SNAP;
+    else if (v >= 130 && v <= 149) l.releaseFx[l.effect] = RELEASE_FADE;
+    else if (v >= 150 && v <= 169) l.releaseFx[l.effect] = RELEASE_SNAP;
   }
 
   for (int f = 0; f < DMX_FN_COUNT; ++f)

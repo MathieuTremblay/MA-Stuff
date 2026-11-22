@@ -63,7 +63,7 @@ class Starfield : public Effect {
         float near = 1.f - st.z;
         float tw = 1.f - s.twinkle * 0.5f * (1.f + std::sin(c.time * 12.f + st.rnd * 50.f));
         float t = c.look->colorMode == COLOR_GRADIENT ? near : c.colorT(&em[std::min(k, em.size() - 1)], near, st.rnd);
-        Vec3 col = c.color(t) * (near * near * 2.2f * tw * c.gain);
+        Vec3 col = c.color(t) * (near * near * mixf(0.3f, 2.2f, s.brightness) * tw * c.gain);
         float w = mixf(0.6f, 4.f, s.size) * px * (0.3f + near * 1.4f);
         segs.push_back({tail, head, col, w + 2.f * px, w});
       }

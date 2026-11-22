@@ -253,6 +253,19 @@ void fxCopy(const Target& out, GLuint srcTex, float gain) {
   drawFullscreen();
 }
 
+void fxAdd(const Target& out, GLuint srcTex, float gain) {
+  out.bind();
+  glEnable(GL_BLEND);
+  glBlendEquation(GL_FUNC_ADD);
+  glBlendFunc(GL_ONE, GL_ONE);
+  g.copy.use();
+  bindTex(0, srcTex);
+  g.copy.seti("uSrc", 0);
+  g.copy.setf("uGain", gain);
+  drawFullscreen();
+  glDisable(GL_BLEND);
+}
+
 void fxFade(const Target& t, float mul) {
   if (mul >= 0.9999f) return;
   t.bind();

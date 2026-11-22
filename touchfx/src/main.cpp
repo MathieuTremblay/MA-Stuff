@@ -29,6 +29,11 @@ void setFullscreen(App& a, bool on) {
     return;
   }
   SDL_Window* w = a.window;
+  if (platformSetFullscreen(w, on)) {  // Windows: native, most reliable
+    a.isFullscreen = on;
+    a.st.fullscreen = on;
+    return;
+  }
   if (on) {
     Uint32 f = SDL_GetWindowFlags(w);
     a.wasMaximized = (f & SDL_WINDOW_MAXIMIZED) != 0;
@@ -54,6 +59,28 @@ void setFullscreen(App& a, bool on) {
   }
   a.isFullscreen = on;
   a.st.fullscreen = on;
+}
+
+// Switches effect. The old effect keeps running and fades out over effectFade seconds (see the crossfade in
+// the main loop) instead of disappearing at once.
+void switchEffect(App& a, int newFx) {
+  int old = a.curFx;
+  if (newFx == old) return;
+  bool resume = newFx == a.prevFx;  // back to the effect that is still fading out: keep what it shows
+  if (a.prevFx >= 0 && !resume) a.fx[a.prevFx]->clear();
+  a.prevFx = -1;
+  if (old >= 0 && a.st.effectFade > 0.01f) {
+    a.prevFx = old;
+    a.xfade = 0;
+    a.prevHeld = a.touching() ? a.live : a.held;
+    a.prevGain = a.gain;
+  } else if (old >= 0) {
+    a.fx[old]->clear();
+  }
+  a.curFx = newFx;
+  if (!resume) a.fx[newFx]->clear();
+  a.fading = false;
+  a.held.clear();
 }
 
 void App::recallScene(int i) {
@@ -166,6 +193,8 @@ void ensureOutput(App& a) {
   int W = a.st.output.width, H = a.st.output.height;
   if (a.out.w == W && a.out.h == H) return;
   a.scene.create(W, H, GL_RGBA16F, GL_RGBA, GL_HALF_FLOAT, GL_LINEAR);
+  a.scenePrev.create(W, H, GL_RGBA16F, GL_RGBA, GL_HALF_FLOAT, GL_LINEAR);
+  a.prevFx = -1;
   a.out.create(W, H, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE, GL_LINEAR);
   a.out.clear(0, 0, 0, 1);
   a.flip.create(W, H, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE, GL_NEAREST);
@@ -414,7 +443,9 @@ void buildEmitters(App& a, float dt) {
 
 void updateAudio(App& a, float dt) {
   AudioSettings& as = a.st.audio;
-  if (!as.enabled) {
+  // The AUDIO settings tab listens even when audio reactive is off, to check the input.
+  bool monitor = a.st.tab == 1 && a.st.settingsTab == ST_AUDIO;
+  if (!as.enabled && !monitor) {
     if (a.audio.isOpen()) a.audio.close();
     a.af = AudioFeatures();
     return;
@@ -430,7 +461,7 @@ void updateAudio(App& a, float dt) {
   a.audio.update(dt, as.sensitivity);
   a.af = a.audio.features();
   // Follow the music's tempo and line the beat up with the hits.
-  if (as.autoBpm && a.af.onset && !a.dmxBpm) {
+  if (as.enabled && as.autoBpm && a.af.onset && !a.dmxBpm) {
     Look& l = a.st.look;
     if (a.af.bpm > 0) l.bpm = std::round((l.bpm + (a.af.bpm - l.bpm) * 0.3f) * 10.f) / 10.f;
     double b = a.tempo.beat, nearest = std::floor(b + 0.5);
@@ -451,7 +482,7 @@ const SelftestStep kSteps[] = {
     {FX_LASERS, LASER_TUNNEL, MIRROR_LR, 3, 2}, {FX_LASERS, LASER_WAVE, MIRROR_OFF, 6, 3},
     {FX_STROBE, 0, MIRROR_LR, 1, 6},
     {FX_RIPPLES, 0, MIRROR_LR, 0, 2},          {FX_RIBBONS, 0, MIRROR_LR, 1, 2},
-    {FX_GEOMETRY, 0, MIRROR_QUAD, 6, 2},       {FX_TUNNEL, 0, MIRROR_OFF, 4, 1},
+    {FX_GEOMETRY, 0, MIRROR_QUAD, 6, 2},       {FX_TUNNEL, 0, MIRROR_OFF, 4, 3},
     {FX_LIGHTNING, 0, MIRROR_OFF, 5, 3},       {FX_PLEXUS, 0, MIRROR_LR, 5, 2},
     {FX_FIREWORKS, 0, MIRROR_OFF, 2, 3},       {FX_STARFIELD, 0, MIRROR_OFF, 6, 1},
     {FX_SPECTRUM, 0, MIRROR_LR, 1, 0, true},   {FX_GRID, 0, MIRROR_LR, 7, 2},
@@ -658,7 +689,7 @@ int main(int argc, char** argv) {
         a.st.dmx.protocol = 1;
         a.st.layout.sceneStrip = k != 0;
         a.st.tab = (k >= 1 && k <= 4) ? 1 : 0;
-        static const int tabsShown[4] = {1, 3, 4, 5};  // output, audio, dmx, system
+        static const int tabsShown[4] = {ST_LOOK, ST_AUDIO, ST_DMX, ST_SYSTEM};
         a.st.settingsTab = tabsShown[std::clamp(k - 1, 0, 3)];
         a.st.layout.panelLeft = k == 5;
         if (k == 0) {
@@ -676,12 +707,7 @@ int main(int argc, char** argv) {
 
     // ---- effect switching / clearing ----
     Look& look = a.st.look;
-    if (look.effect != a.curFx) {
-      a.curFx = look.effect;
-      a.fx[a.curFx]->clear();
-      a.fading = false;
-      a.held.clear();
-    }
+    if (look.effect != a.curFx) switchEffect(a, look.effect);
     if (a.wantClear) {
       a.clearEffect();
       a.wantClear = false;
@@ -692,12 +718,7 @@ int main(int argc, char** argv) {
     if (!a.selftest && a.st.blockGestures != a.gesturesBlocked) setGestureBlock(a.st.blockGestures);
     updateAudio(a, dt);
     applyDmx(a, dt);
-    if (look.effect != a.curFx) {  // DMX may have changed the effect
-      a.curFx = look.effect;
-      a.fx[a.curFx]->clear();
-      a.fading = false;
-      a.held.clear();
-    }
+    if (look.effect != a.curFx) switchEffect(a, look.effect);  // DMX may have changed the effect
     buildEmitters(a, dt);
     bool touching = !a.live.empty();
     float fadeMul = 1.f;
@@ -706,7 +727,7 @@ int main(int argc, char** argv) {
       a.fading = false;
       a.held = a.live;
     } else if (a.wasTouching) {
-      if (look.release == RELEASE_SNAP) {
+      if (look.releaseFx[a.curFx] == RELEASE_SNAP) {
         a.clearEffect();
       } else {
         a.fading = true;
@@ -715,7 +736,7 @@ int main(int argc, char** argv) {
     }
     a.wasTouching = touching;
     if (a.fading) {
-      float ft = std::max(0.05f, look.fadeTime);
+      float ft = std::max(0.05f, look.fadeFx[a.curFx]);
       fadeMul = std::pow(0.001f, dt / ft);  // -60 dB over the fade time
       a.gain *= fadeMul;
       a.fadeElapsed += dt;
@@ -731,7 +752,9 @@ int main(int argc, char** argv) {
     c.H = a.out.h;
     c.aspect = float(c.W) / c.H;
     c.look = &look;
-    c.pal = (a.dmxActive && a.dmxColors && a.st.dmx.mode == 1) ? &a.dmxPalette : &a.st.palettes[look.palette];
+    c.pal = (a.dmxActive && a.dmxColors && a.st.dmx.mode == 1) ? &a.dmxPalette
+            : look.useCustom                                     ? &look.custom
+                                                                 : &a.st.palettes[look.palette];
     c.live = a.live;
     c.held = a.held;
     c.touching = touching;
@@ -755,6 +778,25 @@ int main(int argc, char** argv) {
     }
 
     a.fx[a.curFx]->frame(c, a.scene);
+    // ---- crossfade: the previous effect fades out on top of the new one ----
+    if (a.prevFx >= 0) {
+      float T = std::max(0.05f, a.st.effectFade);
+      a.xfade += dt;
+      float k = 1.f - a.xfade / T;
+      if (k <= 0.f) {
+        a.fx[a.prevFx]->clear();
+        a.prevFx = -1;
+      } else {
+        FxCtx pc = c;
+        pc.live.clear();
+        pc.held = a.prevHeld;
+        pc.touching = false;
+        pc.gain = a.prevGain * k;
+        pc.fadeMul = std::pow(0.01f, dt / T);
+        a.fx[a.prevFx]->frame(pc, a.scenePrev);
+        fxAdd(a.scene, a.scenePrev.tex, k * k);
+      }
+    }
     float master = 1.f;
     if (a.dmxActive) {
       master = a.dmxDim;
@@ -764,6 +806,9 @@ int main(int argc, char** argv) {
     if (a.blackout || a.dmxBlackout) a.out.clear(0, 0, 0, a.st.output.alpha ? 0.f : 1.f);
 
     updateNdi(a, dt);
+    if (a.st.output.spout) a.spout.send(a.st.output.spoutName, a.out.tex, a.out.w, a.out.h);
+    else if (a.spout.running()) a.spout.stop();
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
     // ---- UI (the preview image is drawn by the UI) ----
     ImGui_ImplOpenGL3_NewFrame();
@@ -809,6 +854,7 @@ int main(int argc, char** argv) {
   }
   if (!a.selftest && !a.settingsPath.empty()) saveStateText(a.settingsPath, serializeState(a.st));
   a.ndi.stop();
+  a.spout.stop();
   a.audio.close();
   destroyExternal(a);
   ImGui_ImplOpenGL3_Shutdown();

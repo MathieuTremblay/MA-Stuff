@@ -78,6 +78,8 @@ Vec3 paletteAt(const Palette& p, float t);
 bool fxSharedInit();
 // Copies src into out (HDR, no tonemapping) multiplied by gain.
 void fxCopy(const Target& out, GLuint srcTex, float gain);
+// Adds src on top of out (additive) multiplied by gain.
+void fxAdd(const Target& out, GLuint srcTex, float gain);
 // Multiplies every pixel of t by mul (used for trails and fade-outs).
 void fxFade(const Target& t, float mul);
 // Adds gaussian blobs into a ping-pong target. aspect corrects the blob shape. Max kMaxSplats points.
