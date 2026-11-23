@@ -24,10 +24,14 @@ struct KbState {
   bool ready = false;
   std::string resultId, result;
   bool shift = true;
+  bool numeric = false;  // number pad (0-9, dot) instead of the full keyboard
+  bool fresh = false;    // number pad: the first key replaces the shown value
 } g_kb;
 }  // namespace
 
-void OpenKeyboard(const char* id, const std::string& initial, const char* title) {
+void OpenKeyboard(const char* id, const std::string& initial, const char* title, bool numeric) {
+  g_kb.numeric = numeric;
+  g_kb.fresh = numeric;
   g_kb.requested = true;
   g_kb.id = id;
   g_kb.title = title;
@@ -45,6 +49,52 @@ bool KeyboardResult(const char* id, std::string& out) {
 
 bool KeyboardIsOpen() { return g_kb.requested || g_kb.open; }
 
+// Number pad: 7 8 9 / 4 5 6 / 1 2 3 / . 0 ERASE, then CANCEL / DONE.
+static void KeypadBody(App& a, bool enter) {
+  float s = S();
+  float sp = ImGui::GetStyle().ItemSpacing.x;
+  float kw = (ImGui::GetContentRegionAvail().x - sp * 2) / 3, kh = 64 * s;
+  static const char* keys[12] = {"7", "8", "9", "4", "5", "6", "1", "2", "3", ".", "0", "ERASE"};
+  ImGui::PushFont(a.fontBig);
+  for (int i = 0; i < 12; ++i) {
+    if (i % 3) ImGui::SameLine();
+    if (i == 11) {
+      ImGui::PopFont();
+      ImGui::PushItemFlag(ImGuiItemFlags_ButtonRepeat, true);
+      if (ImGui::Button("ERASE##kp", ImVec2(kw, kh)) && !g_kb.text.empty()) g_kb.text.pop_back();
+      ImGui::PopItemFlag();
+      ImGui::PushFont(a.fontBig);
+      if (ImGui::IsItemActivated()) g_kb.fresh = false;
+      continue;
+    }
+    char lbl[16];
+    std::snprintf(lbl, sizeof(lbl), "%s##kp%d", keys[i], i);
+    if (ImGui::Button(lbl, ImVec2(kw, kh))) {
+      if (g_kb.fresh) g_kb.text.clear();
+      g_kb.fresh = false;
+      bool dot = keys[i][0] == '.';
+      if (g_kb.text.size() < 12 && !(dot && g_kb.text.find('.') != std::string::npos)) {
+        if (dot && g_kb.text.empty()) g_kb.text = "0";
+        g_kb.text += keys[i];
+      }
+    }
+  }
+  ImGui::PopFont();
+  float half = (ImGui::GetContentRegionAvail().x - sp) / 2;
+  if (ImGui::Button("CANCEL", ImVec2(half, kh))) {
+    g_kb.open = false;
+    ImGui::CloseCurrentPopup();
+  }
+  ImGui::SameLine();
+  if (Toggle("DONE", true, ImVec2(half, kh), kGo) || enter) {
+    g_kb.result = g_kb.text;
+    g_kb.resultId = g_kb.id;
+    g_kb.ready = true;
+    g_kb.open = false;
+    ImGui::CloseCurrentPopup();
+  }
+}
+
 void KeyboardFrame(App& a) {
   float s = S();
   if (g_kb.requested) {
@@ -53,9 +103,12 @@ void KeyboardFrame(App& a) {
     g_kb.open = true;
   }
   ImGuiIO& io = ImGui::GetIO();
-  float w = std::min(io.DisplaySize.x - 20 * s, 900 * s);
+  float w = std::min(io.DisplaySize.x - 20 * s, (g_kb.numeric ? 440 : 900) * s);
   ImGui::SetNextWindowSize(ImVec2(w, 0));
-  ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y - 10 * s), ImGuiCond_Always, ImVec2(0.5f, 1.f));
+  if (g_kb.numeric)
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+  else
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y - 10 * s), ImGuiCond_Always, ImVec2(0.5f, 1.f));
   if (!ImGui::BeginPopupModal("##keyboard", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove)) {
     g_kb.open = false;
     return;
@@ -67,9 +120,17 @@ void KeyboardFrame(App& a) {
   ImGui::SetNextItemWidth(-1);
   ImGui::PushFont(a.fontBig);
   if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
-  bool enter = ImGui::InputText("##kbtext", buf, sizeof(buf), ImGuiInputTextFlags_EnterReturnsTrue);
+  bool enter = ImGui::InputText("##kbtext", buf, sizeof(buf),
+                                ImGuiInputTextFlags_EnterReturnsTrue |
+                                    (g_kb.numeric ? ImGuiInputTextFlags_CharsDecimal : 0));
   ImGui::PopFont();
+  if (g_kb.text != buf) g_kb.fresh = false;
   g_kb.text = buf;
+  if (g_kb.numeric) {
+    KeypadBody(a, enter);
+    ImGui::EndPopup();
+    return;
+  }
 
   static const char* rows[4] = {"1234567890", "QWERTYUIOP", "ASDFGHJKL-", "ZXCVBNM_.'"};
   float sp = ImGui::GetStyle().ItemSpacing.x;

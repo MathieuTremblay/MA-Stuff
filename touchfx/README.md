@@ -35,7 +35,7 @@ The **CUES** tab is a cue list per song:
 - **◀ song ▶** at the top switches song (tap the name for the song list: new, rename, duplicate, reorder, delete,
   renumber, and what GO does after the last cue).
 - Cues have **numbers** like a console cue list (1, 2, 2.5, 3...) so they can match your MA cue list. RECORD between
-  two cues gives a number in between (2.5); *EDIT → No.* changes a number (the list stays sorted);
+  two cues gives a number in between (2.5); *EDIT → No.* changes a number on a number pad (the list stays sorted);
   *song list → RENUMBER CUES* resets the song to 1, 2, 3...
 - Each cue stores the full look (effect, settings, colours, mirror, release, LOOK), a **fade** time and an optional
   **follow** (go on automatically after N seconds or N bars). BPM is never recalled.
@@ -65,7 +65,7 @@ Swipe up/down anywhere in the panel to scroll (sliders: swipe sideways to change
 | **AUDIO** | Turns audio reactive mode on (blue button, with a level bar). See *Audio reactive* below. |
 | **Effects** | 16 effects in the bar under the canvas (or in the LIVE tab, see *SCREEN*): Fluid, Particles, Sparkles, Ribbons, Fireworks, Starfield, Plexus, Kaleido, Lasers, Lightning, Tunnel, Shapes, Ripples, Spectrum, LED grid, Strobe. **CLEAR** wipes the canvas, **BLACKOUT** kills the output. |
 | **Mirror** | Off, left/right, up/down, quad (both), radial 6, radial 8 (always visible under the tempo). Guides are drawn on the preview only. |
-| **On release** | Set **per effect**: **FADE** (fades out over the chosen time after you lift your fingers) or **SNAP** (off instantly). Switching effect crossfades: the old effect fades out (time in *SETTINGS → LOOK*). |
+| **On release** | Set **per effect**: **FADE** (the effect keeps going where your fingers were lifted and the image fades out over the chosen time) or **SNAP** (off instantly). Switching effect crossfades: the old effect fades out (time in *SETTINGS → LOOK*). |
 | **Effect settings** | Sliders for the current effect (size, trail, speed, glow, strobe rate…) and a reset button. |
 | **New in 0.5** | **Ripples** (water surface, drops on the beat), **Ribbons** (glowing strands following the fingers), **Shapes** (neon polygons / stars popping on the beat), **Tunnel** (full-screen tunnel, vanishing point under the finger), **Lightning** (arcs between fingers), **Plexus** (connected points), **Fireworks** (rockets bursting at the finger), **Starfield** (hyperspace streaks), **Spectrum** (audio equaliser: circle, bars or wave), **LED grid** (LED-wall tiles: trail, rings, sparkle). Strobe gains **Shockwave**, **Wipe**, **Blinder** and **Blocks**. |
 | **Lasers** | Laser-show modes: **FAN** (fan of beams from the finger), **AIM** (projectors along the bottom converge on your finger), **TUNNEL** (rings on the beat), **WAVE**, **SCAN**, **WEB**. *Swing* sweeps on the beat, *Chase* makes beams blink in sequence / alternate / random. |

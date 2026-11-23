@@ -60,7 +60,7 @@ void CueEditSheet(App& a) {
   std::snprintf(nb, sizeof(nb), "No. %s##cuenum", cueNumText(c.number).c_str());
   float numW = 150 * s;
   if (ImGui::Button(nb, ImVec2(numW, 48 * s))) {
-    OpenKeyboard("cuenum", cueNumText(c.number), "Cue number (for example 3 or 2.5)");
+    OpenKeyboard("cuenum", cueNumText(c.number), "Cue number (for example 3 or 2.5)", true);
     g_sheetReturn = true;
   }
   ImGui::SameLine();

@@ -31,7 +31,7 @@ void SwatchLabel(ImVec2 p, ImVec4 col, const char* text);
 // On-screen keyboard (touch PCs often have no keyboard). One shared keyboard, drawn by KeyboardFrame()
 // at the end of the UI frame. OpenKeyboard() asks for text; KeyboardResult(id) returns true once, with
 // the text, when the user presses OK for that request.
-void OpenKeyboard(const char* id, const std::string& initial, const char* title);
+void OpenKeyboard(const char* id, const std::string& initial, const char* title, bool numeric = false);
 bool KeyboardResult(const char* id, std::string& out);
 bool KeyboardIsOpen();
 void KeyboardFrame(App& a);

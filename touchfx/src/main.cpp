@@ -975,6 +975,18 @@ int main(int argc, char** argv) {
     c.live = a.live;
     c.held = a.held;
     c.touching = touching;
+    if (a.fading && !a.held.empty()) {
+      // Release fade: the fingers stay "down" where they were lifted (their motion slowing to a stop), so
+      // effects that only draw while touched keep their image alive and the fade lasts the full time.
+      float k = std::exp(-dt * 2.5f);
+      for (Emitter& e : a.held) {
+        e.vel = e.vel * k;
+        e.speed *= k;
+      }
+      c.held = a.held;
+      c.live = a.held;
+      c.touching = true;
+    }
     c.gain = a.gain;
     c.fadeMul = fadeMul;
     PostSettings post = look.post;
