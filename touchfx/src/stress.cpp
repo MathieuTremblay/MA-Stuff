@@ -65,6 +65,7 @@ struct Stress {
   double fpsMin = 1e9, fpsSum = 0;
   int fpsSamples = 0;
   std::map<std::string, int> actions;
+  std::map<std::string, std::pair<double, double>> memByRes;  // first / last memory seen at each resolution
   int fuzzFiles = 0, fuzzLoaded = 0, fuzzRejected = 0;
   int roundTrips = 0, roundTripMismatch = 0;
   std::vector<std::string> notes;
@@ -433,6 +434,10 @@ void sample(App& a) {
     g.fpsMin = std::min(g.fpsMin, fps);
     g.fpsSum += fps;
     ++g.fpsSamples;
+    std::string res = std::to_string(a.out.w) + "x" + std::to_string(a.out.h);
+    auto it = g.memByRes.find(res);
+    if (it == g.memByRes.end()) g.memByRes[res] = {mem, mem};
+    else it->second.second = mem;
   }
   g.memEnd = mem;
   g.texEnd = tex;
@@ -566,7 +571,9 @@ void stressFinish(App& a) {
 #else
   if (g.udp >= 0) close(g.udp);
 #endif
-  double growth = g.memStart >= 0 ? g.memEnd - g.memStart : 0;
+  // memory depends on the output resolution: compare the first and last measurement at each resolution
+  double growth = 0;
+  for (auto& kv : g.memByRes) growth = std::max(growth, kv.second.second - kv.second.first);
   int texGrowth = g.texStart >= 0 ? g.texEnd - g.texStart : 0;
   bool warnMem = growth > 100.0, warnTex = texGrowth > 8, fail = g.roundTripMismatch > 0;
   std::ostringstream o;
@@ -584,7 +591,9 @@ void stressFinish(App& a) {
   std::snprintf(b, sizeof(b), "Slowest frame       %.0f ms (frames over 100 ms: %llu)\n", g.worstFrame * 1000.0,
                 (unsigned long long)g.hitches);
   o << b;
-  std::snprintf(b, sizeof(b), "Memory              %.0f MB after the first minute, %.0f MB at the end, %.0f MB max (%+.0f MB)%s\n",
+  std::snprintf(b, sizeof(b),
+                "Memory              %.0f MB after the first minute, %.0f MB at the end, %.0f MB max; growth at the "
+                "same resolution %+.0f MB%s\n",
                 g.memStart, g.memEnd, g.memMax, growth, warnMem ? "  <- WARNING: keeps growing" : "");
   o << b;
   std::snprintf(b, sizeof(b), "GPU buffers         %d after the first minute, %d at the end, %d max%s\n", g.texStart, g.texEnd,
