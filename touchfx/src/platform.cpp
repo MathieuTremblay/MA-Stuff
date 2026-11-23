@@ -7,6 +7,11 @@
 #include <propsys.h>
 #include <shellapi.h>
 #include <shobjidl.h>
+#include <shlobj.h>
+#include <cstdio>
+#include <ctime>
+#include <string>
+#include "log.hpp"
 
 // System.EdgeGesture.DisableTouchWhenFullscreen
 static const PROPERTYKEY kEdgeGestureDisable = {
@@ -92,6 +97,73 @@ void platformOpenTouchSettings() {
 
 bool platformHasSystemGestures() { return true; }
 
+static std::string toUtf8(const wchar_t* w) {
+  int n = WideCharToMultiByte(CP_UTF8, 0, w, -1, nullptr, 0, nullptr, nullptr);
+  std::string s(n > 0 ? n - 1 : 0, '\0');
+  if (n > 0) WideCharToMultiByte(CP_UTF8, 0, w, -1, &s[0], n, nullptr, nullptr);
+  return s;
+}
+static std::wstring toWide(const std::string& s) {
+  int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, nullptr, 0);
+  std::wstring w(n > 0 ? n - 1 : 0, L'\0');
+  if (n > 0) MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, &w[0], n);
+  return w;
+}
+
+std::string platformDocumentsDir() {
+  wchar_t path[MAX_PATH];
+  if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_PERSONAL | CSIDL_FLAG_CREATE, nullptr, 0, path))) return toUtf8(path);
+  return ".";
+}
+
+void platformOpenFolder(const std::string& path) {
+  ShellExecuteW(nullptr, L"open", toWide(path).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+}
+
+void platformPreventSleep(bool on) {
+  SetThreadExecutionState(on ? (ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED) : ES_CONTINUOUS);
+}
+
+// ---- crash dumps ----
+static std::wstring g_crashDir;
+typedef BOOL(WINAPI* MiniDumpWriteDumpFn)(HANDLE, DWORD, HANDLE, int, void*, void*, void*);
+struct MiniDumpExceptionInfo {
+  DWORD ThreadId;
+  EXCEPTION_POINTERS* ExceptionPointers;
+  BOOL ClientPointers;
+};
+
+static LONG WINAPI crashFilter(EXCEPTION_POINTERS* ep) {
+  logLine("CRASH: exception 0x%08lx at %p", ep->ExceptionRecord->ExceptionCode, ep->ExceptionRecord->ExceptionAddress);
+  logFlush();
+  if (HMODULE dbg = LoadLibraryW(L"dbghelp.dll")) {
+    auto write = (MiniDumpWriteDumpFn)(void*)GetProcAddress(dbg, "MiniDumpWriteDump");
+    if (write) {
+      wchar_t name[64];
+      std::time_t t = std::time(nullptr);
+      std::tm tm = *std::localtime(&t);
+      swprintf(name, 64, L"\\crash-%04d%02d%02d-%02d%02d%02d.dmp", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour,
+               tm.tm_min, tm.tm_sec);
+      std::wstring path = g_crashDir + name;
+      HANDLE f = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+      if (f != INVALID_HANDLE_VALUE) {
+        MiniDumpExceptionInfo info{GetCurrentThreadId(), ep, FALSE};
+        const int kMiniDumpWithIndirectlyReferencedMemory = 0x40;
+        write(GetCurrentProcess(), GetCurrentProcessId(), f, kMiniDumpWithIndirectlyReferencedMemory, &info, nullptr,
+              nullptr);
+        CloseHandle(f);
+      }
+    }
+  }
+  return EXCEPTION_CONTINUE_SEARCH;
+}
+
+void platformInstallCrashHandler(const std::string& dir) {
+  g_crashDir = toWide(dir);
+  while (!g_crashDir.empty() && (g_crashDir.back() == L'\\' || g_crashDir.back() == L'/')) g_crashDir.pop_back();
+  SetUnhandledExceptionFilter(crashFilter);
+}
+
 // The classic Win32 way: drop the frame and cover the monitor; restore the saved placement on exit.
 static WINDOWPLACEMENT g_placement = {sizeof(WINDOWPLACEMENT)};
 static LONG g_style = 0;
@@ -128,5 +200,29 @@ void platformRestoreSystemGestures(int) {}
 void platformOpenTouchSettings() {}
 bool platformHasSystemGestures() { return false; }
 bool platformSetFullscreen(SDL_Window*, bool) { return false; }
+
+#include <csignal>
+#include <cstdlib>
+#include "log.hpp"
+std::string platformDocumentsDir() {
+  const char* h = std::getenv("HOME");
+  return h ? std::string(h) + "/Documents" : std::string(".");
+}
+void platformOpenFolder(const std::string& path) {
+  std::string cmd = "xdg-open \"" + path + "\" >/dev/null 2>&1 &";
+  int r = std::system(cmd.c_str());
+  (void)r;
+}
+void platformPreventSleep(bool) {}
+static void crashSignal(int sig) {
+  logLine("CRASH: signal %d", sig);
+  logFlush();
+  std::signal(sig, SIG_DFL);
+  std::raise(sig);
+}
+void platformInstallCrashHandler(const std::string&) {
+  std::signal(SIGSEGV, crashSignal);
+  std::signal(SIGABRT, crashSignal);
+}
 
 #endif

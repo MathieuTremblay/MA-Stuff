@@ -159,7 +159,21 @@ struct Look {
 
 struct Scene {
   bool used = false;
+  std::string name;  // shown on the scene button ("" = effect name)
   Look look;
+};
+
+enum CueFollow { FOLLOW_NONE, FOLLOW_SECONDS, FOLLOW_BARS, FOLLOW_COUNT };
+struct Cue {
+  std::string name;
+  Look look;            // the full look (BPM is never recalled)
+  float fade = 1.0f;    // seconds
+  int follow = FOLLOW_NONE;
+  float followValue = 4.f;  // seconds or bars
+};
+struct CueList {  // one per song
+  std::string name = "Song";
+  std::vector<Cue> cues;
 };
 
 struct OutputSettings {
@@ -216,6 +230,8 @@ struct AppState {
   Look look;
   std::array<Palette, kNumPalettes> palettes;
   std::array<Scene, kNumScenes> scenes;
+  std::vector<CueList> cueLists;  // songs, each with its own cues
+  int activeList = 0;
   OutputSettings output;
   ExternalSettings external;
   LayoutSettings layout;
@@ -227,6 +243,8 @@ struct AppState {
   int gestureRestore = -1;    // original Windows value to put back (-1 = nothing to restore)
   bool showTouches = true;
   int settingsTab = 0;
+  bool showMode = false;  // locks settings and editing during a show
+  std::string lastShow;   // name of the last opened show (highlighted in the launcher)
   float uiScale = 1.0f;  // multiplier on top of the monitor DPI scale
   bool fullscreen = false;
   int tab = 0;
@@ -235,6 +253,17 @@ struct AppState {
 Palette defaultPalette(int i);
 AppState defaultState();
 void sanitize(AppState& s);
-std::string serializeState(const AppState& s);
-bool loadState(const std::string& path, AppState& s);
+// The show file holds the creative data; settings.json holds what belongs to this PC.
+std::string serializeShow(const AppState& s);
+std::string serializeMachine(const AppState& s);
+bool loadShow(const std::string& path, AppState& s);     // replaces the show part of s
+bool loadMachine(const std::string& path, AppState& s);  // replaces the PC part of s
+bool fileHasShowData(const std::string& path);           // settings.json from before show files
+bool loadState(const std::string& path, AppState& s);    // everything (old settings.json)
 bool saveStateText(const std::string& path, const std::string& text);
+
+// Look helpers for the cue engine
+std::string lookToText(const Look& l);
+bool lookFromText(const std::string& text, Look& l);
+std::string lookBlendText(const std::string& from, const std::string& to, float t);  // floats glide, rest = 'to'
+std::string lookFingerprint(const Look& l);  // look without BPM, for comparisons

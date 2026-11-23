@@ -41,7 +41,9 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Look, effect, fluid, particles, 
                                                 spectrum, grid, post,
                                                 mirror, releaseFx, fadeFx, useCustom, custom,
                                                 release, fadeTime, colorMode, palette, brightness, bpm, speedMult)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene, used, look)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene, used, name, look)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Cue, name, look, fade, follow, followValue)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(CueList, name, cues)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(OutputSettings, width, height, fps, ndiEnabled, ndiName, spout, spoutName, alpha,
                                                 premultiplied)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(DmxSettings, protocol, sacnUniverse, artnetUniverse, address, mode, lock)
@@ -122,8 +124,17 @@ void sanitize(AppState& s) {
   if (s.output.fps != 30 && s.output.fps != 60) s.output.fps = 60;
   if (s.output.ndiName.empty()) s.output.ndiName = "TouchFX";
   clampRef(s.uiScale, 0.5f, 3.f);
-  clampRef(s.tab, 0, 1);
+  clampRef(s.tab, 0, 2);  // 0 live, 1 settings, 2 cues
   clampRef(s.settingsTab, 0, 6);
+  if (s.cueLists.empty()) s.cueLists.push_back(CueList{"Song 1", {}});
+  for (CueList& cl : s.cueLists)
+    for (Cue& c : cl.cues) {
+      sanitizeLook(c.look);
+      clampRef(c.fade, 0.f, 30.f);
+      clampRef(c.follow, 0, FOLLOW_COUNT - 1);
+      clampRef(c.followValue, 0.1f, 600.f);
+    }
+  clampRef(s.activeList, 0, int(s.cueLists.size()) - 1);
   clampRef(s.effectFade, 0.f, 3.f);
   if (s.output.spoutName.empty()) s.output.spoutName = "TouchFX";
   clampRef(s.dmx.protocol, 0, 2);
@@ -138,17 +149,27 @@ void sanitize(AppState& s) {
   clampRef(s.layout.panelWidth, 0.6f, 1.8f);
 }
 
-std::string serializeState(const AppState& s) {
+std::string serializeShow(const AppState& s) {
   json j;
-  j["version"] = 1;
+  j["touchfxShow"] = 1;
   j["look"] = s.look;
   j["palettes"] = s.palettes;
   j["scenes"] = s.scenes;
+  j["cueLists"] = s.cueLists;
+  j["activeList"] = s.activeList;
+  j["dmx"] = s.dmx;
+  return j.dump(1);
+}
+
+std::string serializeMachine(const AppState& s) {
+  json j;
+  j["version"] = 2;
   j["output"] = s.output;
   j["external"] = s.external;
   j["layout"] = s.layout;
   j["audio"] = s.audio;
-  j["dmx"] = s.dmx;
+  j["showMode"] = s.showMode;
+  j["lastShow"] = s.lastShow;
   j["blockGestures"] = s.blockGestures;
   j["gestureRestore"] = s.gestureRestore;
   j["maxTouches"] = s.maxTouches;
@@ -171,6 +192,98 @@ static void readArray(const json& j, const char* key, std::array<T, N>& out) {
     } catch (...) {
     }
   }
+}
+
+static void migrateLook(const json& lj, Look& l) {
+  // Files from before per-effect release: every effect starts from the old global setting.
+  if (!lj.contains("releaseFx")) l.releaseFx.assign(FX_COUNT, l.release);
+  if (!lj.contains("fadeFx")) l.fadeFx.assign(FX_COUNT, l.fadeTime);
+}
+
+static void readShowPart(const json& j, AppState& d) {
+  if (j.contains("look")) {
+    d.look = j["look"].get<Look>();
+    migrateLook(j["look"], d.look);
+  }
+  readArray(j, "palettes", d.palettes);
+  readArray(j, "scenes", d.scenes);
+  if (j.contains("scenes") && j["scenes"].is_array())
+    for (size_t i = 0; i < d.scenes.size() && i < j["scenes"].size(); ++i)
+      if (j["scenes"][i].contains("look")) migrateLook(j["scenes"][i]["look"], d.scenes[i].look);
+  if (j.contains("cueLists")) d.cueLists = j["cueLists"].get<std::vector<CueList>>();
+  d.activeList = j.value("activeList", 0);
+  if (j.contains("dmx")) d.dmx = j["dmx"].get<DmxSettings>();
+}
+
+static void readMachinePart(const json& j, AppState& d) {
+  if (j.contains("output")) d.output = j["output"].get<OutputSettings>();
+  if (j.contains("external")) d.external = j["external"].get<ExternalSettings>();
+  if (j.contains("layout")) d.layout = j["layout"].get<LayoutSettings>();
+  if (j.contains("audio")) d.audio = j["audio"].get<AudioSettings>();
+  d.showMode = j.value("showMode", d.showMode);
+  d.lastShow = j.value("lastShow", d.lastShow);
+  d.blockGestures = j.value("blockGestures", d.blockGestures);
+  d.gestureRestore = j.value("gestureRestore", d.gestureRestore);
+  d.maxTouches = j.value("maxTouches", d.maxTouches);
+  d.effectFade = j.value("effectFade", d.effectFade);
+  d.showTouches = j.value("showTouches", d.showTouches);
+  d.settingsTab = j.value("settingsTab", d.settingsTab);
+  d.uiScale = j.value("uiScale", d.uiScale);
+  d.fullscreen = j.value("fullscreen", d.fullscreen);
+  d.tab = j.value("tab", d.tab);
+}
+
+static bool readJson(const std::string& path, json& j) {
+  std::ifstream f(path, std::ios::binary);
+  if (!f) return false;
+  try {
+    j = json::parse(f);
+    return true;
+  } catch (const std::exception& e) {
+    std::fprintf(stderr, "Could not read %s: %s\n", path.c_str(), e.what());
+    return false;
+  }
+}
+
+bool loadShow(const std::string& path, AppState& s) {
+  json j;
+  if (!readJson(path, j)) return false;
+  try {
+    AppState d = s;
+    AppState def = defaultState();
+    d.look = def.look;
+    d.palettes = def.palettes;
+    d.scenes = def.scenes;
+    d.cueLists.clear();
+    d.dmx = def.dmx;
+    readShowPart(j, d);
+    sanitize(d);
+    s = d;
+    return true;
+  } catch (const std::exception& e) {
+    std::fprintf(stderr, "Bad show file %s: %s\n", path.c_str(), e.what());
+    return false;
+  }
+}
+
+bool loadMachine(const std::string& path, AppState& s) {
+  json j;
+  if (!readJson(path, j)) return false;
+  try {
+    AppState d = s;
+    readMachinePart(j, d);
+    sanitize(d);
+    s = d;
+    return true;
+  } catch (const std::exception& e) {
+    std::fprintf(stderr, "Bad settings file %s: %s\n", path.c_str(), e.what());
+    return false;
+  }
+}
+
+bool fileHasShowData(const std::string& path) {
+  json j;
+  return readJson(path, j) && (j.contains("look") || j.contains("scenes"));
 }
 
 bool loadState(const std::string& path, AppState& s) {
@@ -214,6 +327,49 @@ bool loadState(const std::string& path, AppState& s) {
     std::fprintf(stderr, "Could not read settings %s: %s\n", path.c_str(), e.what());
     return false;
   }
+}
+
+static json lerpJson(const json& a, const json& b, float t) {
+  if (a.is_object() && b.is_object()) {
+    json o = b;
+    for (auto it = b.begin(); it != b.end(); ++it)
+      if (a.contains(it.key())) o[it.key()] = lerpJson(a[it.key()], it.value(), t);
+    return o;
+  }
+  if (a.is_array() && b.is_array() && a.size() == b.size()) {
+    json o = json::array();
+    for (size_t i = 0; i < b.size(); ++i) o.push_back(lerpJson(a[i], b[i], t));
+    return o;
+  }
+  if (a.is_number_float() && b.is_number_float()) return a.get<double>() + (b.get<double>() - a.get<double>()) * t;
+  return b;
+}
+
+std::string lookToText(const Look& l) { return json(l).dump(); }
+
+bool lookFromText(const std::string& text, Look& l) {
+  try {
+    Look r = json::parse(text).get<Look>();
+    sanitizeLook(r);
+    l = r;
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
+std::string lookBlendText(const std::string& from, const std::string& to, float t) {
+  try {
+    return lerpJson(json::parse(from), json::parse(to), t).dump();
+  } catch (...) {
+    return to;
+  }
+}
+
+std::string lookFingerprint(const Look& l) {
+  json j = l;
+  j.erase("bpm");
+  return j.dump();
 }
 
 bool saveStateText(const std::string& path, const std::string& text) {

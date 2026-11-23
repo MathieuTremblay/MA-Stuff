@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "audio.hpp"
+#include "cues.hpp"
 #include "dmx.hpp"
 #include "sysstats.hpp"
 #include "effects.hpp"
@@ -64,6 +65,7 @@ struct App {
   Target scene;  // HDR render of the current effect
   Target scenePrev;  // the previous effect while it fades out after a switch
   int prevFx = -1;
+  float xfadeOverride = -1;  // crossfade time for the current switch (cue fade), -1 = settings value
   float xfade = 0, prevGain = 1;
   std::vector<Emitter> prevHeld;
   SpoutOut spout;
@@ -143,6 +145,16 @@ struct App {
   char lastKey[32] = "-";
   bool selftest = false;
 
+  // Show files
+  bool showLoaded = false;
+  std::string showName;
+  std::string lastSavedShow, lastSavedMachine;
+  double thumbTimer = 0;
+  CuePlayer cue;
+  bool confirmQuit = false, quitNow = false;
+  float unlockHold = 0;  // seconds the SHOW MODE button has been held
+  std::string launcherMessage;
+
   void clearEffect();
   bool touching() const { return !live.empty(); }
   void recallScene(int i);
@@ -152,6 +164,10 @@ enum SettingsTab { ST_COLOURS, ST_LOOK, ST_OUTPUT, ST_SCREEN, ST_AUDIO, ST_DMX, 
 
 void drawUI(App& a);
 void setFullscreen(App& a, bool on);
+bool openShow(App& a, const std::string& name);
+bool newShow(App& a, const std::string& name);
+void closeShow(App& a);  // save and go back to the launcher
+void saveShowNow(App& a);
 void applyDmx(App& a, float dt);
 int dmxFootprint(int mode);
 void rebuildFonts(App& a, float scale);

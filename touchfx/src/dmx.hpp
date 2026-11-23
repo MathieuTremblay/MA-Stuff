@@ -4,6 +4,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 
 enum DmxProtocol { DMXP_OFF, DMXP_SACN, DMXP_ARTNET, DMXP_COUNT };
 
@@ -23,6 +24,9 @@ class DmxInput {
   double secondsSinceData() const;  // large if never received
   int packetsPerSecond() const { return pps_.load(); }
   std::string sourceInfo();         // "192.168.1.10 (grandMA3)"
+  // Art-Net: the console that last polled TouchFX (it is listed as a node there). Empty if none yet.
+  std::string polledBy();
+  double secondsSincePoll() const;
 
  private:
   void threadMain();
@@ -43,4 +47,13 @@ class DmxInput {
   int sacnPriority_ = -1;
   int64_t sacnPriorityMs_ = 0;
   intptr_t sock_ = -1;
+  void replyArtPoll(uint32_t toIp);
+  std::string pollerName_;
+  uint32_t pollerIp_ = 0;
+  std::atomic<int64_t> lastPollMs_{-1};
+  struct NodeName {
+    uint32_t ip;
+    std::string name;
+  };
+  std::vector<NodeName> nodeNames_;  // names from other nodes' ArtPollReply (e.g. the console)
 };

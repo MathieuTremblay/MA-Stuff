@@ -156,6 +156,79 @@ double DmxInput::secondsSinceData() const {
   return l < 0 ? 1e9 : (nowMs() - l) / 1000.0;
 }
 
+std::string DmxInput::polledBy() {
+  std::lock_guard<std::mutex> lk(mtx_);
+  if (!pollerIp_) return "";
+  return ipStr(pollerIp_) + (pollerName_.empty() ? "" : " (" + pollerName_ + ")");
+}
+
+double DmxInput::secondsSincePoll() const {
+  int64_t l = lastPollMs_.load();
+  return l < 0 ? 1e9 : (nowMs() - l) / 1000.0;
+}
+
+// Our IP address as seen from 'toIp' (the local address the OS would use to reach it).
+static uint32_t localIpFor(uint32_t toIp) {
+  intptr_t s = intptr_t(socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
+  if (s < 0) return 0;
+  sockaddr_in a{};
+  a.sin_family = AF_INET;
+  a.sin_addr.s_addr = htonl(toIp);
+  a.sin_port = htons(kArtnetPort);
+  uint32_t ip = 0;
+  if (connect(s, reinterpret_cast<sockaddr*>(&a), sizeof(a)) == 0) {
+    sockaddr_in me{};
+    socklen_t l = sizeof(me);
+    if (getsockname(s, reinterpret_cast<sockaddr*>(&me), &l) == 0) ip = ntohl(me.sin_addr.s_addr);
+  }
+  CLOSESOCK(s);
+  return ip;
+}
+
+// ArtPollReply (Art-Net 4): announces "TouchFX" as a node with one output port on our universe.
+void DmxInput::replyArtPoll(uint32_t toIp) {
+  uint8_t r[239] = {};
+  std::memcpy(r, "Art-Net\0", 8);
+  r[8] = 0x00;
+  r[9] = 0x21;  // OpPollReply 0x2100, little endian
+  uint32_t me = localIpFor(toIp);
+  r[10] = (me >> 24) & 255;
+  r[11] = (me >> 16) & 255;
+  r[12] = (me >> 8) & 255;
+  r[13] = me & 255;
+  r[14] = 0x36;
+  r[15] = 0x19;  // port 6454, little endian
+  r[16] = 0;
+  r[17] = 7;     // firmware version
+  int pa = universe_;
+  r[18] = (pa >> 8) & 0x7F;  // NetSwitch
+  r[19] = (pa >> 4) & 0x0F;  // SubSwitch
+  r[20] = 0x00;
+  r[21] = 0xFF;  // OEM unknown
+  r[23] = 0xD0;  // Status1: indicators normal, addresses set from the front panel (TouchFX settings)
+  std::snprintf(reinterpret_cast<char*>(r + 26), 18, "TouchFX");
+  std::snprintf(reinterpret_cast<char*>(r + 44), 64, "TouchFX touch visuals");
+  bool receiving = secondsSinceData() < 2.0;
+  std::snprintf(reinterpret_cast<char*>(r + 108), 64, "#0001 [%04d] %s", pps_.load() % 10000,
+                receiving ? "Receiving DMX" : "Waiting for DMX");
+  r[173] = 1;              // NumPorts
+  r[174] = 0x80;           // port 1 can output DMX512 from the Art-Net network
+  r[182] = receiving ? 0x80 : 0x00;  // GoodOutputA: data being received
+  r[190] = pa & 0x0F;      // SwOut
+  r[200] = 0x00;           // StNode
+  r[207] = r[10];
+  r[208] = r[11];
+  r[209] = r[12];
+  r[210] = r[13];          // BindIp
+  r[211] = 1;              // BindIndex
+  r[212] = 0x08;           // Status2: 15-bit port addresses
+  sockaddr_in to{};
+  to.sin_family = AF_INET;
+  to.sin_addr.s_addr = htonl(toIp);
+  to.sin_port = htons(kArtnetPort);
+  sendto(sock_, reinterpret_cast<const char*>(r), sizeof(r), 0, reinterpret_cast<sockaddr*>(&to), sizeof(to));
+}
+
 std::string DmxInput::sourceInfo() {
   std::lock_guard<std::mutex> lk(mtx_);
   return source_;
@@ -214,9 +287,34 @@ void DmxInput::handlePacket(const uint8_t* p, int n, uint32_t fromIp) {
     std::memcpy(src, p + 44, 64);
     name = src;
   } else {
-    if (n < 18 || std::memcmp(p, "Art-Net\0", 8) != 0) return;
+    if (n < 12 || std::memcmp(p, "Art-Net\0", 8) != 0) return;
     int op = p[8] | (p[9] << 8);
-    if (op != 0x5000) return;  // ArtDmx only
+    if (op == 0x2000) {  // ArtPoll: a console is looking for nodes -> answer, and remember who asked
+      replyArtPoll(fromIp);
+      std::lock_guard<std::mutex> lk(mtx_);
+      pollerIp_ = fromIp;
+      pollerName_.clear();
+      for (const NodeName& nn : nodeNames_)
+        if (nn.ip == fromIp) pollerName_ = nn.name;
+      lastPollMs_ = nowMs();
+      return;
+    }
+    if (op == 0x2100 && n >= 108) {  // another node's ArtPollReply: learn its name (e.g. "grandMA3")
+      char nm[65] = {};
+      std::memcpy(nm, p + 44, 64);
+      if (!nm[0]) std::memcpy(nm, p + 26, 18);
+      std::lock_guard<std::mutex> lk(mtx_);
+      bool found = false;
+      for (NodeName& nn : nodeNames_)
+        if (nn.ip == fromIp) {
+          nn.name = nm;
+          found = true;
+        }
+      if (!found && nodeNames_.size() < 64) nodeNames_.push_back({fromIp, nm});
+      if (fromIp == pollerIp_) pollerName_ = nm;
+      return;
+    }
+    if (op != 0x5000 || n < 18) return;  // ArtDmx
     int portAddress = ((p[15] & 0x7F) << 8) | p[14];
     if (portAddress != universe_) return;
     int l = (p[16] << 8) | p[17];

@@ -11,7 +11,9 @@
 #include "imgui.h"
 #include "imgui_impl_opengl3.h"
 #include "imgui_impl_sdl2.h"
+#include "log.hpp"
 #include "platform.hpp"
+#include "show.hpp"
 
 void App::clearEffect() {
   if (curFx >= 0) fx[curFx]->clear();
@@ -69,13 +71,15 @@ void switchEffect(App& a, int newFx) {
   bool resume = newFx == a.prevFx;  // back to the effect that is still fading out: keep what it shows
   if (a.prevFx >= 0 && !resume) a.fx[a.prevFx]->clear();
   a.prevFx = -1;
-  if (old >= 0 && a.st.effectFade > 0.01f) {
+  float fadeTime = a.xfadeOverride >= 0 ? a.xfadeOverride : a.st.effectFade;
+  if (old >= 0 && fadeTime > 0.01f) {
     a.prevFx = old;
     a.xfade = 0;
     a.prevHeld = a.touching() ? a.live : a.held;
     a.prevGain = a.gain;
   } else if (old >= 0) {
     a.fx[old]->clear();
+    a.xfadeOverride = -1;
   }
   a.curFx = newFx;
   if (!resume) a.fx[newFx]->clear();
@@ -85,13 +89,95 @@ void switchEffect(App& a, int newFx) {
 
 void App::recallScene(int i) {
   if (i < 0 || i >= kNumScenes || !st.scenes[i].used) return;
+  float bpm = st.look.bpm;  // scenes never change the tempo
   st.look = st.scenes[i].look;
+  st.look.bpm = bpm;
   lastScene = i;
+}
+
+// ---- show files ----
+void saveShowNow(App& a) {
+  if (!a.showLoaded || a.selftest) return;
+  a.lastSavedShow = serializeShow(a.st);
+  saveStateText(showPath(a.showName), a.lastSavedShow);
+}
+
+static void resetForShow(App& a) {
+  for (auto& f : a.fx)
+    if (f) f->clear();
+  a.prevFx = -1;
+  a.xfadeOverride = -1;
+  a.fading = false;
+  a.held.clear();
+  a.lastScene = -1;
+  a.dmxPrimed = false;
+  a.dmxRunProtocol = -1;  // restart DMX with the show's patch
+  a.cue = CuePlayer();
+  cueSelectList(a, a.st.activeList);
+}
+
+bool openShow(App& a, const std::string& name) {
+  if (!loadShow(showPath(name), a.st)) {
+    a.launcherMessage = "Could not open \"" + name + "\" (file damaged?).";
+    logLine("Could not open show %s", name.c_str());
+    return false;
+  }
+  a.showName = name;
+  a.st.lastShow = name;
+  a.showLoaded = true;
+  a.lastSavedShow = serializeShow(a.st);
+  a.launcherMessage.clear();
+  resetForShow(a);
+  logLine("Opened show \"%s\"", name.c_str());
+  return true;
+}
+
+bool newShow(App& a, const std::string& name) {
+  AppState d = defaultState();
+  AppState s = a.st;  // keep this PC's settings, fresh show data
+  s.look = d.look;
+  s.palettes = d.palettes;
+  s.scenes = d.scenes;
+  s.cueLists = d.cueLists;
+  s.activeList = 0;
+  s.dmx = d.dmx;
+  std::string n = uniqueShowName(name);
+  if (!saveStateText(showPath(n), serializeShow(s))) {
+    a.launcherMessage = "Could not create the show (is the Documents folder writable?).";
+    return false;
+  }
+  return openShow(a, n);
+}
+
+void closeShow(App& a) {
+  if (!a.showLoaded) return;
+  saveShowNow(a);
+  logLine("Closed show \"%s\"", a.showName.c_str());
+  a.showLoaded = false;
+  a.st.showMode = false;
 }
 
 namespace {
 
 constexpr int64_t kMouseTouchId = -1000;
+
+// Small picture of the output for the launcher list.
+void saveThumbnail(App& a) {
+  if (!a.out.fbo) return;
+  static Target small;
+  if (!small.fbo) small.create(kThumbW, kThumbH, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE, GL_LINEAR);
+  glBindFramebuffer(GL_READ_FRAMEBUFFER, a.out.fbo);
+  glBindFramebuffer(GL_DRAW_FRAMEBUFFER, small.fbo);
+  glBlitFramebuffer(0, 0, a.out.w, a.out.h, 0, kThumbH, kThumbW, 0, GL_COLOR_BUFFER_BIT, GL_LINEAR);  // flipped
+  glBindFramebuffer(GL_READ_FRAMEBUFFER, small.fbo);
+  std::vector<uint8_t> rgba(size_t(kThumbW) * kThumbH * 4), rgb(size_t(kThumbW) * kThumbH * 3);
+  glPixelStorei(GL_PACK_ALIGNMENT, 1);
+  glReadPixels(0, 0, kThumbW, kThumbH, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  for (size_t i = 0; i < size_t(kThumbW) * kThumbH; ++i)
+    for (int c = 0; c < 3; ++c) rgb[i * 3 + c] = rgba[i * 4 + c];
+  saveThumb(a.showName, rgb);
+}
 std::string g_captureExternal;  // selftest: save the external window on its next frame
 bool writePpm(const std::string& path, int w, int h);
 
@@ -100,7 +186,7 @@ Vec2 toUv(const App& a, float x, float y) {
 }
 
 void touchDown(App& a, int64_t id, float x, float y) {
-  if (!a.canvas.contains(x, y)) return;
+  if (!a.showLoaded || !a.canvas.contains(x, y)) return;
   int maxT = std::clamp(a.st.maxTouches, 1, kMaxTouches);
   for (int i = 0; i < kMaxTouches; ++i)
     if (a.touches[i].active && a.touches[i].id == id) return;
@@ -137,10 +223,16 @@ void handleEvent(App& a, const SDL_Event& ev, bool& running) {
   ImGuiIO& io = ImGui::GetIO();
   Uint32 mainId = SDL_GetWindowID(a.window);
   switch (ev.type) {
-    case SDL_QUIT: running = false; break;
+    case SDL_QUIT:
+      if (a.st.showMode && a.showLoaded) a.confirmQuit = true;  // show mode: ask before quitting
+      else running = false;
+      break;
     case SDL_WINDOWEVENT:
       if (ev.window.event == SDL_WINDOWEVENT_CLOSE) {
-        if (ev.window.windowID == mainId) running = false;
+        if (ev.window.windowID == mainId) {
+          if (a.st.showMode && a.showLoaded) a.confirmQuit = true;
+          else running = false;
+        }
         else if (a.extWindow && ev.window.windowID == SDL_GetWindowID(a.extWindow)) a.st.external.enabled = false;
       }
       break;
@@ -172,6 +264,19 @@ void handleEvent(App& a, const SDL_Event& ev, bool& running) {
       if (ev.key.keysym.scancode == SDL_SCANCODE_F11 ||
           ((ev.key.keysym.sym == SDLK_RETURN || ev.key.keysym.sym == SDLK_KP_ENTER) && (ev.key.keysym.mod & KMOD_ALT))) {
         setFullscreen(a, !a.isFullscreen);
+        break;
+      }
+      if (!a.showLoaded) {  // launcher: only fullscreen keys
+        if (ev.key.keysym.sym == SDLK_ESCAPE && a.isFullscreen) setFullscreen(a, false);
+        break;
+      }
+      if (ev.key.keysym.sym == SDLK_RETURN || ev.key.keysym.sym == SDLK_KP_ENTER) {
+        cueGo(a);  // Enter = GO
+        break;
+      }
+      if (a.st.showMode) {  // show mode: only tap tempo, GO and blackout from the keyboard
+        if (ev.key.keysym.sym == SDLK_SPACE) a.tempo.tap(a.time, a.st.look.bpm);
+        else if (ev.key.keysym.sym == SDLK_b) a.blackout = !a.blackout;
         break;
       }
       switch (ev.key.keysym.sym) {
@@ -391,7 +496,7 @@ void addEmitters(App& a, const std::vector<Mat2>& mats, float aspect, Vec2 pos, 
 // Audio auto-play: virtual fingers that wander over the canvas, pushed along by the music.
 void updateVirtualPoints(App& a, float dt, float aspect, const std::vector<Mat2>& mats) {
   const AudioSettings& as = a.st.audio;
-  a.vActive = as.enabled && as.autoPlay && a.af.active;
+  a.vActive = as.enabled && as.autoPlay && a.af.active && a.showLoaded;
   if (!a.vActive) return;
   float energy = 0.35f + a.af.level * 1.1f + a.af.pulse * 0.6f * as.reactivity;
   for (int k = 0; k < as.points; ++k) {
@@ -444,7 +549,7 @@ void buildEmitters(App& a, float dt) {
 void updateAudio(App& a, float dt) {
   AudioSettings& as = a.st.audio;
   // The AUDIO settings tab listens even when audio reactive is off, to check the input.
-  bool monitor = a.st.tab == 1 && a.st.settingsTab == ST_AUDIO;
+  bool monitor = a.showLoaded && a.st.tab == 1 && a.st.settingsTab == ST_AUDIO;
   if (!as.enabled && !monitor) {
     if (a.audio.isOpen()) a.audio.close();
     a.af = AudioFeatures();
@@ -492,7 +597,7 @@ const SelftestStep kSteps[] = {
 };
 constexpr int kStepFrames = 120;
 constexpr int kNumSteps = int(sizeof(kSteps) / sizeof(kSteps[0]));
-constexpr int kUiShots = 6;  // live (no strip), settings x4, live with panel left
+constexpr int kUiShots = 8;  // live (no strip), settings x4, panel left, cues, show mode
 
 void selftestTouches(App& a, int frame, int fingers) {
   float t = frame / 60.f;
@@ -548,18 +653,36 @@ int main(int argc, char** argv) {
     SDL_free(pref);
   }
   a.st = defaultState();
-  bool loaded = !a.selftest && !a.settingsPath.empty() && loadState(a.settingsPath, a.st);
-  a.lastSaved = serializeState(a.st);
-  if (!loaded && !a.selftest && !a.settingsPath.empty()) {
-    // Keep an unreadable settings file aside instead of silently overwriting it.
-    if (FILE* f = std::fopen(a.settingsPath.c_str(), "rb")) {
-      std::fclose(f);
-      std::string bad = a.settingsPath + ".bad";
-      std::remove(bad.c_str());
-      std::rename(a.settingsPath.c_str(), bad.c_str());
+  if (!a.selftest && !a.settingsPath.empty()) {
+    std::string dir = a.settingsPath.substr(0, a.settingsPath.size() - std::string("settings.json").size());
+    logInit(dir);
+    platformInstallCrashHandler(dir);
+    logLine("TouchFX %s starting", TOUCHFX_VERSION);
+    // Before show files, settings.json held everything: turn it into a first show.
+    if (listShows().empty() && fileHasShowData(a.settingsPath)) {
+      AppState old = defaultState();
+      if (loadState(a.settingsPath, old)) {
+        saveStateText(showPath("My Show"), serializeShow(old));
+        logLine("Converted the previous settings into the show \"My Show\"");
+      }
     }
-    saveStateText(a.settingsPath, a.lastSaved);
+    bool loaded = loadMachine(a.settingsPath, a.st);
+    if (!loaded) {
+      // Keep an unreadable settings file aside instead of silently overwriting it.
+      if (FILE* f = std::fopen(a.settingsPath.c_str(), "rb")) {
+        std::fclose(f);
+        std::string bad = a.settingsPath + ".bad";
+        std::remove(bad.c_str());
+        std::rename(a.settingsPath.c_str(), bad.c_str());
+      }
+    }
+    a.lastSavedMachine = serializeMachine(a.st);
+    saveStateText(a.settingsPath, a.lastSavedMachine);
+    if (logPreviousRunCrashed())
+      a.launcherMessage = "TouchFX closed unexpectedly last time. The log and crash report are in the logs folder.";
   }
+  platformPreventSleep(true);
+  if (a.selftest) a.showLoaded = true;  // the self-test runs without a show file
   std::snprintf(a.ndiNameEdit, sizeof(a.ndiNameEdit), "%s", a.st.output.ndiName.c_str());
   a.uiScaleEdit = a.st.uiScale;
   if (a.selftest) {
@@ -603,9 +726,9 @@ int main(int argc, char** argv) {
       a.st.gestureRestore = -1;
       a.gesturesBlocked = false;
     }
-    if (!a.settingsPath.empty()) {
-      a.lastSaved = serializeState(a.st);
-      saveStateText(a.settingsPath, a.lastSaved);  // save now so a crash can't lose the original value
+    if (!a.settingsPath.empty() && !a.selftest) {
+      a.lastSavedMachine = serializeMachine(a.st);
+      saveStateText(a.settingsPath, a.lastSavedMachine);  // save now so a crash can't lose the original value
     }
   };
   if (!a.selftest && a.st.blockGestures) setGestureBlock(true);
@@ -698,6 +821,35 @@ int main(int argc, char** argv) {
         static const int tabsShown[4] = {ST_LOOK, ST_AUDIO, ST_DMX, ST_SYSTEM};
         a.st.settingsTab = tabsShown[std::clamp(k - 1, 0, 3)];
         a.st.layout.panelLeft = k == 5;
+        if (k == 6) {  // cue list with cues, GO through them (including a same-effect fade)
+          a.st.tab = 2;
+          if (frame == fxFrames + 6 * 20) {
+            CueList& cl = a.st.cueLists[0];
+            cl.name = "01 Intro";
+            cl.cues.clear();
+            const int fxs[4] = {FX_FLUID, FX_LASERS, FX_LASERS, FX_SPARKLES};
+            const char* names[4] = {"Smoke intro", "First drop", "Wide fan", "Outro sparkle"};
+            for (int i = 0; i < 4; ++i) {
+              Cue c;
+              c.name = names[i];
+              c.look = a.st.look;
+              c.look.effect = fxs[i];
+              c.look.lasers.spread = i == 2 ? 1.f : 0.3f;
+              c.fade = 0.2f;
+              c.follow = i == 0 ? FOLLOW_BARS : FOLLOW_NONE;
+              cl.cues.push_back(c);
+            }
+            a.st.cueLists.push_back(CueList{"02 Main", {}});
+            cueSelectList(a, 0);
+            cueGo(a);
+          }
+          if (frame == fxFrames + 6 * 20 + 8) cueGo(a);
+          if (frame == fxFrames + 6 * 20 + 12) cueGo(a);  // same effect: values glide
+        }
+        if (k == 7) {  // show mode
+          a.st.tab = 0;
+          a.st.showMode = true;
+        }
         if (k == 0) {
           a.st.scenes[0].used = a.st.scenes[3].used = true;
           a.st.scenes[3].look.effect = FX_LASERS;
@@ -711,6 +863,9 @@ int main(int argc, char** argv) {
     ensureOutput(a);
     ensureExternal(a);
 
+    if (a.quitNow) running = false;
+    if (a.showLoaded) cueTick(a, dt);
+
     // ---- effect switching / clearing ----
     Look& look = a.st.look;
     if (look.effect != a.curFx) switchEffect(a, look.effect);
@@ -723,7 +878,7 @@ int main(int argc, char** argv) {
     a.tempo.advance(dt, look.bpm);
     if (!a.selftest && a.st.blockGestures != a.gesturesBlocked) setGestureBlock(a.st.blockGestures);
     updateAudio(a, dt);
-    applyDmx(a, dt);
+    if (a.showLoaded) applyDmx(a, dt);
     if (look.effect != a.curFx) switchEffect(a, look.effect);  // DMX may have changed the effect
     buildEmitters(a, dt);
     bool touching = !a.live.empty();
@@ -786,12 +941,13 @@ int main(int argc, char** argv) {
     a.fx[a.curFx]->frame(c, a.scene);
     // ---- crossfade: the previous effect fades out on top of the new one ----
     if (a.prevFx >= 0) {
-      float T = std::max(0.05f, a.st.effectFade);
+      float T = std::max(0.05f, a.xfadeOverride >= 0 ? a.xfadeOverride : a.st.effectFade);
       a.xfade += dt;
       float k = 1.f - a.xfade / T;
       if (k <= 0.f) {
         a.fx[a.prevFx]->clear();
         a.prevFx = -1;
+        a.xfadeOverride = -1;
       } else {
         FxCtx pc = c;
         pc.live.clear();
@@ -809,7 +965,7 @@ int main(int argc, char** argv) {
       if (a.dmxStrobeHz > 0 && a.dmxStrobePhase > 0.3) master = 0.f;  // shutter strobe
     }
     a.post.run(a.scene, a.out, post, a.st.output.alpha, a.st.output.premultiplied, master);
-    if (a.blackout || a.dmxBlackout) a.out.clear(0, 0, 0, a.st.output.alpha ? 0.f : 1.f);
+    if (a.blackout || a.dmxBlackout || !a.showLoaded) a.out.clear(0, 0, 0, a.st.output.alpha ? 0.f : 1.f);
 
     updateNdi(a, dt);
     if (a.st.output.spout) a.spout.send(a.st.output.spoutName, a.out.tex, a.out.w, a.out.h);
@@ -849,8 +1005,18 @@ int main(int argc, char** argv) {
     a.saveTimer += dt;
     if (a.saveTimer > 1.0 && !a.selftest && !a.settingsPath.empty()) {
       a.saveTimer = 0;
-      std::string text = serializeState(a.st);
-      if (text != a.lastSaved && saveStateText(a.settingsPath, text)) a.lastSaved = text;
+      std::string m = serializeMachine(a.st);
+      if (m != a.lastSavedMachine && saveStateText(a.settingsPath, m)) a.lastSavedMachine = m;
+      if (a.showLoaded) {
+        std::string s = serializeShow(a.st);
+        if (s != a.lastSavedShow && saveStateText(showPath(a.showName), s)) a.lastSavedShow = s;
+      }
+    }
+    // thumbnail of the look for the launcher
+    a.thumbTimer += dt;
+    if (a.showLoaded && !a.selftest && a.thumbTimer > 15.0) {
+      a.thumbTimer = 0;
+      saveThumbnail(a);
     }
   }
 
@@ -858,7 +1024,14 @@ int main(int argc, char** argv) {
     platformRestoreSystemGestures(a.st.gestureRestore);
     a.st.gestureRestore = -1;
   }
-  if (!a.selftest && !a.settingsPath.empty()) saveStateText(a.settingsPath, serializeState(a.st));
+  if (!a.selftest && !a.settingsPath.empty()) {
+    saveStateText(a.settingsPath, serializeMachine(a.st));
+    if (a.showLoaded) {
+      saveStateText(showPath(a.showName), serializeShow(a.st));
+      saveThumbnail(a);
+    }
+  }
+  platformPreventSleep(false);
   a.ndi.stop();
   a.spout.stop();
   a.audio.close();
@@ -868,6 +1041,7 @@ int main(int argc, char** argv) {
   ImGui::DestroyContext();
   SDL_GL_DeleteContext(a.gl);
   SDL_DestroyWindow(a.window);
+  if (!a.selftest) logCleanExit();
   SDL_Quit();
   return 0;
 }

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(TouchFX VERSION 0.6.1 LANGUAGES C CXX)
+project(TouchFX VERSION 0.7.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -89,6 +89,11 @@ add_executable(TouchFX WIN32
   src/dmx_apply.cpp
   src/sysstats.cpp
   src/spout_out.cpp
+  src/show.cpp
+  src/cues.cpp
+  src/log.cpp
+  src/ui_cues.cpp
+  src/ui_launcher.cpp
   src/ndi.cpp
   src/platform.cpp
   third_party/glad/src/gl.c

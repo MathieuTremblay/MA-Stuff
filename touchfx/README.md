@@ -13,9 +13,37 @@ Draw on the canvas with up to 10 fingers. The canvas is the output: where you to
 
 Requirements: Windows 10/11 64-bit, a GPU with OpenGL 3.3 (any dedicated card), a multi-touch screen (a mouse works too).
 
+## Shows
+
+TouchFX starts on a **launcher**: pick a show and tap **OPEN**, or **NEW SHOW** (named with the on-screen keyboard).
+**DUPLICATE**, **RENAME**, **DELETE** (moved to a *Deleted* folder) and **SHOW FOLDER** manage them.
+A show holds the looks, scenes, cue lists, palettes and DMX patch, and saves itself automatically to
+`Documents\TouchFX Shows\<name>.tfxshow`: copy these files to back up or move shows between PCs.
+What belongs to the PC (outputs, screens, audio input, layout, touch) stays in `settings.json`.
+*SETTINGS → SYSTEM → SWITCH SHOW* goes back to the launcher.
+
+## Show mode
+
+**SHOW MODE** (top of the panel) locks everything that could break a show: SETTINGS, scene STORE / DELETE,
+saving palettes, cue editing, and the keyboard except SPACE (tap), ENTER (GO) and B (blackout). Closing TouchFX asks
+for confirmation. Effects, their sliders, colours, mirror, BPM, scenes and GO keep working.
+**Hold the SHOW button for 3 seconds** to unlock. Windows sleep / screen saver are blocked while TouchFX runs.
+
+## Cues
+
+The **CUES** tab is a cue list per song:
+- **◀ song ▶** at the top switches song (tap the name for the song list: new, rename, duplicate, reorder, delete).
+- Each cue stores the full look (effect, settings, colours, mirror, release, LOOK), a **fade** time and an optional
+  **follow** (go on automatically after N seconds or N bars). BPM is never recalled.
+- **GO** fires the next cue (orange outline), **BACK** the previous one; tap a cue to make it the next one.
+  Different effects crossfade over the cue's fade, the same effect glides every value.
+- **RECORD** stores the live look as a new cue after the one on stage, **UPDATE** saves live tweaks into it
+  (the cue shows *modified* when you changed something), **EDIT** opens the name, fade, follow, move, copy, delete.
+- GO is also in the LIVE tab (under the mirror) and on the **Enter** key.
+
 ## Controls
 
-The panel has two tabs: **LIVE** (everything you touch during the show) and **SETTINGS** (set up once).
+The panel has three tabs: **LIVE** (everything you touch during the show), **CUES** and **SETTINGS** (set up once).
 Swipe up/down anywhere in the panel to scroll (sliders: swipe sideways to change, tap to jump to a value).
 
 ### LIVE
@@ -32,7 +60,7 @@ Swipe up/down anywhere in the panel to scroll (sliders: swipe sideways to change
 | **Lasers** | Laser-show modes: **FAN** (fan of beams from the finger), **AIM** (projectors along the bottom converge on your finger), **TUNNEL** (rings on the beat), **WAVE**, **SCAN**, **WEB**. *Swing* sweeps on the beat, *Chase* makes beams blink in sequence / alternate / random. |
 | **Quick colours** | Tap LOW / MID / HIGH under the palettes to override the colours live without touching the palette. **SAVE TO …** stores them in the palette, **BACK TO PALETTE** drops the override. Scenes remember overrides. |
 | **Palette / colour mode** | Pick one of the 10 palettes. Colour mode: Gradient (over the effect's life), Speed (finger speed), Position (left to right), Beat (steps each beat), Random. |
-| **Scenes** | Under the canvas (or in the LIVE tab). **STORE** then tap a slot to save the whole look; tap a slot to recall. **DELETE** then tap to clear. |
+| **Scenes** | Under the canvas (or in the LIVE tab). **STORE** then tap a slot to save the whole look and name it; tap a slot to recall (the BPM is never changed by a scene). Long-press a scene to rename it. **DELETE** then tap to clear. |
 
 ### SETTINGS
 
@@ -44,7 +72,7 @@ Swipe up/down anywhere in the panel to scroll (sliders: swipe sideways to change
 | **OUTPUT** | Resolution (1920x1080, 1280x720, 960x540 or custom, max 1920x1080), 30 / 60 fps, NDI on/off and source name, **Spout** output (GPU sharing with Resolume / TouchDesigner / OBS on the same PC), **alpha channel** (straight or premultiplied). |
 | **SCREEN** | **External display**: show the output fullscreen on another screen (fit / fill / stretch, or windowed). Layout: panel left or right, panel width, effects / scenes under the canvas, UI size, fullscreen. |
 | **DMX** | Control from a lighting console: sACN or Art-Net, universe, start address, Basic / Advanced profile, DMX lock, live channel monitor. |
-| **SYSTEM** | Block Windows 3/4-finger gestures, number of touch points (1–10), touch markers on the preview, reset everything. |
+| **SYSTEM** | Current show, switch show, show and logs folders; block Windows 3/4-finger gestures, number of touch points (1–10), touch markers on the preview, reset everything. |
 
 ### DMX control (grandMA3 and other consoles)
 
@@ -62,7 +90,8 @@ Two modes:
   and colour phasers work) and *Cursor 1 / Cursor 2* (dimmer + 16-bit Pan/Tilt = X/Y on the canvas, so position
   presets and position effects draw on the canvas; a cursor draws while its dimmer is up).
 
-Channel chart: [`docs/DMX.md`](docs/DMX.md). *Last change wins* between console and panel; **DMX LOCK** makes the
+With **Art-Net**, TouchFX answers the console's Art-Net polls, so it appears in grandMA3's Art-Net node list; the DMX
+tab shows which console has seen it. Channel chart: [`docs/DMX.md`](docs/DMX.md). *Last change wins* between console and panel; **DMX LOCK** makes the
 console the only master. No console at hand? `python3 tools/dmx_test_sender.py <TouchFX-PC-IP>` sends test DMX.
 
 The header also shows the **clock**, and **CPU / GPU / RAM** usage (GPU = Windows' 3D engine load, like Task Manager).
@@ -94,6 +123,12 @@ Keyboard: `SPACE` tap tempo, `C` clear, `B` blackout, `F11` or `Alt+Enter` fulls
 Everything (settings, palettes, scenes) is saved automatically to `%APPDATA%\TouchFX\TouchFX\settings.json`.
 Delete that file to go back to factory defaults.
 
+## Logs and crashes
+
+TouchFX writes `touchfx.log` (and keeps the previous run as `touchfx-previous.log`) in `%APPDATA%\TouchFX\TouchFX`.
+If it ever closes unexpectedly, the launcher says so on the next start and a crash dump (`crash-*.dmp`) is saved in
+the same folder: *SETTINGS → SYSTEM → LOGS FOLDER* opens it.
+
 ## Getting a build
 
 Every push to `touchfx/` builds on GitHub Actions. Open the repo's **Actions** tab, pick the latest *TouchFX Windows build* run and download the **TouchFX-windows-x64** artifact.
@@ -120,6 +155,8 @@ Developer self-test (renders every effect with fake fingers and saves screenshot
 - `src/dmx.cpp`, `src/dmx_apply.cpp`: sACN / Art-Net receiver and channel mapping
 - `tools/dmx_profile.py`: the DMX profiles; generates `src/dmx_profile.inc`, `gdtf/TouchFX@TouchFX.gdtf`, `docs/DMX.md`
 - `src/sysstats.cpp`: CPU / GPU / RAM sampling
+- `src/show.cpp`, `src/cues.cpp`, `src/log.cpp`: show files, cue playback, log and crash detection
+- `src/ui_launcher.cpp`, `src/ui_cues.cpp`: launcher, on-screen keyboard, show mode, CUES view
 - `src/platform.cpp`: Windows touch tweaks (gestures, edge swipes, press-and-hold)
 - `res/`: app icon (`make_icon.py` regenerates it) and Windows resources
 - `src/ndi.cpp`: NDI sender (runtime-loaded, runs on its own thread)

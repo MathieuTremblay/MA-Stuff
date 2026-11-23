@@ -11,26 +11,23 @@
 #include "imgui_impl_opengl3.h"
 #include "imgui_internal.h"
 #include "platform.hpp"
+#include "log.hpp"
+#include "show.hpp"
+#include "ui_widgets.hpp"
 
 extern const unsigned char kFontData[];
 extern const std::size_t kFontSize;
 
-namespace {
-
-const ImVec4 kAccent(1.00f, 0.47f, 0.10f, 1.f);
-const ImVec4 kAccentDim(0.55f, 0.25f, 0.05f, 1.f);
-const ImVec4 kDanger(0.85f, 0.12f, 0.15f, 1.f);
-const ImVec4 kText(0.92f, 0.92f, 0.94f, 1.f);
-const ImVec4 kTextDim(0.55f, 0.55f, 0.60f, 1.f);
+namespace ui {
 
 float S() { return ImGui::GetFontSize() / 19.f; }  // current UI scale
 
-ImU32 col32(const Color3& c, float a = 1.f) {
+ImU32 col32(const Color3& c, float a) {
   return ImGui::ColorConvertFloat4ToU32(ImVec4(c[0], c[1], c[2], a));
 }
 
 // A big button that lights up when "on".
-bool Toggle(const char* label, bool on, ImVec2 size, ImVec4 onColor = kAccent) {
+bool Toggle(const char* label, bool on, ImVec2 size, ImVec4 onColor) {
   if (on) {
     ImGui::PushStyleColor(ImGuiCol_Button, onColor);
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, onColor);
@@ -43,7 +40,7 @@ bool Toggle(const char* label, bool on, ImVec2 size, ImVec4 onColor = kAccent) {
 }
 
 // Row/grid of mutually exclusive buttons. Returns true when the value changed.
-bool Choice(const char* id, const char* const* labels, int n, int* value, int cols = 0, float h = 0) {
+bool Choice(const char* id, const char* const* labels, int n, int* value, int cols, float h) {
   ImGui::PushID(id);
   if (cols <= 0) cols = n;
   if (h <= 0) h = 46.f * S();
@@ -63,7 +60,7 @@ bool Choice(const char* id, const char* const* labels, int n, int* value, int co
   return changed;
 }
 
-bool OnOff(const char* label, bool* v, float h = 0) {
+bool OnOff(const char* label, bool* v, float h) {
   char buf[96];
   std::snprintf(buf, sizeof(buf), "%s: %s###%s", label, *v ? "ON" : "OFF", label);
   if (Toggle(buf, *v, ImVec2(-1, h > 0 ? h : 46 * S()))) {
@@ -553,16 +550,27 @@ void ColorEdit(const char* label, Color3& c, float w) {
   ImGui::PopID();
 }
 
-// One scene slot. Shows the effect name and a strip of the scene's palette.
+int g_renameScene = -1;
+
+// One scene slot. Shows the scene name (or effect) and a strip of the scene's palette.
 void SceneButton(App& a, int i, ImVec2 size) {
   Scene& sc = a.st.scenes[i];
-  char label[48];
-  if (sc.used) std::snprintf(label, sizeof(label), "%d\n%s##scene%d", i + 1, kEffectNames[sc.look.effect], i);
+  char label[96];
+  if (sc.used)
+    std::snprintf(label, sizeof(label), "%d\n%.14s##scene%d", i + 1,
+                  sc.name.empty() ? kEffectNames[sc.look.effect] : sc.name.c_str(), i);
   else std::snprintf(label, sizeof(label), "%d##scene%d", i + 1, i);
   if (!sc.used) ImGui::PushStyleColor(ImGuiCol_Text, kTextDim);
   ImVec2 p = ImGui::GetCursorScreenPos();
   bool pressed = Toggle(label, sc.used && a.lastScene == i, size);
   if (!sc.used) ImGui::PopStyleColor();
+  // long press (not in show mode): rename the scene
+  if (sc.used && !ShowModeLocked(a) && ImGui::IsItemActive() && ImGui::GetIO().MouseDownDuration[0] > 0.8f) {
+    g_renameScene = i;
+    OpenKeyboard("scenename", sc.name.empty() ? kEffectNames[sc.look.effect] : sc.name, "Scene name");
+    ImGui::ClearActiveID();
+    pressed = false;
+  }
   if (sc.used) {
     const Palette& pal = a.st.palettes[sc.look.palette];
     float s = S(), bw = (size.x - 12 * s) / 3, y0 = p.y + size.y - 7 * s, y1 = p.y + size.y - 3 * s;
@@ -577,6 +585,8 @@ void SceneButton(App& a, int i, ImVec2 size) {
       sc.look = a.st.look;
       a.storeArmed = false;
       a.lastScene = i;
+      g_renameScene = i;  // give it a name right away
+      OpenKeyboard("scenename", sc.name.empty() ? std::string(kEffectNames[sc.look.effect]) : sc.name, "Scene name");
     } else if (a.deleteArmed) {
       sc = Scene();
       a.deleteArmed = false;
@@ -588,6 +598,10 @@ void SceneButton(App& a, int i, ImVec2 size) {
 }
 
 void StoreDeleteButtons(App& a, ImVec2 size, bool sameLine) {
+  if (ShowModeLocked(a)) {  // show mode: recall only
+    a.storeArmed = a.deleteArmed = false;
+    ImGui::BeginDisabled();
+  }
   if (Toggle(a.storeArmed ? "STORE..." : "STORE", a.storeArmed, size)) {
     a.storeArmed = !a.storeArmed;
     a.deleteArmed = false;
@@ -597,6 +611,7 @@ void StoreDeleteButtons(App& a, ImVec2 size, bool sameLine) {
     a.deleteArmed = !a.deleteArmed;
     a.storeArmed = false;
   }
+  if (ShowModeLocked(a)) ImGui::EndDisabled();
 }
 
 void ScenesGrid(App& a) {
@@ -787,6 +802,19 @@ void DmxTab(App& a) {
        "changes. If the signal stops, TouchFX keeps the last look.");
 
   SectionLabel("STATUS");
+  if (d.protocol == DMXP_ARTNET) {
+    std::string by = a.dmx.polledBy();
+    double ago = a.dmx.secondsSincePoll();
+    if (!by.empty()) {
+      std::snprintf(buf, sizeof(buf), "Seen by %s (polled %.0f s ago): TouchFX is listed as an Art-Net node there.",
+                    by.c_str(), ago);
+      ImGui::PushStyleColor(ImGuiCol_Text, ago < 10 ? ImVec4(0.3f, 0.9f, 0.4f, 1) : kTextDim);
+      ImGui::TextWrapped("%s", buf);
+      ImGui::PopStyleColor();
+    } else {
+      Hint("No console has polled TouchFX yet (Art-Net discovery).");
+    }
+  }
   if (d.protocol == DMXP_OFF) {
     Hint("DMX input is off.");
   } else {
@@ -951,7 +979,7 @@ void QuickColours(App& a) {
     if (ImGui::Button("DONE", ImVec2(-1, 48 * s))) ImGui::CloseCurrentPopup();
     ImGui::EndPopup();
   }
-  if (l.useCustom) {
+  if (l.useCustom && !ShowModeLocked(a)) {
     float half = (ImGui::GetContentRegionAvail().x - sp) / 2;
     char save[64];
     std::snprintf(save, sizeof(save), "SAVE TO %.12s", a.st.palettes[l.palette].name.c_str());
@@ -1083,6 +1111,7 @@ void LivePanel(App& a) {
     ImGui::PopStyleColor();
     Choice("mirror", mirrors, MIRROR_COUNT, &l.mirror, 0, 40 * s);
   }
+  LiveGoButton(a, 44 * s);
 
   ImGui::BeginChild("##live", ImVec2(0, 0), ImGuiChildFlags_AlwaysUseWindowPadding);
   if (a.st.audio.enabled) AudioLive(a);
@@ -1310,6 +1339,20 @@ void SettingsPanel(App& a) {
              "If 3/4-finger swipes still work, turn them off once in Windows touch settings:");
         if (ImGui::Button("OPEN WINDOWS TOUCH SETTINGS", ImVec2(-1, 44 * s))) platformOpenTouchSettings();
       }
+      SectionLabel("SHOW");
+      {
+        char b[160];
+        std::snprintf(b, sizeof(b), "Current show: %s", a.showName.c_str());
+        ImGui::TextUnformatted(b);
+        float w3 = (ImGui::GetContentRegionAvail().x - sp * 2) / 3;
+        if (Toggle("SWITCH SHOW", false, ImVec2(w3, 46 * s))) closeShow(a);
+        ImGui::SameLine();
+        if (ImGui::Button("SHOW FOLDER", ImVec2(w3, 46 * s))) platformOpenFolder(showsDir());
+        ImGui::SameLine();
+        if (ImGui::Button("LOGS FOLDER", ImVec2(w3, 46 * s))) platformOpenFolder(logDir());
+        Hint("The show (looks, scenes, cue lists, palettes, DMX patch) saves automatically. Outputs, screens, "
+             "audio input and touch settings belong to this PC.");
+      }
       SectionLabel("TOUCH");
       IntSlider("Touch points", &a.st.maxTouches, 1, kMaxTouches);
       Hint("How many fingers can draw at once (up to 10, if your screen supports it). Each finger is "
@@ -1469,7 +1512,9 @@ void Canvas(App& a) {
   }
 }
 
-}  // namespace
+}  // namespace ui
+
+using namespace ui;
 
 void rebuildFonts(App& a, float scale) {
   ImGuiIO& io = ImGui::GetIO();
@@ -1526,6 +1571,12 @@ void rebuildFonts(App& a, float scale) {
 }
 
 void drawUI(App& a) {
+  if (!a.showLoaded) {
+    Launcher(a);
+    KeyboardFrame(a);
+    QuitConfirmFrame(a);
+    return;
+  }
   float s = S();
   g_sliding = false;
 
@@ -1543,6 +1594,11 @@ void drawUI(App& a) {
 
   // ---- header: title + clock, then NDI / DMX status lights and system stats ----
   ImGui::TextColored(kAccent, "TOUCHFX");
+  ImGui::SameLine();
+  ImGui::PushFont(a.fontSmall);
+  ImGui::AlignTextToFramePadding();
+  ImGui::TextColored(kTextDim, "%.24s", a.showName.c_str());
+  ImGui::PopFont();
   ImGui::SameLine();
   {
     std::time_t now = std::time(nullptr);
@@ -1611,11 +1667,32 @@ void drawUI(App& a) {
     ImGui::PopStyleColor();
   }
   ImGui::PopFont();
-  static const char* tabs[] = {"LIVE", "SETTINGS"};
-  Choice("maintabs", tabs, 2, &a.st.tab, 0, 46 * s);
+  {
+    // LIVE | CUES | SETTINGS | SHOW MODE   (tab values: 0 live, 2 cues, 1 settings)
+    float sp4 = ImGui::GetStyle().ItemSpacing.x;
+    float w = (ImGui::GetContentRegionAvail().x - sp4 * 3) / 4, h = 46 * s;
+    bool locked = ShowModeLocked(a);
+    if (locked && a.st.tab == 1) a.st.tab = 0;
+    if (Toggle("LIVE", a.st.tab == 0, ImVec2(w, h))) a.st.tab = 0;
+    ImGui::SameLine();
+    if (Toggle("CUES", a.st.tab == 2, ImVec2(w, h))) a.st.tab = 2;
+    ImGui::SameLine();
+    ImGui::BeginDisabled(locked);
+    if (Toggle(locked ? "LOCKED" : "SETTINGS", a.st.tab == 1, ImVec2(w, h))) a.st.tab = 1;
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ShowModeButton(a, ImVec2(w, h));
+  }
   ImGui::Separator();
 
   if (a.st.tab == 0) LivePanel(a);
+  else if (a.st.tab == 2) CuesPanel(a);
   else SettingsPanel(a);
   ImGui::End();
+
+  std::string txt;
+  if (KeyboardResult("scenename", txt) && g_renameScene >= 0 && g_renameScene < kNumScenes)
+    a.st.scenes[g_renameScene].name = txt;
+  KeyboardFrame(a);
+  QuitConfirmFrame(a);
 }
