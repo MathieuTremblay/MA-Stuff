@@ -15,6 +15,7 @@
 #include "log.hpp"
 #include "platform.hpp"
 #include "show.hpp"
+#include "stress.hpp"
 
 void App::clearEffect() {
   if (curFx >= 0) fx[curFx]->clear();
@@ -98,7 +99,7 @@ void App::recallScene(int i) {
 
 // ---- show files ----
 void saveShowNow(App& a) {
-  if (!a.showLoaded || a.selftest) return;
+  if (!a.showLoaded || a.selftest || a.stress) return;
   a.lastSavedShow = serializeShow(a.st);
   saveStateText(showPath(a.showName), a.lastSavedShow);
 }
@@ -341,10 +342,10 @@ void ensureOutput(App& a) {
   a.layerFront.create(W, H, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE, GL_LINEAR);
   a.layerBack.create(W, H, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE, GL_LINEAR);
   a.postBg.resize(W, H);
-  for (auto& f : a.bgFx)
-    if (f) {
-      f->resize(W, H);
-      f->clear();
+  for (int i = 0; i < FX_COUNT; ++i)
+    if (a.bgFx[i] && a.bgSized[i]) {
+      a.bgFx[i]->resize(W, H);
+      a.bgFx[i]->clear();
     }
 }
 
@@ -382,12 +383,10 @@ bool renderBackground(App& a, const FxCtx& front, float dt) {
   if (switching && a.bgShown <= 0.001f) {
     // faded out (or never shown): change effect now, then fade back in
     if (bg.on) {
-      if (!a.bgFx[bg.effect]) {
-        a.bgFx[bg.effect] = makeEffect(bg.effect);
-        if (a.bgFx[bg.effect]) {
-          a.bgFx[bg.effect]->init();
-          a.bgFx[bg.effect]->resize(a.out.w, a.out.h);
-        }
+      // shaders are ready from start-up; the picture buffers are made the first time the effect is used
+      if (a.bgFx[bg.effect] && !a.bgSized[bg.effect]) {
+        a.bgFx[bg.effect]->resize(a.out.w, a.out.h);
+        a.bgSized[bg.effect] = true;
       }
       if (a.bgFx[bg.effect]) a.bgFx[bg.effect]->clear();
       a.bgCurFx = bg.effect;
@@ -755,9 +754,12 @@ void updateAudio(App& a, float dt) {
 
 // ---- developer self-test: fake fingers, every effect, screenshots ----
 struct SelftestStep {
-  int effect, laserMode, mirror, palette, fingers;
+  int effect, laserMode, mirror, palette, fingers;  // laserMode: also the strobe shape / video mode
   bool audio = false;
   int dmx = 0;  // 1: sACN Advanced @1 (universe 100), 2: Art-Net Basic @101 (universe 99) - see tools/dmx_test_sender.py
+  int bg = -1;  // background effect (-1 = off)
+  int blend = BLEND_ADD;
+  int colorMode = COLOR_GRADIENT;
 };
 const SelftestStep kSteps[] = {
     {FX_FLUID, 0, MIRROR_LR, 0, 2},          {FX_PARTICLES, 0, MIRROR_LR, 2, 2},
@@ -773,10 +775,18 @@ const SelftestStep kSteps[] = {
     {FX_STROBE, STROBE_SHOCKWAVE, MIRROR_LR, 3, 2},
     {FX_PARTICLES, 0, MIRROR_LR, 4, 0, true},    {FX_LASERS, LASER_TUNNEL, MIRROR_QUAD, 6, 0, true},
     {FX_FLUID, 0, MIRROR_LR, 0, 0, false, 1},    {FX_FLUID, 0, MIRROR_LR, 0, 2, false, 2},
+    // video input (built-in test source) and the background layer
+    {FX_VIDEO, VID_REVEAL, MIRROR_OFF, 0, 2},     {FX_VIDEO, VID_LIQUID, MIRROR_OFF, 0, 2},
+    {FX_VIDEO, VID_RIPPLE, MIRROR_OFF, 0, 2},     {FX_VIDEO, VID_KALEIDO, MIRROR_OFF, 0, 1},
+    {FX_VIDEO, VID_PIXEL, MIRROR_LR, 0, 2},       {FX_VIDEO, VID_WARP, MIRROR_OFF, 0, 2},
+    {FX_PARTICLES, 0, MIRROR_LR, 1, 2, false, 0, FX_STARFIELD, BLEND_ADD},
+    {FX_FLUID, 0, MIRROR_LR, 0, 2, false, 0, FX_VIDEO, BLEND_REVEAL},
+    {FX_LASERS, LASER_FAN, MIRROR_LR, 6, 2, false, 0, FX_TUNNEL, BLEND_BEHIND},
+    {FX_FLUID, 0, MIRROR_LR, 0, 2, false, 0, -1, BLEND_ADD, COLOR_VIDEO},
 };
 constexpr int kStepFrames = 120;
 constexpr int kNumSteps = int(sizeof(kSteps) / sizeof(kSteps[0]));
-constexpr int kUiShots = 8;  // live (no strip), settings x4, panel left, cues, show mode
+constexpr int kUiShots = 10;  // live (no strip), settings x4, panel left, cues, show mode, BACK, video in
 
 void selftestTouches(App& a, int frame, int fingers) {
   float t = frame / 60.f;
@@ -806,13 +816,20 @@ bool writePpm(const std::string& path, int w, int h) {
 
 }  // namespace
 
+// Touches for the stress-test robot (same path as real fingers).
+void robotTouchDown(App& a, int64_t id, float x, float y) { touchDown(a, id, x, y); }
+void robotTouchMove(App& a, int64_t id, float x, float y) { touchMove(a, id, x, y); }
+void robotTouchUp(App& a, int64_t id) { touchUp(a, id); }
+
 int main(int argc, char** argv) {
   App a;
   std::string selftestDir;
   int selftestFrom = 0;  // start the self-test at this step (debugging)
+  double stressMinutes = 0;  // --stress <minutes>
   for (int i = 1; i < argc; ++i) {
     if (std::string(argv[i]) == "--selftest" && i + 1 < argc) selftestDir = argv[++i];
     if (std::string(argv[i]) == "--selftest-from" && i + 1 < argc) selftestFrom = std::atoi(argv[++i]);
+    if (std::string(argv[i]) == "--stress" && i + 1 < argc) stressMinutes = std::atof(argv[++i]);
   }
   a.selftest = !selftestDir.empty();
 
@@ -865,6 +882,13 @@ int main(int argc, char** argv) {
   }
   platformPreventSleep(true);
   if (a.selftest) a.showLoaded = true;  // the self-test runs without a show file
+  if (stressMinutes > 0 && !a.selftest) {
+    // stress test: a throw-away show, nothing is saved
+    a.stress = true;
+    a.showLoaded = true;
+    a.showName = "STRESS TEST (nothing is saved)";
+    a.st.showMode = false;
+  }
   std::snprintf(a.ndiNameEdit, sizeof(a.ndiNameEdit), "%s", a.st.output.ndiName.c_str());
   a.uiScaleEdit = a.st.uiScale;
   if (a.selftest) {
@@ -908,7 +932,7 @@ int main(int argc, char** argv) {
       a.st.gestureRestore = -1;
       a.gesturesBlocked = false;
     }
-    if (!a.settingsPath.empty() && !a.selftest) {
+    if (!a.settingsPath.empty() && !a.selftest && !a.stress) {
       a.lastSavedMachine = serializeMachine(a.st);
       saveStateText(a.settingsPath, a.lastSavedMachine);  // save now so a crash can't lose the original value
     }
@@ -931,6 +955,10 @@ int main(int argc, char** argv) {
                    a.video.init();
   for (int i = 0; i < FX_COUNT; ++i) a.fx[i] = makeEffect(i);
   for (auto& f : a.fx) shadersOk &= f->init();
+  for (int i = 0; i < FX_COUNT; ++i) {  // background layer: its own effects (shaders now, buffers when used)
+    a.bgFx[i] = makeEffect(i);
+    shadersOk &= a.bgFx[i]->init();
+  }
   if (!shadersOk) SDL_Log("Some shaders failed to compile; see the log above.");
 
   Uint64 freq = SDL_GetPerformanceFrequency();
@@ -951,6 +979,7 @@ int main(int argc, char** argv) {
     Uint64 now = SDL_GetPerformanceCounter();
     float dt = float(double(now - last) / double(freq));
     last = now;
+    float rawFrame = dt;
     if (a.selftest) dt = 1.f / 60.f;
     dt = std::min(dt, 0.1f);
     a.time += dt;
@@ -970,6 +999,17 @@ int main(int argc, char** argv) {
           a.st.look.palette = sp.palette;
         }
         if (sp.effect == FX_STROBE) a.st.look.strobe.shape = sp.laserMode ? sp.laserMode : STROBE_SPARKLE;
+        if (sp.effect == FX_VIDEO) a.st.look.video.mode = sp.laserMode;
+        a.st.videoIn.type = VSRC_TEST;
+        a.st.videoIn.source = "Colour bars";
+        a.st.look.colorMode = sp.colorMode;
+        a.st.look.bg.on = sp.bg >= 0;
+        if (sp.bg >= 0) {
+          a.st.look.bg.effect = sp.bg;
+          a.st.look.bg.blend = sp.blend;
+          a.st.look.bg.level = 0.8f;
+          a.st.look.bg.fx.video.mode = VID_LIQUID;
+        }
         a.st.audio.enabled = sp.audio;
         a.st.audio.device = kAudioTest;
         a.st.audio.points = 2;
@@ -1021,6 +1061,18 @@ int main(int argc, char** argv) {
           a.st.tab = 0;
           a.st.showMode = true;
         }
+        if (k == 8) {  // LIVE, editing the background layer
+          a.st.showMode = false;
+          a.st.tab = 0;
+          a.layerEdit = 1;
+          a.st.look.bg.on = true;
+          a.st.look.bg.effect = FX_STARFIELD;
+        }
+        if (k == 9) {  // SETTINGS > VIDEO IN
+          a.layerEdit = 0;
+          a.st.tab = 1;
+          a.st.settingsTab = ST_VIDEO;
+        }
         if (k == 0) {
           a.st.scenes[0].used = a.st.scenes[3].used = true;
           a.st.scenes[3].look.effect = FX_LASERS;
@@ -1043,6 +1095,22 @@ int main(int argc, char** argv) {
     if (a.showLoaded) cueTick(a, dt);
 
     // ---- video input (a PC setting) ----
+    if (a.stress) {
+      if (frame == 2) {
+        std::string dir = a.settingsPath.empty()
+                              ? std::string("./")
+                              : a.settingsPath.substr(0, a.settingsPath.size() - std::string("settings.json").size());
+        // every background effect gets its buffers now, so the leak check compares like with like
+        for (int i = 0; i < FX_COUNT; ++i)
+          if (a.bgFx[i] && !a.bgSized[i]) {
+            a.bgFx[i]->resize(a.out.w, a.out.h);
+            a.bgSized[i] = true;
+          }
+        stressStart(a, stressMinutes, dir);
+      }
+      if (frame >= 2) stressTick(a, std::min(rawFrame, 1.f), rawFrame);  // real time
+      if (stressFinished(a)) running = false;
+    }
     a.video.configure(a.showLoaded || a.selftest ? a.st.videoIn.type : VSRC_OFF, a.st.videoIn.source);
     a.video.update(dt);
 
@@ -1230,7 +1298,7 @@ int main(int argc, char** argv) {
 
     // ---- autosave (once a second, only when something changed) ----
     a.saveTimer += dt;
-    if (a.saveTimer > 1.0 && !a.selftest && !a.settingsPath.empty()) {
+    if (a.saveTimer > 1.0 && !a.selftest && !a.stress && !a.settingsPath.empty()) {
       a.saveTimer = 0;
       std::string m = serializeMachine(a.st);
       if (m != a.lastSavedMachine && saveStateText(a.settingsPath, m)) a.lastSavedMachine = m;
@@ -1241,7 +1309,7 @@ int main(int argc, char** argv) {
     }
     // thumbnail of the look for the launcher
     a.thumbTimer += dt;
-    if (a.showLoaded && !a.selftest && a.thumbTimer > 15.0) {
+    if (a.showLoaded && !a.selftest && !a.stress && a.thumbTimer > 15.0) {
       a.thumbTimer = 0;
       saveThumbnail(a);
     }
@@ -1251,7 +1319,14 @@ int main(int argc, char** argv) {
     platformRestoreSystemGestures(a.st.gestureRestore);
     a.st.gestureRestore = -1;
   }
-  if (!a.selftest && !a.settingsPath.empty()) {
+  if (a.stress) {
+    stressFinish(a);
+    if (!a.settingsPath.empty()) {
+      std::string dir = a.settingsPath.substr(0, a.settingsPath.size() - std::string("settings.json").size());
+      platformOpenFolder(dir);  // show the report
+    }
+  }
+  if (!a.selftest && !a.stress && !a.settingsPath.empty()) {
     saveStateText(a.settingsPath, serializeMachine(a.st));
     if (a.showLoaded) {
       saveStateText(showPath(a.showName), serializeShow(a.st));

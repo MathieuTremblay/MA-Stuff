@@ -69,6 +69,10 @@ struct VideoInput::SpoutIn {
   std::string name;
   GLuint tex = 0;
   int w = 0, h = 0;
+  ~SpoutIn() {
+    rx.ReleaseReceiver();
+    if (tex) glDeleteTextures(1, &tex);
+  }
 #endif
 };
 
@@ -242,27 +246,35 @@ void VideoInput::spoutUpdate() {
     s.rx.SetReceiverName(source_.empty() ? nullptr : source_.c_str());
     s.name = source_;
   }
-  if (!s.rx.ReceiveTexture()) {  // connects to the sender (or the active one) and gets its frame
-    s.connected = false;
-    return;
-  }
-  if (s.rx.IsUpdated() || !s.tex) {
-    s.w = int(s.rx.GetSenderWidth());
-    s.h = int(s.rx.GetSenderHeight());
-    if (!s.tex) glGenTextures(1, &s.tex);
+  if (!s.tex) {
+    glGenTextures(1, &s.tex);
     glBindTexture(GL_TEXTURE_2D, s.tex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, s.w, s.h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 16, 16, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    {
-      std::lock_guard<std::mutex> lk(mtx_);
-      info_ = std::to_string(s.w) + "x" + std::to_string(s.h) + "  " + s.rx.GetSenderName();
-    }
+  }
+  // one call per frame: connects, and copies the sender's frame into our texture (shared top-down: flip)
+  if (!s.rx.ReceiveTexture(s.tex, GL_TEXTURE_2D, true, 0)) {
+    s.connected = false;
+    std::lock_guard<std::mutex> lk(mtx_);
+    backendStatus_ = source_.empty() ? "No Spout sender running" : "Spout sender \"" + source_ + "\" is not running";
+    return;
+  }
+  {
+    std::lock_guard<std::mutex> lk(mtx_);
+    backendStatus_.clear();
+  }
+  if (s.rx.IsUpdated()) {  // new sender or new size: re-allocate, the next call copies
+    s.w = int(s.rx.GetSenderWidth());
+    s.h = int(s.rx.GetSenderHeight());
+    glBindTexture(GL_TEXTURE_2D, s.tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, s.w, s.h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    std::lock_guard<std::mutex> lk(mtx_);
+    info_ = std::to_string(s.w) + "x" + std::to_string(s.h) + "  " + s.rx.GetSenderName();
+    return;
   }
   s.connected = true;
-  if (!s.rx.IsFrameNew()) return;
-  // copy the shared texture into ours
-  if (!s.rx.ReceiveTexture(s.tex, GL_TEXTURE_2D, true, 0)) return;  // shared top-down: flip
+  if (!s.rx.IsFrameNew() || s.w <= 0 || s.h <= 0) return;
   if (out_.w != s.w || out_.h != s.h) out_.create(s.w, s.h, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE, GL_LINEAR);
   fxCopy(out_, s.tex, 1.f);
   sinceFrame_ = 0;

@@ -111,6 +111,7 @@ add_executable(TouchFX WIN32
   src/video_mf.cpp
   src/video_decklink.cpp
   src/video_aja.cpp
+  src/stress.cpp
   src/ui_cues.cpp
   src/ui_launcher.cpp
   src/ndi.cpp
@@ -146,7 +147,7 @@ if(WIN32)
   target_include_directories(TouchFX PRIVATE ${TOUCHFX_SPOUT_DIR} third_party/decklink)
   target_compile_definitions(TouchFX PRIVATE TOUCHFX_SPOUT)
   target_link_libraries(TouchFX PRIVATE opengl32 d3d11 dxgi winmm comctl32 comdlg32 version
-                        mfplat mf mfreadwrite mfuuid oleaut32)
+                        mfplat mf mfreadwrite mfuuid oleaut32 psapi)
   if(MINGW)
     set_source_files_properties(${TOUCHFX_SPOUT_SOURCES} PROPERTIES COMPILE_OPTIONS "-msse4.1")
     if(CMAKE_HOST_UNIX)

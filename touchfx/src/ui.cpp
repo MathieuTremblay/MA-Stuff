@@ -514,7 +514,7 @@ void PaletteGrid(App& a) {
     if (ImGui::InvisibleButton("pal", ImVec2(w, h))) {
       l.palette = i;
       l.useCustom = false;
-      a.dmxColors = false;
+      if (!editingBack()) a.dmxColors = false;
     }
     const Palette& pal = a.st.palettes[i];
     float th = h - 18 * s;
@@ -845,15 +845,11 @@ bool AdapterPicker(App& a, const char* id, std::string& adapterId, std::string& 
 void VideoInTab(App& a) {
   float s = S();
   VideoInSettings& v = a.st.videoIn;
-  SectionLabel("VIDEO INPUT (this PC) - used by the VIDEO effect and the VIDEO colour mode");
-#ifdef _WIN32
-  static const char* types[VSRC_COUNT] = {"OFF", "NDI", "CAPTURE / CAMERA", "SPOUT", "BLACKMAGIC", "AJA", "TEST"};
-#else
-  static const char* types[VSRC_COUNT] = {"OFF", "NDI", "CAPTURE (Windows)", "SPOUT (Windows)", "BLACKMAGIC (Windows)",
-                                          "AJA", "TEST"};
-#endif
+  SectionLabel("VIDEO INPUT (this PC)");
+  Hint("Used by the VIDEO effect and the VIDEO colour mode.");
+  static const char* types[VSRC_COUNT] = {"OFF", "NDI", "CAPTURE", "SPOUT", "BLACKMAGIC", "AJA", "TEST"};
   int t = v.type;
-  if (Choice("vtype", types, VSRC_COUNT, &t, 4) && t != v.type) {
+  if (Choice("vtype", types, VSRC_COUNT, &t, 3) && t != v.type) {
     v.type = t;
     v.source.clear();
     if (t != VSRC_OFF) a.video.requestSourceList(t);
@@ -861,8 +857,9 @@ void VideoInTab(App& a) {
   static const char* help[VSRC_COUNT] = {
       "No video input.",
       "An NDI source on the network (Resolume, another PC, a camera with NDI...).",
-      "USB capture devices (AV Matrix, Elgato, Magewell USB...), cameras, and cards whose driver appears as a camera.",
-      "Another program on this PC (Resolume, TouchDesigner, OBS...).",
+      "USB capture devices (AV Matrix, Elgato, Magewell USB...), cameras, and cards whose driver appears as a camera "
+      "(Windows).",
+      "Another program on this PC (Resolume, TouchDesigner, OBS...). Windows.",
       "Blackmagic DeckLink / UltraStudio / Intensity (needs Blackmagic Desktop Video). The format is detected "
       "automatically.",
       "AJA KONA / Io / Corvid (needs the AJA driver). Each SDI / HDMI input is listed.",
@@ -1322,7 +1319,7 @@ void LivePanel(App& a) {
   }
 
   ImGui::BeginChild("##live", ImVec2(0, 0), ImGuiChildFlags_AlwaysUseWindowPadding);
-  if (a.st.audio.enabled) AudioLive(a);
+  if (a.st.audio.enabled && !editingBack()) AudioLive(a);
 
   if (editingBack()) {
     SectionLabel("BACKGROUND LAYER");

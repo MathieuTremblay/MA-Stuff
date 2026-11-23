@@ -83,7 +83,8 @@ struct App {
   double ndiAccum = 0, ndiRetry = 0;
 
   // Background layer (LIVE: FRONT / BACK)
-  std::unique_ptr<Effect> bgFx[FX_COUNT];  // created when first used
+  std::unique_ptr<Effect> bgFx[FX_COUNT];  // own instances (an effect can run on both layers)
+  bool bgSized[FX_COUNT] = {};             // its buffers exist (made the first time it is used)
   int bgCurFx = -1;
   Target bgScene, layerFront, layerBack;
   Post postBg;
@@ -169,6 +170,7 @@ struct App {
   SDL_Rect savedRect{0, 0, 0, 0};
   char lastKey[32] = "-";
   bool selftest = false;
+  bool stress = false;  // --stress: a robot plays; nothing is saved
 
   // Show files
   bool showLoaded = false;

@@ -19,7 +19,8 @@ TouchFX starts on a **launcher**: pick a show and tap **OPEN**, or **NEW SHOW** 
 **DUPLICATE**, **RENAME**, **DELETE** (moved to a *Deleted* folder) and **SHOW FOLDER** manage them.
 A show holds the looks, scenes, cue lists, palettes and DMX patch, and saves itself automatically to
 `Documents\TouchFX Shows\<name>.tfxshow`: copy these files to back up or move shows between PCs.
-What belongs to the PC (outputs, screens, audio input, layout, touch) stays in `settings.json`.
+What belongs to the PC (outputs, screens, audio and video inputs, layout, touch) stays in `settings.json`.
+Shows from before 0.8 that used **Lightning** (replaced by **Video**) open with **Plexus** in its place.
 *SETTINGS → SYSTEM → SWITCH SHOW* goes back to the launcher.
 
 ## Show mode
@@ -63,14 +64,16 @@ Swipe up/down anywhere in the panel to scroll (sliders: swipe sideways to change
 |---|---|
 | **BPM** | Tap **TAP** (or press SPACE) to set the tempo, or **tap the BPM number** to type it on a keypad; **-/+** nudge it. `x1/4 … x4` scale effect speed. The 4 lights show the beat. |
 | **AUDIO** | Turns audio reactive mode on (blue button, with a level bar). See *Audio reactive* below. |
-| **Effects** | 16 effects in the bar under the canvas (or in the LIVE tab, see *SCREEN*): Fluid, Particles, Sparkles, Ribbons, Fireworks, Starfield, Plexus, Kaleido, Lasers, Lightning, Tunnel, Shapes, Ripples, Spectrum, LED grid, Strobe. **CLEAR** wipes the canvas, **BLACKOUT** kills the output. |
+| **Effects** | 16 effects in the bar under the canvas (or in the LIVE tab, see *SCREEN*): Fluid, Particles, Sparkles, Ribbons, Fireworks, Starfield, Plexus, Kaleido, Lasers, **Video**, Tunnel, Shapes, Ripples, Spectrum, LED grid, Strobe. **CLEAR** wipes the canvas, **BLACKOUT** kills the output. |
 | **Mirror** | Off, left/right, up/down, quad (both), radial 6, radial 8 (always visible under the tempo). Guides are drawn on the preview only. |
 | **On release** | Set **per effect**: **FADE** (the effect keeps going where your fingers were lifted and the image fades out over the chosen time) or **SNAP** (off instantly). Switching effect crossfades: the old effect fades out (time in *SETTINGS → LOOK*). |
 | **Effect settings** | Sliders for the current effect (size, trail, speed, glow, strobe rate…) and a reset button. |
-| **New in 0.5** | **Ripples** (water surface, drops on the beat), **Ribbons** (glowing strands following the fingers), **Shapes** (neon polygons / stars popping on the beat), **Tunnel** (full-screen tunnel, vanishing point under the finger), **Lightning** (arcs between fingers), **Plexus** (connected points), **Fireworks** (rockets bursting at the finger), **Starfield** (hyperspace streaks), **Spectrum** (audio equaliser: circle, bars or wave), **LED grid** (LED-wall tiles: trail, rings, sparkle). Strobe gains **Shockwave**, **Wipe**, **Blinder** and **Blocks**. |
+| **New in 0.5** | **Ripples** (water surface, drops on the beat), **Ribbons** (glowing strands following the fingers), **Shapes** (neon polygons / stars popping on the beat), **Tunnel** (full-screen tunnel, vanishing point under the finger), **Plexus** (connected points), **Fireworks** (rockets bursting at the finger), **Starfield** (hyperspace streaks), **Spectrum** (audio equaliser: circle, bars or wave), **LED grid** (LED-wall tiles: trail, rings, sparkle). Strobe gains **Shockwave**, **Wipe**, **Blinder** and **Blocks**. |
+| **FRONT / BACK** | Which layer the LIVE controls edit. **FRONT** (orange) is the effect you play with your fingers. **BACK** (blue) is the background layer: the effect bar, sliders, mirror and speed then edit the background (see *Background layer*). |
+| **Video** | The video input played with the fingers (choose the input in *SETTINGS → VIDEO IN*): **REVEAL** (paint the video into view, it fades back over the trail time), **LIQUID** (push the picture like a liquid), **RIPPLE** (water ripples bend it), **KALEIDO** (kaleidoscope around your first finger), **PIXEL** (big pixels where your fingers go), **WARP** (swirl / pinch around each finger). Fit: fill, fit or stretch. Without an input, a palette gradient stands in. |
 | **Lasers** | Laser-show modes: **FAN** (fan of beams from the finger), **AIM** (projectors along the bottom converge on your finger), **TUNNEL** (rings on the beat), **WAVE**, **SCAN**, **WEB**. *Swing* sweeps on the beat, *Chase* makes beams blink in sequence / alternate / random. |
 | **Quick colours** | Tap LOW / MID / HIGH under the palettes to override the colours live without touching the palette. **SAVE TO …** stores them in the palette, **BACK TO PALETTE** drops the override. Scenes remember overrides. |
-| **Palette / colour mode** | Pick one of the 10 palettes. Colour mode: Gradient (over the effect's life), Speed (finger speed), Position (left to right), Beat (steps each beat), Random. |
+| **Palette / colour mode** | Pick one of the 10 palettes. Colour mode: Gradient (over the effect's life), Speed (finger speed), Position (left to right), Beat (steps each beat), Random, **Video** (every pixel takes the colour of the video input under it). |
 | **Scenes** | Under the canvas (or in the LIVE tab). **STORE** then tap a slot to save the whole look and name it; tap a slot to recall (the BPM is never changed by a scene). Long-press a scene to rename it. **DELETE** then tap to clear. |
 
 ### SETTINGS
@@ -83,7 +86,29 @@ Swipe up/down anywhere in the panel to scroll (sliders: swipe sideways to change
 | **OUTPUT** | Resolution (1920x1080, 1280x720, 960x540 or custom, max 1920x1080), 30 / 60 fps, NDI on/off, source name and **network card**, **Spout** output (GPU sharing with Resolume / TouchDesigner / OBS on the same PC), **alpha channel** (straight or premultiplied). |
 | **SCREEN** | **External display**: show the output fullscreen on another screen (fit / fill / stretch, or windowed). Layout: panel left or right, panel width, effects / scenes under the canvas, UI size, fullscreen. |
 | **DMX** | Control from a lighting console: sACN or Art-Net, universe, start address, Basic / Advanced profile, DMX lock, live channel monitor. |
+| **VIDEO IN** | The video input (a PC setting): **NDI**, **CAPTURE** (USB capture devices such as AV Matrix, cameras, cards that appear as a camera), **SPOUT** (another program on this PC), **BLACKMAGIC** (DeckLink / UltraStudio, needs Blackmagic Desktop Video; format detected automatically), **AJA** (KONA / Io / Corvid, needs the AJA driver; each SDI / HDMI input is listed), **TEST** (built-in picture). Pick the source from the list (or *first one found*); status, format, frame rate and a preview are shown. |
 | **SYSTEM** | Current show, switch show, show and logs folders; block Windows 3/4-finger gestures, number of touch points (1–10), touch markers on the preview, reset everything. |
+
+### Background layer
+
+A second effect running behind the one you play, on the same output. Select **BACK** at the top of LIVE:
+- **ON / OFF** and **Level**, then the effect (the effect bar turns blue), its sliders, its own mirror and speed.
+- **FOLLOW TOUCH**: your fingers drive it too. Otherwise it moves by itself (slow wandering points, faster with the
+  music when audio reactive is on). **Motion** sets how fast.
+- **Blend**: **ADD** (both layers glow together), **BEHIND** (the front effect covers the background where it is
+  bright), **REVEAL** (the background only shows where the front effect draws: paint it into view, e.g. a video).
+- **Own colours**: its own palette and colour mode, otherwise the front layer's.
+- It never fades when you lift your fingers. **CLEAR** clears the front layer only; **BLACKOUT** blacks out
+  everything. The header shows what runs behind (*BG: STARFIELD 60%*).
+- Scenes and cues store it: a cue fades it in, out or to another effect over the cue's fade time (an effect change
+  dips through black).
+
+### Video input
+
+*SETTINGS → VIDEO IN* chooses one input for the PC; the **VIDEO** effect and the **Video** colour mode use it (on
+either layer). The header shows **VIDEO** (green, live), **VIDEO LOST** (yellow) or **NO VIDEO** (red). When the
+signal is lost, the last picture is held for 2 seconds, then fades out; TouchFX reconnects by itself when the source
+comes back. If the NDI output card is changed, the NDI input reconnects automatically.
 
 ### DMX control (grandMA3 and other consoles)
 
@@ -160,7 +185,7 @@ Pushing a tag like `touchfx-v0.1.0` also publishes a zip on the **Releases** pag
 
 ## Building it yourself
 
-Needs CMake 3.20+ and Visual Studio 2022 (Desktop C++). Dependencies (SDL2, Dear ImGui, nlohmann/json) are downloaded by CMake.
+Needs CMake 3.20+ and Visual Studio 2022 (Desktop C++). Dependencies (SDL2, Dear ImGui, nlohmann/json, Spout, the AJA NTV2 SDK) are downloaded by CMake; the Blackmagic DeckLink interface is in `third_party/decklink`.
 
 ```bash
 cmake -S touchfx -B build -A x64
@@ -169,12 +194,25 @@ cmake --build build --config Release
 
 Developer self-test (renders every effect with fake fingers and saves screenshots): `TouchFX.exe --selftest <folder>`.
 
+## Stress test
+
+`TouchFX.exe --stress 120` lets a robot play TouchFX for 120 minutes, using this PC's real outputs, video input and
+DMX settings: up to 10 fingers, effect / background / scene / cue / undo / song changes, random settings,
+resolution changes, the video input dropping out and coming back, DMX floods to this PC (when DMX listens on all
+cards), and 400 damaged show files at the start. **Nothing is saved** (shows and settings stay as they were). At the
+end it writes `stress-report.txt` (result, frame rate, slowest frame, memory, GPU buffers) and `stress-data.csv`
+(measurements every 10 s) to `%APPDATA%\TouchFX\TouchFX` and opens that folder. Run it from a command prompt in the
+TouchFX folder, or make a shortcut with `--stress 120` added to the target.
+
 ## Code layout
 
 - `src/main.cpp`: window, touch input, mirroring, release/fade logic, NDI readback
 - `src/ui.cpp`: the touch control panel
 - `src/fx_*.cpp`: one file per effect (GPU shaders)
-- `src/post.cpp`: glow (bloom), saturation, tonemapping, alpha
+- `src/post.cpp`: glow (bloom), saturation, tonemapping, alpha, video colours, layer compositing
+- `src/video_in.cpp`: video input thread, GPU colour conversion, NDI receive, test source; `src/video_mf.cpp`
+  (capture / cameras), `src/video_decklink.cpp` (Blackmagic), `src/video_aja.cpp` (AJA)
+- `src/stress.cpp`: the `--stress` robot and report
 - `src/audio.cpp`: audio capture (SDL inputs, WASAPI system audio), band levels, hit and tempo detection
 - `src/dmx.cpp`, `src/dmx_apply.cpp`: sACN / Art-Net receiver and channel mapping
 - `tools/dmx_profile.py`: the DMX profiles; generates `src/dmx_profile.inc`, `gdtf/TouchFX@TouchFX.gdtf`, `docs/DMX.md`

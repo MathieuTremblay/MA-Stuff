@@ -60,3 +60,4 @@ void bindTex(int unit, GLuint tex);
 void drawFullscreen();     // draws a fullscreen triangle with the shared empty VAO
 GLuint emptyVao();
 void glutilInit();
+int glLiveTargets();  // render targets currently allocated (stress test leak check)

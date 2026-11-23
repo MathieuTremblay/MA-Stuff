@@ -107,10 +107,14 @@ GLint Program::loc(const char* n) {
   return l;
 }
 
+static int g_liveTargets = 0;
+int glLiveTargets() { return g_liveTargets; }
+
 void Target::create(int w_, int h_, GLenum internalFmt, GLenum fmt, GLenum type, GLint filter) {
   destroy();
   w = w_;
   h = h_;
+  ++g_liveTargets;
   glGenTextures(1, &tex);
   glBindTexture(GL_TEXTURE_2D, tex);
   glTexImage2D(GL_TEXTURE_2D, 0, internalFmt, w, h, 0, fmt, type, nullptr);
@@ -127,6 +131,7 @@ void Target::create(int w_, int h_, GLenum internalFmt, GLenum fmt, GLenum type,
 }
 
 void Target::destroy() {
+  if (tex) --g_liveTargets;
   if (fbo) glDeleteFramebuffers(1, &fbo);
   if (tex) glDeleteTextures(1, &tex);
   fbo = tex = 0;

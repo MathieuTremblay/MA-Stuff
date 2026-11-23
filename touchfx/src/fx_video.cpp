@@ -90,7 +90,7 @@ void main() {
     float T = texture(uField, uv + vec2(0.0, uTexel.y)).r;
     float B = texture(uField, uv - vec2(0.0, uTexel.y)).r;
     vec2 g = vec2(R - L, T - B);
-    col = vid(uv + g * (0.01 + uStrength * 0.08));
+    col = vid(uv + g * (0.02 + uStrength * 0.16));
     vec3 n = normalize(vec3(-g * 6.0, 1.0));
     float spec = pow(max(dot(n, normalize(vec3(0.4, 0.5, 1.0))), 0.0), 40.0) * clamp(length(g) * 8.0, 0.0, 1.0);
     extra = uHigh * spec * uGlow * 2.0;
