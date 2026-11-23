@@ -65,7 +65,7 @@ struct Stress {
   double fpsMin = 1e9, fpsSum = 0;
   int fpsSamples = 0;
   std::map<std::string, int> actions;
-  std::map<std::string, std::pair<double, double>> memByRes;  // first / last memory seen at each resolution
+  std::vector<double> memSamples;  // after the first minute
   int fuzzFiles = 0, fuzzLoaded = 0, fuzzRejected = 0;
   int roundTrips = 0, roundTripMismatch = 0;
   std::vector<std::string> notes;
@@ -434,10 +434,7 @@ void sample(App& a) {
     g.fpsMin = std::min(g.fpsMin, fps);
     g.fpsSum += fps;
     ++g.fpsSamples;
-    std::string res = std::to_string(a.out.w) + "x" + std::to_string(a.out.h);
-    auto it = g.memByRes.find(res);
-    if (it == g.memByRes.end()) g.memByRes[res] = {mem, mem};
-    else it->second.second = mem;
+    g.memSamples.push_back(mem);
   }
   g.memEnd = mem;
   g.texEnd = tex;
@@ -571,9 +568,20 @@ void stressFinish(App& a) {
 #else
   if (g.udp >= 0) close(g.udp);
 #endif
-  // memory depends on the output resolution: compare the first and last measurement at each resolution
-  double growth = 0;
-  for (auto& kv : g.memByRes) growth = std::max(growth, kv.second.second - kv.second.first);
+  // typical memory (median) in the middle third of the run vs the last third: peaks from resolution changes
+  // come and go, a leak moves the whole band up
+  auto median = [](std::vector<double> v) {
+    if (v.empty()) return 0.0;
+    std::sort(v.begin(), v.end());
+    return v[v.size() / 2];
+  };
+  double growth = 0, midMed = 0, endMed = 0;
+  size_t n = g.memSamples.size();
+  if (n >= 6) {
+    midMed = median(std::vector<double>(g.memSamples.begin() + n / 3, g.memSamples.begin() + 2 * n / 3));
+    endMed = median(std::vector<double>(g.memSamples.begin() + 2 * n / 3, g.memSamples.end()));
+    growth = endMed - midMed;
+  }
   int texGrowth = g.texStart >= 0 ? g.texEnd - g.texStart : 0;
   bool warnMem = growth > 100.0, warnTex = texGrowth > 8, fail = g.roundTripMismatch > 0;
   std::ostringstream o;
@@ -592,9 +600,8 @@ void stressFinish(App& a) {
                 (unsigned long long)g.hitches);
   o << b;
   std::snprintf(b, sizeof(b),
-                "Memory              %.0f MB after the first minute, %.0f MB at the end, %.0f MB max; growth at the "
-                "same resolution %+.0f MB%s\n",
-                g.memStart, g.memEnd, g.memMax, growth, warnMem ? "  <- WARNING: keeps growing" : "");
+                "Memory              typical %.0f MB mid-run, %.0f MB at the end (%+.0f MB), %.0f MB peak%s\n",
+                midMed, endMed, growth, g.memMax, warnMem ? "  <- WARNING: keeps growing" : "");
   o << b;
   std::snprintf(b, sizeof(b), "GPU buffers         %d after the first minute, %d at the end, %d max%s\n", g.texStart, g.texEnd,
                 g.texMax, warnTex ? "  <- WARNING: keeps growing" : "");
