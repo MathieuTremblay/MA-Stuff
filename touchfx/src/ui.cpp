@@ -581,6 +581,7 @@ void SceneButton(App& a, int i, ImVec2 size) {
   }
   if (pressed) {
     if (a.storeArmed) {
+      undoPush(a, "store scene " + std::to_string(i + 1));
       sc.used = true;
       sc.look = a.st.look;
       a.storeArmed = false;
@@ -588,6 +589,7 @@ void SceneButton(App& a, int i, ImVec2 size) {
       g_renameScene = i;  // give it a name right away
       OpenKeyboard("scenename", sc.name.empty() ? std::string(kEffectNames[sc.look.effect]) : sc.name, "Scene name");
     } else if (a.deleteArmed) {
+      undoPush(a, "delete scene " + std::to_string(i + 1));
       sc = Scene();
       a.deleteArmed = false;
       if (a.lastScene == i) a.lastScene = -1;
@@ -762,27 +764,53 @@ bool Stepper(const char* label, int* v, int lo, int hi) {
   return ch;
 }
 
-// Network card choice: AUTOMATIC or one adapter. A chosen card that is gone stays selected, in red.
+// Network card choice: a drop-down with AUTOMATIC or one adapter. A chosen card that is gone stays
+// selected, in red.
 bool AdapterPicker(App& a, const char* id, std::string& adapterId, std::string& label) {
   float s = S();
   bool changed = false;
   ImGui::PushID(id);
-  if (Toggle("AUTOMATIC (all network cards)", adapterId.empty(), ImVec2(-1, 44 * s))) {
-    changed = !adapterId.empty();
-    adapterId.clear();
-    label.clear();
-  }
-  for (const NetAdapter& n : a.adapters) {
-    std::string l = adapterLabel(n) + "##" + n.id;
-    if (Toggle(l.c_str(), n.id == adapterId, ImVec2(-1, 44 * s))) {
-      changed = n.id != adapterId;
-      adapterId = n.id;
-      label = n.name + " (" + ipToString(n.ip) + ")";
+  bool missing = !adapterId.empty() && !findAdapter(a.adapters, adapterId);
+  std::string cur = "AUTOMATIC (all network cards)";
+  if (const NetAdapter* n = adapterId.empty() ? nullptr : findAdapter(a.adapters, adapterId)) cur = adapterLabel(*n);
+  else if (missing) cur = (label.empty() ? std::string("Chosen card") : label) + "  -  NOT CONNECTED";
+  ImVec2 p = ImGui::GetCursorScreenPos();
+  float w = ImGui::GetContentRegionAvail().x;
+  std::string btn = cur + "##pick";
+  if (missing) ImGui::PushStyleColor(ImGuiCol_Button, kDanger);
+  ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.f, 0.5f));
+  if (ImGui::Button(btn.c_str(), ImVec2(w, 48 * s))) ImGui::OpenPopup("##cards");
+  ImGui::PopStyleVar();
+  if (missing) ImGui::PopStyleColor();
+  // drop-down arrow
+  ImDrawList* dl = ImGui::GetWindowDrawList();
+  float ax = p.x + w - 26 * s, ay = p.y + 24 * s;
+  dl->AddTriangleFilled(ImVec2(ax - 8 * s, ay - 4 * s), ImVec2(ax + 8 * s, ay - 4 * s), ImVec2(ax, ay + 5 * s),
+                        ImGui::GetColorU32(kText));
+  ImGui::SetNextWindowPos(ImVec2(p.x, p.y + 50 * s));
+  ImGui::SetNextWindowSizeConstraints(ImVec2(w, 0), ImVec2(w, 420 * s));
+  if (ImGui::BeginPopup("##cards")) {
+    if (Toggle("AUTOMATIC (all network cards)", adapterId.empty(), ImVec2(-1, 48 * s))) {
+      changed = !adapterId.empty();
+      adapterId.clear();
+      label.clear();
+      ImGui::CloseCurrentPopup();
     }
-  }
-  if (!adapterId.empty() && !findAdapter(a.adapters, adapterId)) {
-    std::string l = (label.empty() ? std::string("Chosen card") : label) + "  -  NOT CONNECTED##missing";
-    Toggle(l.c_str(), true, ImVec2(-1, 44 * s), kDanger);
+    for (const NetAdapter& n : a.adapters) {
+      std::string l = adapterLabel(n) + "##" + n.id;
+      if (Toggle(l.c_str(), n.id == adapterId, ImVec2(-1, 48 * s))) {
+        changed = n.id != adapterId;
+        adapterId = n.id;
+        label = n.name + " (" + ipToString(n.ip) + ")";
+        ImGui::CloseCurrentPopup();
+      }
+    }
+    if (missing) {
+      std::string l = cur + "##missing";
+      Toggle(l.c_str(), true, ImVec2(-1, 48 * s), kDanger);
+    }
+    TouchScroll();
+    ImGui::EndPopup();
   }
   ImGui::PopID();
   return changed;
@@ -1145,7 +1173,6 @@ void LivePanel(App& a) {
     ImGui::PopStyleColor();
     Choice("mirror", mirrors, MIRROR_COUNT, &l.mirror, 0, 40 * s);
   }
-  LiveGoButton(a, 44 * s);
 
   ImGui::BeginChild("##live", ImVec2(0, 0), ImGuiChildFlags_AlwaysUseWindowPadding);
   if (a.st.audio.enabled) AudioLive(a);
@@ -1741,8 +1768,14 @@ void drawUI(App& a) {
   ImGui::End();
 
   std::string txt;
-  if (KeyboardResult("scenename", txt) && g_renameScene >= 0 && g_renameScene < kNumScenes)
+  if (KeyboardResult("scenename", txt) && g_renameScene >= 0 && g_renameScene < kNumScenes &&
+      a.st.scenes[g_renameScene].name != txt) {
+    // naming right after STORE belongs to the STORE undo step
+    bool afterStore = !a.undo.undo.empty() && a.undo.undo.back().label.rfind("store scene", 0) == 0 &&
+                      a.st.scenes[g_renameScene].name.empty();
+    if (!afterStore) undoPush(a, "rename scene " + std::to_string(g_renameScene + 1));
     a.st.scenes[g_renameScene].name = txt;
+  }
   KeyboardFrame(a);
   QuitConfirmFrame(a);
 }

@@ -25,21 +25,32 @@ What belongs to the PC (outputs, screens, audio input, layout, touch) stays in `
 ## Show mode
 
 **SHOW MODE** (top of the panel) locks everything that could break a show: SETTINGS, scene STORE / DELETE,
-saving palettes, cue editing, and the keyboard except SPACE (tap), ENTER (GO) and B (blackout). Closing TouchFX asks
-for confirmation. Effects, their sliders, colours, mirror, BPM, scenes and GO keep working.
+saving palettes, cue editing, undo, and the keyboard except SPACE (tap, or GO in the CUES view), ENTER (GO), B
+(blackout) and the CUES view keys. Closing TouchFX asks for confirmation. Effects, their sliders, colours, mirror, BPM, scenes and GO keep working.
 **Hold the SHOW button for 3 seconds** to unlock. Windows sleep / screen saver are blocked while TouchFX runs.
 
 ## Cues
 
 The **CUES** tab is a cue list per song:
-- **◀ song ▶** at the top switches song (tap the name for the song list: new, rename, duplicate, reorder, delete).
+- **◀ song ▶** at the top switches song (tap the name for the song list: new, rename, duplicate, reorder, delete,
+  renumber, and what GO does after the last cue).
+- Cues have **numbers** like a console cue list (1, 2, 2.5, 3...) so they can match your MA cue list. RECORD between
+  two cues gives a number in between (2.5); *EDIT → No.* changes a number (the list stays sorted);
+  *song list → RENUMBER CUES* resets the song to 1, 2, 3...
 - Each cue stores the full look (effect, settings, colours, mirror, release, LOOK), a **fade** time and an optional
   **follow** (go on automatically after N seconds or N bars). BPM is never recalled.
 - **GO** fires the next cue (orange outline), **BACK** the previous one; tap a cue to make it the next one.
   Different effects crossfade over the cue's fade, the same effect glides every value.
 - **RECORD** stores the live look as a new cue after the one on stage, **UPDATE** saves live tweaks into it
-  (the cue shows *modified* when you changed something), **EDIT** opens the name, fade, follow, move, copy, delete.
-- GO is also in the LIVE tab (under the mirror) and on the **Enter** key.
+  (the cue shows *modified* when you changed something), **EDIT** opens the number, name, fade, follow, move, copy,
+  delete.
+- **GO on the last cue** (set per song in the song list): **STOP** (end of song), **LOOP TO CUE 1**, or **NEXT SONG**
+  (cue 1 of the next song that has cues). A follow on the last cue follows that setting too.
+- **UNDO / REDO** (or **Ctrl+Z / Ctrl+Y**) undo cue, song and scene changes (record, update, edit, delete, renumber,
+  scene store / delete / rename...). The button shows what it will undo. 50 steps, cleared when the show closes.
+- Keyboard: **Enter** = GO in every tab. In the CUES view: **Space** = GO, **Up / Down** = choose the next cue,
+  **Backspace** = BACK, **Left / Right** = previous / next song, **T** = tap tempo. In the other tabs Space stays tap
+  tempo. These keys work in show mode too.
 
 ## Controls
 
@@ -126,6 +137,7 @@ Delete that file to go back to factory defaults.
 ## Network cards
 
 With several network cards (lighting network, video network, internet), choose which one is used:
+Each is a drop-down list (AUTOMATIC or one card).
 - **NDI** (*SETTINGS → OUTPUT*): the feed is announced and sent only on that card. TouchFX writes its own copy of
   NDI's configuration (keeping your NDI Access Manager settings) with only that adapter allowed; AUTOMATIC leaves
   NDI's configuration untouched. NDI restarts for a moment when you change it.

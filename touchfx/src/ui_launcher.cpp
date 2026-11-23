@@ -43,6 +43,8 @@ bool KeyboardResult(const char* id, std::string& out) {
   return true;
 }
 
+bool KeyboardIsOpen() { return g_kb.requested || g_kb.open; }
+
 void KeyboardFrame(App& a) {
   float s = S();
   if (g_kb.requested) {

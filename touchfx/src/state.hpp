@@ -165,14 +165,17 @@ struct Scene {
 
 enum CueFollow { FOLLOW_NONE, FOLLOW_SECONDS, FOLLOW_BARS, FOLLOW_COUNT };
 struct Cue {
+  float number = 0;     // cue number shown and used to sort (1, 2, 2.5...), like a console cue list
   std::string name;
   Look look;            // the full look (BPM is never recalled)
   float fade = 1.0f;    // seconds
   int follow = FOLLOW_NONE;
   float followValue = 4.f;  // seconds or bars
 };
+enum CueEnd { END_STOP, END_LOOP, END_NEXT_SONG, END_COUNT };  // GO on the last cue
 struct CueList {  // one per song
   std::string name = "Song";
+  int endAction = END_STOP;
   std::vector<Cue> cues;
 };
 

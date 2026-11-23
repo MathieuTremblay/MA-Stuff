@@ -41,10 +41,10 @@ uniform sampler2D uScene; uniform sampler2D uBloom;
 uniform float uBloomAmt, uSat, uMaster;
 uniform int uAlpha, uPremult;
 void main() {
-  vec3 c = (max(texture(uScene, vUv).rgb, vec3(0.0)) + texture(uBloom, vUv).rgb * uBloomAmt) * uMaster;
+  vec3 c = max(texture(uScene, vUv).rgb, vec3(0.0)) + texture(uBloom, vUv).rgb * uBloomAmt;
   float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
   c = max(mix(vec3(l), c, uSat), vec3(0.0));
-  c = tonemap(c);
+  c = tonemap(c) * uMaster;  // master after tone mapping: 50% looks like 50%
   if (uAlpha == 1) {
     float a = clamp(max(c.r, max(c.g, c.b)), 0.0, 1.0);
     if (uPremult == 0) c = a > 0.0005 ? c / a : vec3(0.0);

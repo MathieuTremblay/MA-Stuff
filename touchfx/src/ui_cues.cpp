@@ -1,7 +1,8 @@
-// CUES view: songs (cue lists), cue rows, GO / BACK, recording and editing.
+// CUES view: songs (cue lists), cue rows, GO / BACK, recording, editing, numbering and undo.
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 
 #include "app.hpp"
 #include "cues.hpp"
@@ -24,11 +25,19 @@ std::string followText(const Cue& c) {
   return b;
 }
 
+std::string cueLabel(const CueList& cl, int i) {
+  return (i >= 0 && i < int(cl.cues.size())) ? "cue " + cueNumText(cl.cues[i].number) : "cue";
+}
+
 int g_edit = -1;          // cue being edited in the edit sheet
+bool g_sheetOpen = false;  // the edit sheet was open last frame
+bool g_sheetReturn = false;  // reopen the edit sheet when the on-screen keyboard closes
 double g_delArmed = -10;  // two-tap delete
 double g_songDelArmed = -10;
+std::string g_numError;   // "cue 3 already exists"
+double g_numErrorTime = -10;
 
-// Edit sheet for one cue: name, fade, follow, move, copy, delete.
+// Edit sheet for one cue: number, name, fade, follow, move, copy, delete.
 void CueEditSheet(App& a) {
   float s = S();
   CueList& cl = active(a);
@@ -44,11 +53,28 @@ void CueEditSheet(App& a) {
   Cue& c = cl.cues[g_edit];
   float sp = ImGui::GetStyle().ItemSpacing.x;
   ImGui::PushFont(a.fontBig);
-  ImGui::Text("Cue %d", g_edit + 1);
+  ImGui::Text("Cue %s", cueNumText(c.number).c_str());
   ImGui::PopFont();
+  // number + name (both open the on-screen keyboard)
+  char nb[64];
+  std::snprintf(nb, sizeof(nb), "No. %s##cuenum", cueNumText(c.number).c_str());
+  float numW = 150 * s;
+  if (ImGui::Button(nb, ImVec2(numW, 48 * s))) {
+    OpenKeyboard("cuenum", cueNumText(c.number), "Cue number (for example 3 or 2.5)");
+    g_sheetReturn = true;
+  }
+  ImGui::SameLine();
   char nm[96];
   std::snprintf(nm, sizeof(nm), "%s##cuename", c.name.empty() ? "(no name)" : c.name.c_str());
-  if (ImGui::Button(nm, ImVec2(-1, 48 * s))) OpenKeyboard("cuename", c.name, "Cue name");
+  if (ImGui::Button(nm, ImVec2(-1, 48 * s))) {
+    OpenKeyboard("cuename", c.name, "Cue name");
+    g_sheetReturn = true;
+  }
+  if (ImGui::GetTime() - g_numErrorTime < 4.0) {
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 0.45f, 0.4f, 1));
+    ImGui::TextUnformatted(g_numError.c_str());
+    ImGui::PopStyleColor();
+  }
   char buf[32];
   std::snprintf(buf, sizeof(buf), "%.1f s", c.fade);
   TouchSlider("Fade", &c.fade, 0.f, 10.f, buf);
@@ -71,9 +97,11 @@ void CueEditSheet(App& a) {
     if (idx == from) idx = to;
     else if (idx == to) idx = from;
   };
+  // moving swaps the cues but keeps the numbers in order
   ImGui::BeginDisabled(g_edit == 0);
   if (ImGui::Button("MOVE UP", ImVec2(w4, 48 * s))) {
     std::swap(cl.cues[g_edit], cl.cues[g_edit - 1]);
+    std::swap(cl.cues[g_edit].number, cl.cues[g_edit - 1].number);
     fixIndex(p.current, g_edit, g_edit - 1);
     fixIndex(p.next, g_edit, g_edit - 1);
     --g_edit;
@@ -83,6 +111,7 @@ void CueEditSheet(App& a) {
   ImGui::BeginDisabled(g_edit + 1 >= int(cl.cues.size()));
   if (ImGui::Button("MOVE DOWN", ImVec2(w4, 48 * s))) {
     std::swap(cl.cues[g_edit], cl.cues[g_edit + 1]);
+    std::swap(cl.cues[g_edit].number, cl.cues[g_edit + 1].number);
     fixIndex(p.current, g_edit, g_edit + 1);
     fixIndex(p.next, g_edit, g_edit + 1);
     ++g_edit;
@@ -90,8 +119,13 @@ void CueEditSheet(App& a) {
   ImGui::EndDisabled();
   ImGui::SameLine();
   if (ImGui::Button("COPY", ImVec2(w4, 48 * s))) {
-    Cue copy = c;
+    Cue copy = cl.cues[g_edit];
     copy.name += " copy";
+    copy.number = cueNumberAfter(cl, g_edit);
+    if (copy.number < 0) {
+      cueRenumber(cl);
+      copy.number = cueNumberAfter(cl, g_edit);
+    }
     cl.cues.insert(cl.cues.begin() + g_edit + 1, copy);
     if (p.current > g_edit) ++p.current;
     if (p.next > g_edit) ++p.next;
@@ -101,6 +135,7 @@ void CueEditSheet(App& a) {
   bool armed = ImGui::GetTime() - g_delArmed < 3.0;
   if (Toggle(armed ? "TAP AGAIN" : "DELETE", armed, ImVec2(w4, 48 * s), kDanger)) {
     if (armed) {
+      if (a.undo.hasPending) a.undo.pending.label = "delete " + cueLabel(cl, g_edit);
       cl.cues.erase(cl.cues.begin() + g_edit);
       if (p.current == g_edit) p.current = -1;
       else if (p.current > g_edit) --p.current;
@@ -108,12 +143,16 @@ void CueEditSheet(App& a) {
       else if (p.next > g_edit) --p.next;
       g_delArmed = -10;
       g_edit = -1;
+      g_sheetReturn = false;
       ImGui::CloseCurrentPopup();
     } else {
       g_delArmed = ImGui::GetTime();
     }
   }
-  if (Toggle("DONE", true, ImVec2(-1, 52 * s), kGo)) ImGui::CloseCurrentPopup();
+  if (Toggle("DONE", true, ImVec2(-1, 52 * s), kGo)) {
+    g_sheetReturn = false;
+    ImGui::CloseCurrentPopup();
+  }
   ImGui::EndPopup();
 }
 
@@ -122,24 +161,34 @@ void SongMenu(App& a) {
   float s = S();
   ImGuiIO& io = ImGui::GetIO();
   ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-  ImGui::SetNextWindowSize(ImVec2(std::min(560 * s, io.DisplaySize.x - 20 * s), std::min(io.DisplaySize.y - 40 * s, 760 * s)));
+  ImGui::SetNextWindowSize(ImVec2(std::min(560 * s, io.DisplaySize.x - 20 * s), std::min(io.DisplaySize.y - 40 * s, 860 * s)));
   if (!ImGui::BeginPopup("##songs")) return;
   bool locked = ShowModeLocked(a);
   ImGui::PushFont(a.fontBig);
   ImGui::TextUnformatted("Songs");
   ImGui::PopFont();
   float sp = ImGui::GetStyle().ItemSpacing.x;
-  float listH = ImGui::GetContentRegionAvail().y - (locked ? 60 * s : 170 * s);
+  float listH = ImGui::GetContentRegionAvail().y - (locked ? 60 * s : 330 * s);
   ImGui::BeginChild("##songlist", ImVec2(0, std::max(100.f * s, listH)));
+  static const char* ends[] = {"stop", "loop", "next song"};
   for (int i = 0; i < int(a.st.cueLists.size()); ++i) {
-    char lbl[128];
-    std::snprintf(lbl, sizeof(lbl), "%d.  %s   (%d cues)##song%d", i + 1, a.st.cueLists[i].name.c_str(),
-                  int(a.st.cueLists[i].cues.size()), i);
+    const CueList& l = a.st.cueLists[i];
+    char lbl[160];
+    std::snprintf(lbl, sizeof(lbl), "%d.  %s   (%d cues, then %s)##song%d", i + 1, l.name.c_str(), int(l.cues.size()),
+                  ends[std::clamp(l.endAction, 0, END_COUNT - 1)], i);
     if (Toggle(lbl, i == a.st.activeList, ImVec2(-1, 52 * s))) cueSelectList(a, i);
   }
   TouchScroll();
   ImGui::EndChild();
   if (!locked) {
+    CueList& cl = active(a);
+    SectionLabel("GO ON THE LAST CUE OF THIS SONG");
+    static const char* endLabels[] = {"STOP", "LOOP TO CUE 1", "NEXT SONG"};
+    int end = cl.endAction;
+    if (Choice("endaction", endLabels, END_COUNT, &end) && end != cl.endAction) {
+      undoPush(a, "end of song");
+      cl.endAction = end;
+    }
     float w3 = (ImGui::GetContentRegionAvail().x - sp * 2) / 3;
     if (ImGui::Button("NEW SONG", ImVec2(w3, 48 * s))) {
       char def[32];
@@ -150,6 +199,7 @@ void SongMenu(App& a) {
     if (ImGui::Button("RENAME", ImVec2(w3, 48 * s))) OpenKeyboard("rensong", active(a).name, "Song name");
     ImGui::SameLine();
     if (ImGui::Button("DUPLICATE", ImVec2(w3, 48 * s))) {
+      undoPush(a, "duplicate song");
       CueList copy = active(a);
       copy.name += " copy";
       a.st.cueLists.insert(a.st.cueLists.begin() + a.st.activeList + 1, copy);
@@ -158,6 +208,7 @@ void SongMenu(App& a) {
     int al = a.st.activeList;
     ImGui::BeginDisabled(al == 0);
     if (ImGui::Button("MOVE UP", ImVec2(w3, 48 * s))) {
+      undoPush(a, "move song");
       std::swap(a.st.cueLists[al], a.st.cueLists[al - 1]);
       a.st.activeList = al - 1;
     }
@@ -165,6 +216,7 @@ void SongMenu(App& a) {
     ImGui::SameLine();
     ImGui::BeginDisabled(al + 1 >= int(a.st.cueLists.size()));
     if (ImGui::Button("MOVE DOWN", ImVec2(w3, 48 * s))) {
+      undoPush(a, "move song");
       std::swap(a.st.cueLists[al], a.st.cueLists[al + 1]);
       a.st.activeList = al + 1;
     }
@@ -174,6 +226,7 @@ void SongMenu(App& a) {
     ImGui::BeginDisabled(a.st.cueLists.size() <= 1);
     if (Toggle(armed ? "TAP AGAIN" : "DELETE", armed, ImVec2(w3, 48 * s), kDanger)) {
       if (armed) {
+        undoPush(a, "delete song " + a.st.cueLists[al].name);
         a.st.cueLists.erase(a.st.cueLists.begin() + al);
         cueSelectList(a, std::max(0, al - 1));
         g_songDelArmed = -10;
@@ -182,40 +235,80 @@ void SongMenu(App& a) {
       }
     }
     ImGui::EndDisabled();
+    CueList& now = active(a);  // DUPLICATE / DELETE above may have changed the song list
+    ImGui::BeginDisabled(now.cues.empty());
+    if (ImGui::Button("RENUMBER CUES 1, 2, 3...", ImVec2(-1, 48 * s))) {
+      undoPush(a, "renumber " + now.name);
+      cueRenumber(now);
+    }
+    ImGui::EndDisabled();
   }
   if (Toggle("DONE", true, ImVec2(-1, 48 * s), kGo)) ImGui::CloseCurrentPopup();
   ImGui::EndPopup();
 }
 
-}  // namespace
-
-// Compact GO for the LIVE tab (only when the song has cues).
-void LiveGoButton(App& a, float h) {
-  CueList& cl = active(a);
-  if (cl.cues.empty()) return;
-  float s = S();
-  float sp = ImGui::GetStyle().ItemSpacing.x;
-  float backW = 90 * s;
-  ImGui::BeginDisabled(a.cue.current <= 0);
-  if (ImGui::Button("BACK##live", ImVec2(backW, h))) cueBack(a);
+// UNDO / REDO button: shows what it will undo.
+void UndoButton(App& a, bool redo, ImVec2 size) {
+  std::string what = undoLabel(a, redo);
+  ImGui::PushFont(a.fontSmall);
+  float maxW = size.x - ImGui::GetStyle().FramePadding.x * 2;
+  if (ImGui::CalcTextSize(what.c_str()).x > maxW) {  // too long for the button: shorten with "..."
+    while (!what.empty() && ImGui::CalcTextSize((what + "...").c_str()).x > maxW) what.pop_back();
+    what += "...";
+  }
+  std::string lbl = std::string(redo ? "REDO" : "UNDO") + (what.empty() ? "" : "\n" + what) + (redo ? "##redo" : "##undo");
+  ImGui::BeginDisabled(undoLabel(a, redo).empty());
+  if (ImGui::Button(lbl.c_str(), size)) undoApply(a, redo);
+  ImGui::PopFont();
   ImGui::EndDisabled();
-  ImGui::SameLine();
-  char lbl[128];
-  if (a.cue.next >= 0)
-    std::snprintf(lbl, sizeof(lbl), "GO  >  %d  %s##livego", a.cue.next + 1, cl.cues[a.cue.next].name.c_str());
-  else
-    std::snprintf(lbl, sizeof(lbl), "END OF %s##livego", cl.name.c_str());
-  ImGui::BeginDisabled(a.cue.next < 0);
-  if (Toggle(lbl, a.cue.next >= 0, ImVec2(ImGui::GetContentRegionAvail().x, h), kGo)) cueGo(a);
-  ImGui::EndDisabled();
-  (void)sp;
 }
 
+// Results of the on-screen keyboard. Applied first in the frame, before the edit sheet can reopen and take its
+// undo snapshot.
+void KeyboardResults(App& a) {
+  CueList& cl = active(a);
+  std::string txt;
+  if (KeyboardResult("cuename", txt) && g_edit >= 0 && g_edit < int(cl.cues.size()) && cl.cues[g_edit].name != txt) {
+    undoPush(a, "rename " + cueLabel(cl, g_edit));
+    cl.cues[g_edit].name = txt;
+  }
+  if (KeyboardResult("cuenum", txt) && g_edit >= 0 && g_edit < int(cl.cues.size())) {
+    for (char& ch : txt)
+      if (ch == ',') ch = '.';  // 2,5 works too
+    char* end = nullptr;
+    float v = std::strtof(txt.c_str(), &end);
+    v = std::round(v * 1000.f) / 1000.f;
+    int other = cueFindNumber(cl, v);
+    if (txt.empty() || end == txt.c_str() || *end != 0 || !(v > 0) || v >= 10000) {
+      g_numError = "\"" + txt + "\" is not a cue number. Use a number like 3 or 2.5.";
+      g_numErrorTime = ImGui::GetTime();
+    } else if (other >= 0 && other != g_edit) {
+      g_numError = "Cue " + cueNumText(v) + " already exists in this song.";
+      g_numErrorTime = ImGui::GetTime();
+    } else if (other != g_edit) {
+      undoPush(a, "renumber " + cueLabel(cl, g_edit));
+      cl.cues[g_edit].number = v;
+      cueSort(a, &g_edit);
+    }
+  }
+  if (KeyboardResult("newsong", txt)) {
+    undoPush(a, "new song");
+    a.st.cueLists.push_back(CueList{txt.empty() ? "Song" : txt, END_STOP, {}});
+    cueSelectList(a, int(a.st.cueLists.size()) - 1);
+  }
+  if (KeyboardResult("rensong", txt) && !txt.empty() && active(a).name != txt) {
+    undoPush(a, "rename song");
+    active(a).name = txt;
+  }
+}
+
+}  // namespace
+
 void CuesPanel(App& a) {
+  KeyboardResults(a);
   float s = S();
   float sp = ImGui::GetStyle().ItemSpacing.x;
   bool locked = ShowModeLocked(a);
-  CueList& cl = active(a);
   CuePlayer& p = a.cue;
 
   // ---- song selector ----
@@ -225,7 +318,7 @@ void CuesPanel(App& a) {
   ImGui::EndDisabled();
   ImGui::SameLine();
   char song[160];
-  std::snprintf(song, sizeof(song), "%s   (%d/%d)##songbtn", cl.name.c_str(), a.st.activeList + 1,
+  std::snprintf(song, sizeof(song), "%s   (%d/%d)##songbtn", active(a).name.c_str(), a.st.activeList + 1,
                 int(a.st.cueLists.size()));
   ImGui::PushFont(a.fontMain);
   if (ImGui::Button(song, ImVec2(ImGui::GetContentRegionAvail().x - arrowW - sp, h))) ImGui::OpenPopup("##songs");
@@ -235,8 +328,10 @@ void CuesPanel(App& a) {
   if (ImGui::Button(">##nextsong", ImVec2(arrowW, h))) cueSelectList(a, a.st.activeList + 1);
   ImGui::EndDisabled();
   SongMenu(a);
+  CueList* clp = &active(a);  // taken after the song menu, which can add or remove songs
 
   // ---- cue rows ----
+  CueList& cl = *clp;
   float bottomH = (locked ? 0.f : 56 * s + sp) + 30 * s + 96 * s + sp * 3;
   ImGui::BeginChild("##cuelist", ImVec2(0, ImGui::GetContentRegionAvail().y - bottomH),
                     ImGuiChildFlags_AlwaysUseWindowPadding);
@@ -249,7 +344,7 @@ void CuesPanel(App& a) {
     ImGui::PopStyleColor();
   }
   ImDrawList* dl = ImGui::GetWindowDrawList();
-  float rowH = 58 * s;
+  float rowH = 58 * s, numW = 84 * s;
   for (int i = 0; i < int(cl.cues.size()); ++i) {
     const Cue& c = cl.cues[i];
     ImGui::PushID(i);
@@ -257,17 +352,25 @@ void CuesPanel(App& a) {
     float w = ImGui::GetContentRegionAvail().x;
     if (ImGui::InvisibleButton("row", ImVec2(w, rowH))) p.next = i;  // tap = make it the next cue
     bool cur = p.current == i, nxt = p.next == i;
+    if (nxt && p.scrollToNext) {
+      ImGui::SetScrollHereY(0.5f);
+      p.scrollToNext = false;
+    }
     ImU32 bg = cur ? IM_COL32(25, 90, 45, 255) : IM_COL32(30, 30, 36, 255);
     dl->AddRectFilled(pos, ImVec2(pos.x + w, pos.y + rowH), bg, 6 * s);
     if (nxt) dl->AddRect(pos, ImVec2(pos.x + w, pos.y + rowH), ImGui::GetColorU32(kAccent), 6 * s, 0, 3 * s);
     // number, name, effect, palette, fade / follow
-    char num[16];
-    std::snprintf(num, sizeof(num), "%d", i + 1);
+    std::string num = cueNumText(c.number);
     ImGui::PushFont(a.fontBig);
+    if (ImGui::CalcTextSize(num.c_str()).x > numW - 16 * s) {
+      ImGui::PopFont();
+      ImGui::PushFont(a.fontMain);
+    }
     float numY = pos.y + (rowH - ImGui::GetFontSize()) * 0.5f;
-    dl->AddText(ImVec2(pos.x + 12 * s, numY), cur ? IM_COL32(150, 255, 170, 255) : IM_COL32(200, 200, 210, 255), num);
+    dl->AddText(ImVec2(pos.x + 12 * s, numY), cur ? IM_COL32(150, 255, 170, 255) : IM_COL32(200, 200, 210, 255),
+                num.c_str());
     ImGui::PopFont();
-    float x = pos.x + 70 * s;
+    float x = pos.x + numW;
     dl->AddText(ImVec2(x, pos.y + 7 * s), IM_COL32(240, 240, 245, 255), c.name.empty() ? "(no name)" : c.name.c_str());
     const Palette& pal = c.look.useCustom ? c.look.custom : a.st.palettes[c.look.palette];
     ImGui::PushFont(a.fontSmall);
@@ -290,37 +393,72 @@ void CuesPanel(App& a) {
     ImGui::PopFont();
     ImGui::PopID();
   }
+  if (p.next < 0) p.scrollToNext = false;
+  // end of song: what GO does after the last cue
+  if (!cl.cues.empty()) {
+    static const char* endText[] = {"End of song: GO stops here", "End of song: GO loops back to the first cue",
+                                    "End of song: GO starts the next song"};
+    ImGui::Dummy(ImVec2(0, 4 * s));
+    ImGui::PushStyleColor(ImGuiCol_Text, kTextDim);
+    ImGui::PushFont(a.fontSmall);
+    ImGui::TextUnformatted(endText[std::clamp(cl.endAction, 0, END_COUNT - 1)]);
+    ImGui::PopFont();
+    ImGui::PopStyleColor();
+  }
   ImGui::Dummy(ImVec2(0, 10 * s));
   TouchScroll();
   ImGui::EndChild();
 
   // ---- editing (unlocked only) ----
   if (!locked) {
-    float w3 = (ImGui::GetContentRegionAvail().x - sp * 2) / 3;
-    if (ImGui::Button("RECORD", ImVec2(w3, 56 * s))) cueRecord(a);
+    float unit = (ImGui::GetContentRegionAvail().x - sp * 4) / 5.f;  // RECORD UPDATE EDIT, then UNDO / REDO
+    float bw = unit * 0.9f, uw = unit * 1.4f;  // REDO takes what is left
+    if (ImGui::Button("RECORD", ImVec2(bw, 56 * s))) {
+      undoPush(a, "record cue");
+      cueRecord(a);
+      if (!a.undo.undo.empty()) a.undo.undo.back().label = "record " + cueLabel(cl, p.current);
+    }
     ImGui::SameLine();
     ImGui::BeginDisabled(p.current < 0);
-    if (Toggle("UPDATE", p.modified, ImVec2(w3, 56 * s))) cueUpdate(a);
+    if (Toggle("UPDATE", p.modified, ImVec2(bw, 56 * s))) {
+      undoPush(a, "update " + cueLabel(cl, p.current));
+      cueUpdate(a);
+    }
     ImGui::EndDisabled();
     ImGui::SameLine();
     int target = p.next >= 0 ? p.next : p.current;
     ImGui::BeginDisabled(target < 0);
-    if (ImGui::Button("EDIT", ImVec2(w3, 56 * s))) {
+    if (ImGui::Button("EDIT", ImVec2(bw, 56 * s))) {
       g_edit = target;
       ImGui::OpenPopup("##cueedit");
     }
     ImGui::EndDisabled();
+    ImGui::SameLine();
+    UndoButton(a, false, ImVec2(uw, 56 * s));
+    ImGui::SameLine();
+    UndoButton(a, true, ImVec2(ImGui::GetContentRegionAvail().x, 56 * s));
+    // back to the edit sheet after typing a number or a name
+    if (g_sheetReturn && !KeyboardIsOpen() && !ImGui::IsPopupOpen("##cueedit")) {
+      g_sheetReturn = false;
+      if (g_edit >= 0 && g_edit < int(active(a).cues.size())) ImGui::OpenPopup("##cueedit");
+    }
+    bool open = ImGui::IsPopupOpen("##cueedit");
+    if (open && !g_sheetOpen) undoBegin(a, "edit " + cueLabel(active(a), g_edit));  // all changes = one undo step
     CueEditSheet(a);
+    open = ImGui::IsPopupOpen("##cueedit");
+    if (!open && g_sheetOpen) undoEnd(a);
+    g_sheetOpen = open;
   }
 
   // ---- status + GO / BACK ----
+  CueList& cur = active(a);  // UNDO may have replaced the song list
   {
     char st[160];
-    if (p.current >= 0 && p.current < int(cl.cues.size()))
-      std::snprintf(st, sizeof(st), "On stage: %d  %s%s", p.current + 1, cl.cues[p.current].name.c_str(),
-                    p.modified ? "  (modified - UPDATE to keep)" : "");
+    if (p.current >= 0 && p.current < int(cur.cues.size()))
+      std::snprintf(st, sizeof(st), "On stage: %s  %s%s", cueNumText(cur.cues[p.current].number).c_str(),
+                    cur.cues[p.current].name.c_str(), p.modified ? "  (modified - UPDATE to keep)" : "");
     else
-      std::snprintf(st, sizeof(st), "Ready: GO starts %s", cl.name.c_str());
+      std::snprintf(st, sizeof(st), "Ready: GO starts %s", cur.name.c_str());
     ImGui::PushStyleColor(ImGuiCol_Text, kTextDim);
     ImGui::TextUnformatted(st);
     ImGui::PopStyleColor();
@@ -329,8 +467,8 @@ void CuesPanel(App& a) {
     float pw = ImGui::GetContentRegionAvail().x;
     float prog = 0;
     if (p.fading && p.fadeDur > 0) prog = std::min(1.f, p.fadeT / p.fadeDur);
-    else if (p.current >= 0 && p.current < int(cl.cues.size())) {
-      const Cue& c = cl.cues[p.current];
+    else if (p.current >= 0 && p.current < int(cur.cues.size())) {
+      const Cue& c = cur.cues[p.current];
       if (c.follow == FOLLOW_SECONDS) prog = float((a.time - p.goTime) / c.followValue);
       if (c.follow == FOLLOW_BARS) prog = float((a.tempo.beat - p.goBeat) / (c.followValue * 4.0));
     }
@@ -342,28 +480,17 @@ void CuesPanel(App& a) {
   }
   float backW = 130 * s, goH = 96 * s;
   ImGui::BeginDisabled(p.current <= 0);
-  if (ImGui::Button("BACK", ImVec2(backW, goH))) cueBack(a);
+  if (ImGui::Button("BACK", ImVec2(backW, goH))) cueCommand(a, CUE_BACK);
   ImGui::EndDisabled();
   ImGui::SameLine();
-  char go[160];
-  if (p.next >= 0 && p.next < int(cl.cues.size()))
-    std::snprintf(go, sizeof(go), "GO\n%d  %s##bigGo", p.next + 1, cl.cues[p.next].name.c_str());
-  else
-    std::snprintf(go, sizeof(go), "END OF SONG##bigGo");
-  ImGui::BeginDisabled(p.next < 0);
+  bool canGo = cueCanGo(a);
+  std::string go = (canGo ? "GO\n" : "") + cueGoText(a, true) + "##bigGo";
+  ImGui::BeginDisabled(!canGo);
   ImGui::PushFont(a.fontMain);
-  if (Toggle(go, p.next >= 0, ImVec2(ImGui::GetContentRegionAvail().x, goH), kGo)) cueGo(a);
+  if (Toggle(go.c_str(), canGo, ImVec2(ImGui::GetContentRegionAvail().x, goH), kGo)) cueCommand(a, CUE_GO);
   ImGui::PopFont();
   ImGui::EndDisabled();
 
-  // keyboard results
-  std::string txt;
-  if (KeyboardResult("cuename", txt) && g_edit >= 0 && g_edit < int(cl.cues.size())) cl.cues[g_edit].name = txt;
-  if (KeyboardResult("newsong", txt)) {
-    a.st.cueLists.push_back(CueList{txt.empty() ? "Song" : txt, {}});
-    cueSelectList(a, int(a.st.cueLists.size()) - 1);
-  }
-  if (KeyboardResult("rensong", txt) && !txt.empty()) active(a).name = txt;
 }
 
 }  // namespace ui

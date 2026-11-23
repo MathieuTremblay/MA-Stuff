@@ -77,7 +77,7 @@ void switchEffect(App& a, int newFx) {
     a.prevFx = old;
     a.xfade = 0;
     a.prevHeld = a.touching() ? a.live : a.held;
-    a.prevGain = a.gain;
+    a.prevGain = a.gain * a.releaseLevel;  // switching during a release fade: carry on from that level
   } else if (old >= 0) {
     a.fx[old]->clear();
     a.xfadeOverride = -1;
@@ -114,6 +114,7 @@ static void resetForShow(App& a) {
   a.dmxPrimed = false;
   a.dmxRunProtocol = -1;  // restart DMX with the show's patch
   a.cue = CuePlayer();
+  undoClear(a);
   cueSelectList(a, a.st.activeList);
 }
 
@@ -272,8 +273,28 @@ void handleEvent(App& a, const SDL_Event& ev, bool& running) {
         break;
       }
       if (ev.key.keysym.sym == SDLK_RETURN || ev.key.keysym.sym == SDLK_KP_ENTER) {
-        cueGo(a);  // Enter = GO
+        cueCommand(a, CUE_GO);  // Enter = GO (every tab)
         break;
+      }
+      if (ev.key.keysym.mod & KMOD_CTRL) {  // Ctrl+Z undo, Ctrl+Y / Ctrl+Shift+Z redo (not in show mode)
+        SDL_Keycode k = ev.key.keysym.sym;
+        if (!a.st.showMode && (k == SDLK_z || k == SDLK_y))
+          undoApply(a, k == SDLK_y || (ev.key.keysym.mod & KMOD_SHIFT));
+        break;
+      }
+      if (a.st.tab == 2) {  // CUES view: Space = GO, arrows pick the next cue / song (show mode too)
+        bool done = true;
+        switch (ev.key.keysym.sym) {
+          case SDLK_SPACE: cueCommand(a, CUE_GO); break;
+          case SDLK_BACKSPACE: cueCommand(a, CUE_BACK); break;
+          case SDLK_UP: cueCommand(a, CUE_SELECT_PREV); break;
+          case SDLK_DOWN: cueCommand(a, CUE_SELECT_NEXT); break;
+          case SDLK_LEFT: cueCommand(a, CUE_SONG_PREV); break;
+          case SDLK_RIGHT: cueCommand(a, CUE_SONG_NEXT); break;
+          case SDLK_t: a.tempo.tap(a.time, a.st.look.bpm); break;  // tap tempo moves to T here
+          default: done = false; break;
+        }
+        if (done) break;
       }
       if (a.st.showMode) {  // show mode: only tap tempo, GO and blackout from the keyboard
         if (ev.key.keysym.sym == SDLK_SPACE) a.tempo.tap(a.time, a.st.look.bpm);
@@ -858,14 +879,17 @@ int main(int argc, char** argv) {
               c.look.lasers.spread = i == 2 ? 1.f : 0.3f;
               c.fade = 0.2f;
               c.follow = i == 0 ? FOLLOW_BARS : FOLLOW_NONE;
+              c.number = i == 2 ? 2.5f : float(i < 2 ? i + 1 : 3);
               cl.cues.push_back(c);
             }
-            a.st.cueLists.push_back(CueList{"02 Main", {}});
+            cl.endAction = END_LOOP;
+            a.st.cueLists.push_back(CueList{"02 Main", END_STOP, {}});
             cueSelectList(a, 0);
             cueGo(a);
           }
           if (frame == fxFrames + 6 * 20 + 8) cueGo(a);
           if (frame == fxFrames + 6 * 20 + 12) cueGo(a);  // same effect: values glide
+          if (frame == fxFrames + 6 * 20 + 14) cueGo(a);  // last cue: GO now shows LOOP
         }
         if (k == 7) {  // show mode
           a.st.tab = 0;
@@ -922,12 +946,18 @@ int main(int argc, char** argv) {
       }
     }
     a.wasTouching = touching;
+    // Release fade: the effect keeps running as if the fingers were still there and the final image is
+    // dimmed after tone mapping, so the fade lasts exactly the chosen time on every effect.
+    a.releaseLevel = 1.f;
     if (a.fading) {
       float ft = std::max(0.05f, look.fadeFx[a.curFx]);
-      fadeMul = std::pow(0.001f, dt / ft);  // -60 dB over the fade time
-      a.gain *= fadeMul;
       a.fadeElapsed += dt;
-      if (a.fadeElapsed >= ft) a.clearEffect();
+      float t = std::min(1.f, a.fadeElapsed / ft);
+      a.releaseLevel = 1.f - t * t * (3.f - 2.f * t) * 0.15f - t * 0.85f;  // even fade, soft start
+      if (a.fadeElapsed >= ft) {
+        a.clearEffect();
+        a.releaseLevel = 1.f;
+      }
     }
 
     FxCtx c;
@@ -985,9 +1015,9 @@ int main(int argc, char** argv) {
         fxAdd(a.scene, a.scenePrev.tex, k * k);
       }
     }
-    float master = 1.f;
+    float master = a.releaseLevel;
     if (a.dmxActive) {
-      master = a.dmxDim;
+      master *= a.dmxDim;
       if (a.dmxStrobeHz > 0 && a.dmxStrobePhase > 0.3) master = 0.f;  // shutter strobe
     }
     a.post.run(a.scene, a.out, post, a.st.output.alpha, a.st.output.premultiplied, master);

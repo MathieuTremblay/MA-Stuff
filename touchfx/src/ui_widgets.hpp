@@ -33,12 +33,12 @@ void SwatchLabel(ImVec2 p, ImVec4 col, const char* text);
 // the text, when the user presses OK for that request.
 void OpenKeyboard(const char* id, const std::string& initial, const char* title);
 bool KeyboardResult(const char* id, std::string& out);
+bool KeyboardIsOpen();
 void KeyboardFrame(App& a);
 void QuitConfirmFrame(App& a);
 
 // Panels from the other UI files
 void CuesPanel(App& a);
-void LiveGoButton(App& a, float height);  // compact GO for the LIVE header
 void Launcher(App& a);
 bool ShowModeLocked(App& a);              // true while show mode blocks editing
 void ShowModeButton(App& a, ImVec2 size);

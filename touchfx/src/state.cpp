@@ -42,8 +42,8 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Look, effect, fluid, particles, 
                                                 mirror, releaseFx, fadeFx, useCustom, custom,
                                                 release, fadeTime, colorMode, palette, brightness, bpm, speedMult)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene, used, name, look)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Cue, name, look, fade, follow, followValue)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(CueList, name, cues)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Cue, number, name, look, fade, follow, followValue)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(CueList, name, endAction, cues)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(OutputSettings, width, height, fps, ndiEnabled, ndiName, ndiAdapter,
                                                 ndiAdapterLabel, spout, spoutName, alpha,
                                                 premultiplied)
@@ -128,13 +128,20 @@ void sanitize(AppState& s) {
   clampRef(s.tab, 0, 2);  // 0 live, 1 settings, 2 cues
   clampRef(s.settingsTab, 0, 6);
   if (s.cueLists.empty()) s.cueLists.push_back(CueList{"Song 1", {}});
-  for (CueList& cl : s.cueLists)
-    for (Cue& c : cl.cues) {
+  for (CueList& cl : s.cueLists) {
+    clampRef(cl.endAction, 0, END_COUNT - 1);
+    bool numbered = true;  // shows from v0.7 have no cue numbers: number them 1, 2, 3...
+    for (size_t i = 0; i < cl.cues.size(); ++i)
+      if (!(cl.cues[i].number > 0) || (i > 0 && cl.cues[i].number <= cl.cues[i - 1].number)) numbered = false;
+    for (size_t i = 0; i < cl.cues.size(); ++i) {
+      Cue& c = cl.cues[i];
+      if (!numbered) c.number = float(i + 1);
       sanitizeLook(c.look);
       clampRef(c.fade, 0.f, 30.f);
       clampRef(c.follow, 0, FOLLOW_COUNT - 1);
       clampRef(c.followValue, 0.1f, 600.f);
     }
+  }
   clampRef(s.activeList, 0, int(s.cueLists.size()) - 1);
   clampRef(s.effectFade, 0.f, 3.f);
   if (s.output.spoutName.empty()) s.output.spoutName = "TouchFX";

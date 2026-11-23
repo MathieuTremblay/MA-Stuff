@@ -159,6 +159,8 @@ struct App {
   std::string lastSavedShow, lastSavedMachine;
   double thumbTimer = 0;
   CuePlayer cue;
+  UndoHistory undo;  // cue / song / scene edits of the open show
+  float releaseLevel = 1;  // release fade: output level while the effect fades after the fingers lift
   bool confirmQuit = false, quitNow = false;
   float unlockHold = 0;  // seconds the SHOW MODE button has been held
   std::string launcherMessage;
