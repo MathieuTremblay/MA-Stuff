@@ -337,6 +337,110 @@ void ensureOutput(App& a) {
     f->resize(W, H);
     f->clear();
   }
+  a.bgScene.create(W, H, GL_RGBA16F, GL_RGBA, GL_HALF_FLOAT, GL_LINEAR);
+  a.layerFront.create(W, H, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE, GL_LINEAR);
+  a.layerBack.create(W, H, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE, GL_LINEAR);
+  a.postBg.resize(W, H);
+  for (auto& f : a.bgFx)
+    if (f) {
+      f->resize(W, H);
+      f->clear();
+    }
+}
+
+std::unique_ptr<Effect> makeEffect(int id) {
+  switch (id) {
+    case FX_FLUID: return makeFluid();
+    case FX_PARTICLES: return makeParticles();
+    case FX_KALEIDO: return makeKaleido();
+    case FX_LASERS: return makeLasers();
+    case FX_STROBE: return makeStrobe();
+    case FX_SPARKLES: return makeSparkles();
+    case FX_RIPPLES: return makeRipples();
+    case FX_RIBBONS: return makeRibbons();
+    case FX_GEOMETRY: return makeGeometry();
+    case FX_TUNNEL: return makeTunnel();
+    case FX_VIDEO: return makeVideo();
+    case FX_PLEXUS: return makePlexus();
+    case FX_FIREWORKS: return makeFireworks();
+    case FX_STARFIELD: return makeStarfield();
+    case FX_SPECTRUM: return makeSpectrum();
+    case FX_GRID: return makeGrid();
+  }
+  return nullptr;
+}
+
+void buildBgEmitters(App& a, float dt);
+
+// Renders the background layer into a.bgScene. Returns false when it is off (fully faded out).
+bool renderBackground(App& a, const FxCtx& front, float dt) {
+  const Look& look = a.st.look;
+  const BgLayer& bg = look.bg;
+  float fadeT = std::max(0.05f, a.bgFadeOverride >= 0 ? a.bgFadeOverride : std::max(0.3f, a.st.effectFade));
+  bool switching = a.bgCurFx != bg.effect;
+  float target = bg.on && !switching ? 1.f : 0.f;
+  if (switching && a.bgShown <= 0.001f) {
+    // faded out (or never shown): change effect now, then fade back in
+    if (bg.on) {
+      if (!a.bgFx[bg.effect]) {
+        a.bgFx[bg.effect] = makeEffect(bg.effect);
+        if (a.bgFx[bg.effect]) {
+          a.bgFx[bg.effect]->init();
+          a.bgFx[bg.effect]->resize(a.out.w, a.out.h);
+        }
+      }
+      if (a.bgFx[bg.effect]) a.bgFx[bg.effect]->clear();
+      a.bgCurFx = bg.effect;
+      switching = false;
+      target = 1.f;
+    }
+  }
+  // a change of effect dips through black: half the time out, half back in
+  float step = dt / (switching ? fadeT * 0.5f : fadeT);
+  if (a.bgShown < target) a.bgShown = std::min(target, a.bgShown + step);
+  else a.bgShown = std::max(target, a.bgShown - step);
+  if (a.bgShown == target && !switching) a.bgFadeOverride = -1;
+  if (a.bgShown <= 0.001f || a.bgCurFx < 0 || !a.bgFx[a.bgCurFx]) {
+    if (!bg.on && a.bgCurFx >= 0 && a.bgFx[a.bgCurFx]) {  // off: free its picture
+      a.bgFx[a.bgCurFx]->clear();
+      a.bgCurFx = -1;
+    }
+    return false;
+  }
+
+  buildBgEmitters(a, dt);
+  Look& bl = a.bgLook;
+  bl = look;
+  paramsToLook(bg.fx, bl);
+  bl.effect = a.bgCurFx;
+  bl.mirror = bg.mirror;
+  bl.speedMult = bg.speedMult;
+  if (bg.ownColors) {
+    bl.useCustom = false;
+    bl.palette = bg.palette;
+    bl.colorMode = bg.colorMode;
+  }
+  FxCtx c = front;
+  c.look = &bl;
+  if (bg.ownColors) c.pal = &a.st.palettes[bg.palette];
+  c.speed = look.bpm / 120.f * kSpeedMults[bg.speedMult];
+  c.live = a.bgLive;
+  c.held = a.bgLive;
+  c.touching = !a.bgLive.empty();
+  c.gain = 1.f;
+  c.fadeMul = 1.f;
+  if (a.st.audio.enabled && a.audio.isOpen()) c.speed *= 1.f + a.st.audio.reactivity * a.af.bass * 0.6f;
+  a.bgFx[a.bgCurFx]->frame(c, a.bgScene);
+  return true;
+}
+
+// Scale from output UV to video UV so the video fills the output (crop), for the video colours.
+void videoFillFit(App& a, float& fx, float& fy) {
+  float out = float(a.out.w) / std::max(1, a.out.h);
+  float va = a.video.height() > 0 ? float(a.video.width()) / a.video.height() : out;
+  fx = fy = 1;
+  if (va > out) fx = out / va;
+  else fy = va / out;
 }
 
 void ensureExternal(App& a) {
@@ -425,9 +529,13 @@ void updateNdi(App& a, float dt) {
     adapterIp = ipToString(n->ip);
   }
   if (!a.ndiConfigDir.empty()) {
-    bool changed = a.ndi.adapter() != adapterIp;
+    bool changed = a.ndi.adapterChangeNeeded(adapterIp);
+    if (changed) a.video.pauseNdi(true);  // its NDI receiver must be closed while NDI restarts
     a.ndi.setAdapter(adapterIp, a.ndiConfigDir);
-    if (changed) a.ndiRetry = 0;
+    if (changed) {
+      a.video.pauseNdi(false);
+      a.ndiRetry = 0;
+    }
   }
   if (!a.ndi.running() || a.ndi.name() != o.ndiName) {
     a.ndiRetry -= dt;
@@ -517,9 +625,10 @@ void layout(App& a) {
   a.canvas = Rect{area.x + m + (areaW - w) * 0.5f, area.y + m + (areaH - h) * 0.5f, w, h};
 }
 
-void addEmitters(App& a, const std::vector<Mat2>& mats, float aspect, Vec2 pos, Vec2 vel, int touchIndex) {
+void addEmittersTo(std::vector<Emitter>& out, const std::vector<Mat2>& mats, float aspect, Vec2 pos, Vec2 vel,
+                   int touchIndex) {
   Vec2 q((pos.x - 0.5f) * aspect, pos.y - 0.5f);
-  for (size_t k = 0; k < mats.size() && int(a.live.size()) < kMaxSplats; ++k) {
+  for (size_t k = 0; k < mats.size() && int(out.size()) < kMaxSplats; ++k) {
     Emitter e;
     Vec2 mq = mats[k] * q;
     e.pos = Vec2(mq.x / aspect + 0.5f, mq.y + 0.5f);
@@ -528,8 +637,39 @@ void addEmitters(App& a, const std::vector<Mat2>& mats, float aspect, Vec2 pos, 
     e.touch = touchIndex;
     e.mirror = int(k);
     e.m = mats[k];
-    a.live.push_back(e);
+    out.push_back(e);
   }
+}
+
+void addEmitters(App& a, const std::vector<Mat2>& mats, float aspect, Vec2 pos, Vec2 vel, int touchIndex) {
+  addEmittersTo(a.live, mats, aspect, pos, vel, touchIndex);
+}
+
+// Background layer points: wander by themselves (faster with the music), plus the fingers with FOLLOW TOUCH.
+void buildBgEmitters(App& a, float dt) {
+  const BgLayer& bg = a.st.look.bg;
+  float aspect = float(a.st.output.width) / a.st.output.height;
+  std::vector<Mat2> mats = mirrorMatrices(bg.mirror);
+  a.bgLive.clear();
+  float energy = 1.f;
+  if (a.st.audio.enabled && a.af.active) energy = 0.5f + a.af.level * 1.2f + a.af.pulse * 0.5f;
+  float speed = a.st.look.bpm / 120.f * kSpeedMults[bg.speedMult];
+  for (int k = 0; k < 2; ++k) {
+    App::BgPoint& v = a.bgPts[k];
+    v.phase += dt * (0.05f + bg.motion * 0.9f) * energy * std::clamp(speed, 0.25f, 3.f);
+    float ph = v.phase + k * 2.7f;
+    Vec2 p(0.5f + 0.33f * std::cos(ph * 0.83f) * (0.7f + 0.3f * std::sin(ph * 0.29f + k)),
+           0.5f + 0.3f * std::sin(ph * 1.13f + k * 1.7f));
+    Vec2 d = p - v.pos;
+    Vec2 inst(d.x * aspect / std::max(dt, 1e-3f), d.y / std::max(dt, 1e-3f));
+    if (length(d) > 0.2f) inst = Vec2();
+    v.vel = v.vel + (inst - v.vel) * 0.2f;
+    v.pos = p;
+    addEmittersTo(a.bgLive, mats, aspect, v.pos, v.vel, kMaxTouches + 8 + k);
+  }
+  if (bg.followTouch)
+    for (int i = 0; i < kMaxTouches; ++i)
+      if (a.touches[i].active) addEmittersTo(a.bgLive, mats, aspect, a.touches[i].pos, a.touches[i].vel, i);
 }
 
 // Audio auto-play: virtual fingers that wander over the canvas, pushed along by the music.
@@ -627,7 +767,7 @@ const SelftestStep kSteps[] = {
     {FX_STROBE, 0, MIRROR_LR, 1, 6},
     {FX_RIPPLES, 0, MIRROR_LR, 0, 2},          {FX_RIBBONS, 0, MIRROR_LR, 1, 2},
     {FX_GEOMETRY, 0, MIRROR_QUAD, 6, 2},       {FX_TUNNEL, 0, MIRROR_OFF, 4, 3},
-    {FX_LIGHTNING, 0, MIRROR_OFF, 5, 3},       {FX_PLEXUS, 0, MIRROR_LR, 5, 2},
+    {FX_VIDEO, 0, MIRROR_OFF, 5, 3},       {FX_PLEXUS, 0, MIRROR_LR, 5, 2},
     {FX_FIREWORKS, 0, MIRROR_OFF, 2, 3},       {FX_STARFIELD, 0, MIRROR_OFF, 6, 1},
     {FX_SPECTRUM, 0, MIRROR_LR, 1, 0, true},   {FX_GRID, 0, MIRROR_LR, 7, 2},
     {FX_STROBE, STROBE_SHOCKWAVE, MIRROR_LR, 3, 2},
@@ -787,23 +927,9 @@ int main(int argc, char** argv) {
   ImGui_ImplOpenGL3_Init("#version 330 core");
 
   glutilInit();
-  bool shadersOk = fxSharedInit() && a.post.init() && presentInit();
-  a.fx[FX_FLUID] = makeFluid();
-  a.fx[FX_PARTICLES] = makeParticles();
-  a.fx[FX_KALEIDO] = makeKaleido();
-  a.fx[FX_LASERS] = makeLasers();
-  a.fx[FX_STROBE] = makeStrobe();
-  a.fx[FX_SPARKLES] = makeSparkles();
-  a.fx[FX_RIPPLES] = makeRipples();
-  a.fx[FX_RIBBONS] = makeRibbons();
-  a.fx[FX_GEOMETRY] = makeGeometry();
-  a.fx[FX_TUNNEL] = makeTunnel();
-  a.fx[FX_LIGHTNING] = makeLightning();
-  a.fx[FX_PLEXUS] = makePlexus();
-  a.fx[FX_FIREWORKS] = makeFireworks();
-  a.fx[FX_STARFIELD] = makeStarfield();
-  a.fx[FX_SPECTRUM] = makeSpectrum();
-  a.fx[FX_GRID] = makeGrid();
+  bool shadersOk = fxSharedInit() && a.post.init() && a.postBg.init() && presentInit() && compositeInit() &&
+                   a.video.init();
+  for (int i = 0; i < FX_COUNT; ++i) a.fx[i] = makeEffect(i);
   for (auto& f : a.fx) shadersOk &= f->init();
   if (!shadersOk) SDL_Log("Some shaders failed to compile; see the log above.");
 
@@ -916,6 +1042,10 @@ int main(int argc, char** argv) {
     }
     if (a.showLoaded) cueTick(a, dt);
 
+    // ---- video input (a PC setting) ----
+    a.video.configure(a.showLoaded || a.selftest ? a.st.videoIn.type : VSRC_OFF, a.st.videoIn.source);
+    a.video.update(dt);
+
     // ---- effect switching / clearing ----
     Look& look = a.st.look;
     if (look.effect != a.curFx) switchEffect(a, look.effect);
@@ -1006,6 +1136,10 @@ int main(int argc, char** argv) {
       post.bloom = std::min(1.f, post.bloom + r * f.pulse * 0.35f);  // glow kicks on hits
     }
 
+    c.videoTex = a.video.hasPicture() || a.video.state() != VS_OFF ? a.video.texture() : 0;
+    c.videoW = a.video.width();
+    c.videoH = a.video.height();
+    c.videoLevel = a.video.level();
     a.fx[a.curFx]->frame(c, a.scene);
     // ---- crossfade: the previous effect fades out on top of the new one ----
     if (a.prevFx >= 0) {
@@ -1027,12 +1161,37 @@ int main(int argc, char** argv) {
         fxAdd(a.scene, a.scenePrev.tex, k * k);
       }
     }
-    float master = a.releaseLevel;
+    float master = 1.f;
     if (a.dmxActive) {
       master *= a.dmxDim;
       if (a.dmxStrobeHz > 0 && a.dmxStrobePhase > 0.3) master = 0.f;  // shutter strobe
     }
-    a.post.run(a.scene, a.out, post, a.st.output.alpha, a.st.output.premultiplied, master);
+    // video colours (front layer)
+    VideoTint frontTint;
+    if (look.colorMode == COLOR_VIDEO && a.video.texture() && a.video.state() != VS_OFF) {
+      frontTint.tex = a.video.texture();
+      frontTint.amount = a.video.level();
+      videoFillFit(a, frontTint.fitX, frontTint.fitY);
+    }
+    // ---- background layer ----
+    bool bgActive = renderBackground(a, c, dt);
+    if (!bgActive) {
+      a.post.run(a.scene, a.out, post, a.st.output.alpha, a.st.output.premultiplied, master * a.releaseLevel,
+                 &frontTint);
+    } else {
+      const BgLayer& bg = look.bg;
+      a.post.run(a.scene, a.layerFront, post, true, true, a.releaseLevel, &frontTint);
+      VideoTint backTint;
+      int bgColorMode = bg.ownColors ? bg.colorMode : look.colorMode;
+      if (bgColorMode == COLOR_VIDEO && a.video.texture() && a.video.state() != VS_OFF) {
+        backTint.tex = a.video.texture();
+        backTint.amount = a.video.level();
+        videoFillFit(a, backTint.fitX, backTint.fitY);
+      }
+      a.postBg.run(a.bgScene, a.layerBack, post, true, true, a.bgShown * bg.level, &backTint);
+      compositeLayers(a.layerFront, a.layerBack, a.out, bg.blend, a.st.output.alpha, a.st.output.premultiplied,
+                      master);
+    }
     if (a.blackout || a.dmxBlackout || !a.showLoaded) a.out.clear(0, 0, 0, a.st.output.alpha ? 0.f : 1.f);
 
     updateNdi(a, dt);

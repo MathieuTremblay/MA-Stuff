@@ -40,8 +40,17 @@ in vec2 vUv; out vec4 o;
 uniform sampler2D uScene; uniform sampler2D uBloom;
 uniform float uBloomAmt, uSat, uMaster;
 uniform int uAlpha, uPremult;
+uniform sampler2D uVid; uniform int uTint; uniform vec2 uVFit; uniform float uTintAmt;
 void main() {
   vec3 c = max(texture(uScene, vUv).rgb, vec3(0.0)) + texture(uBloom, vUv).rgb * uBloomAmt;
+  if (uTint == 1) {  // video colours: every pixel takes the colour of the video under it
+    vec2 v = (vUv - 0.5) * uVFit + 0.5;
+    vec3 vc = texture(uVid, clamp(v, 0.0, 1.0)).rgb;
+    float vb = max(vc.r, max(vc.g, vc.b));
+    vec3 hue = vc / max(vb, 0.04);
+    float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+    c = mix(c, l * hue * (0.35 + 0.65 * vb) * 1.7, uTintAmt);
+  }
   float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
   c = max(mix(vec3(l), c, uSat), vec3(0.0));
   c = tonemap(c) * uMaster;  // master after tone mapping: 50% looks like 50%
@@ -76,7 +85,7 @@ void Post::resize(int W, int H) {
 }
 
 void Post::run(const Target& scene, const Target& out, const PostSettings& p, bool alpha, bool premultiplied,
-               float master) {
+               float master, const VideoTint* tint) {
   glDisable(GL_BLEND);
   bool bloom = p.bloom > 0.001f && levels > 0;
   if (bloom) {
@@ -120,6 +129,57 @@ void Post::run(const Target& scene, const Target& out, const PostSettings& p, bo
   pFinal.setf("uMaster", master);
   pFinal.seti("uAlpha", alpha ? 1 : 0);
   pFinal.seti("uPremult", premultiplied ? 1 : 0);
+  bool t = tint && tint->tex && tint->amount > 0.001f;
+  pFinal.seti("uTint", t ? 1 : 0);
+  if (t) {
+    bindTex(2, tint->tex);
+    pFinal.seti("uVid", 2);
+    pFinal.set2f("uVFit", tint->fitX, tint->fitY);
+    pFinal.setf("uTintAmt", tint->amount);
+  }
+  drawFullscreen();
+}
+
+// ---- layers: front (played) + background, both already through Post (premultiplied, display values) ----
+namespace {
+Program g_comp;
+const char* kCompositeFS = R"(
+in vec2 vUv; out vec4 o;
+uniform sampler2D uFront; uniform sampler2D uBack;
+uniform int uBlend, uAlpha, uPremult; uniform float uMaster;
+void main() {
+  vec4 f = texture(uFront, vUv), b = texture(uBack, vUv);
+  vec3 c;
+  if (uBlend == 0) c = vec3(1.0) - (vec3(1.0) - f.rgb) * (vec3(1.0) - b.rgb);  // both glow together
+  else if (uBlend == 1) c = f.rgb + b.rgb * (1.0 - f.a);                       // front covers the background
+  else c = b.rgb * clamp(f.a * 1.5, 0.0, 1.0);                                  // background shows through the front
+  c *= uMaster;
+  if (uAlpha == 1) {
+    float a = clamp(max(c.r, max(c.g, c.b)), 0.0, 1.0);
+    if (uPremult == 0) c = a > 0.0005 ? c / a : vec3(0.0);
+    o = vec4(c, a);
+  } else {
+    o = vec4(c, 1.0);
+  }
+}
+)";
+}  // namespace
+
+bool compositeInit() { return g_comp.build("composite", kFullscreenVS, kCompositeFS); }
+
+void compositeLayers(const Target& front, const Target& back, const Target& out, int blend, bool alpha,
+                     bool premultiplied, float master) {
+  glDisable(GL_BLEND);
+  out.bind();
+  g_comp.use();
+  bindTex(0, front.tex);
+  bindTex(1, back.tex);
+  g_comp.seti("uFront", 0);
+  g_comp.seti("uBack", 1);
+  g_comp.seti("uBlend", blend);
+  g_comp.seti("uAlpha", alpha ? 1 : 0);
+  g_comp.seti("uPremult", premultiplied ? 1 : 0);
+  g_comp.setf("uMaster", master);
   drawFullscreen();
 }
 

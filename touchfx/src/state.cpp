@@ -26,7 +26,7 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(RippleSettings, size, strength, 
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(RibbonSettings, strands, length, width, wind, flutter, stiffness, sheen)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(GeometrySettings, shape, rate, size, spin, width, life, glow)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(TunnelSettings, sides, merge, speed, density, twist, width, depth)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(LightningSettings, branches, chaos, rate, width, glow, reach, trail)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(VideoSettings, mode, fit, segments, size, strength, trail, level, glow)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(PlexusSettings, amount, range, size, drift, spread, trail)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(FireworkSettings, rate, rockets, size, amount, gravity, trail, sparkle)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(StarfieldSettings, amount, speed, streak, size, twinkle, brightness)
@@ -36,11 +36,17 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(StrobeSettings, shape, rate, fre
                                                 audioHits)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(AudioSettings, enabled, device, sensitivity, autoBpm, autoPlay, points,
                                                 motion, reactivity)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(FxParams, fluid, particles, kaleido, lasers, strobe, sparkles, ripples,
+                                                ribbons, geometry, tunnel, video, plexus, fireworks, starfield,
+                                                spectrum, grid)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(BgLayer, on, effect, level, followTouch, blend, mirror, ownColors,
+                                                palette, colorMode, speedMult, motion, fx)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Look, effect, fluid, particles, kaleido, lasers, strobe, sparkles, ripples,
-                                                ribbons, geometry, tunnel, lightning, plexus, fireworks, starfield,
+                                                ribbons, geometry, tunnel, video, plexus, fireworks, starfield,
                                                 spectrum, grid, post,
                                                 mirror, releaseFx, fadeFx, useCustom, custom,
-                                                release, fadeTime, colorMode, palette, brightness, bpm, speedMult)
+                                                release, fadeTime, colorMode, palette, brightness, bpm, speedMult, bg)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(VideoInSettings, type, source)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene, used, name, look)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Cue, number, name, look, fade, follow, followValue)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(CueList, name, endAction, cues)
@@ -78,7 +84,41 @@ AppState defaultState() {
 template <class T>
 static void clampRef(T& v, T lo, T hi) { v = std::clamp(v, lo, hi); }
 
+void paramsToLook(const FxParams& p, Look& l) {
+#define TFX_COPY(m) l.m = p.m;
+  TOUCHFX_FX_PARAMS(TFX_COPY)
+#undef TFX_COPY
+}
+
+void lookToParams(const Look& l, FxParams& p) {
+#define TFX_COPY(m) p.m = l.m;
+  TOUCHFX_FX_PARAMS(TFX_COPY)
+#undef TFX_COPY
+}
+
+static void sanitizeParams(Look& l);
+
 static void sanitizeLook(Look& l) {
+  sanitizeParams(l);
+  // background layer: same limits on its own copy of the effect settings
+  BgLayer& b = l.bg;
+  clampRef(b.effect, 0, FX_COUNT - 1);
+  clampRef(b.level, 0.f, 1.f);
+  clampRef(b.blend, 0, BLEND_COUNT - 1);
+  clampRef(b.mirror, 0, MIRROR_COUNT - 1);
+  clampRef(b.palette, 0, kNumPalettes - 1);
+  clampRef(b.colorMode, 0, COLOR_COUNT - 1);
+  clampRef(b.speedMult, 0, kNumSpeedMults - 1);
+  clampRef(b.motion, 0.f, 1.f);
+  {
+    Look tmp;
+    paramsToLook(b.fx, tmp);
+    sanitizeParams(tmp);
+    lookToParams(tmp, b.fx);
+  }
+}
+
+static void sanitizeParams(Look& l) {
   // per-effect release: older files only had one global setting, which becomes every effect's start value
   if (int(l.releaseFx.size()) < FX_COUNT) l.releaseFx.resize(FX_COUNT, l.release);
   if (int(l.fadeFx.size()) < FX_COUNT) l.fadeFx.resize(FX_COUNT, l.fadeTime);
@@ -113,6 +153,9 @@ static void sanitizeLook(Look& l) {
   clampRef(l.spectrum.bars, 8, 128);
   clampRef(l.grid.mode, 0, GRID_COUNT - 1);
   clampRef(l.strobe.hz, 0.5f, 25.f);
+  clampRef(l.video.mode, 0, VID_COUNT - 1);
+  clampRef(l.video.fit, 0, VFIT_COUNT - 1);
+  clampRef(l.video.segments, 2, 16);
 }
 
 void sanitize(AppState& s) {
@@ -126,7 +169,7 @@ void sanitize(AppState& s) {
   if (s.output.ndiName.empty()) s.output.ndiName = "TouchFX";
   clampRef(s.uiScale, 0.5f, 3.f);
   clampRef(s.tab, 0, 2);  // 0 live, 1 settings, 2 cues
-  clampRef(s.settingsTab, 0, 6);
+  clampRef(s.settingsTab, 0, 7);
   if (s.cueLists.empty()) s.cueLists.push_back(CueList{"Song 1", {}});
   for (CueList& cl : s.cueLists) {
     clampRef(cl.endAction, 0, END_COUNT - 1);
@@ -155,11 +198,12 @@ void sanitize(AppState& s) {
   clampRef(s.external.display, 0, 15);
   clampRef(s.external.fit, 0, FIT_COUNT - 1);
   clampRef(s.layout.panelWidth, 0.6f, 1.8f);
+  clampRef(s.videoIn.type, 0, VSRC_COUNT - 1);
 }
 
 std::string serializeShow(const AppState& s) {
   json j;
-  j["touchfxShow"] = 1;
+  j["touchfxShow"] = 2;  // 2: effect 10 is VIDEO (it was Lightning)
   j["look"] = s.look;
   j["palettes"] = s.palettes;
   j["scenes"] = s.scenes;
@@ -176,6 +220,7 @@ std::string serializeMachine(const AppState& s) {
   j["external"] = s.external;
   j["layout"] = s.layout;
   j["audio"] = s.audio;
+  j["videoIn"] = s.videoIn;
   j["showMode"] = s.showMode;
   j["dmxAdapter"] = s.dmxAdapter;
   j["dmxAdapterLabel"] = s.dmxAdapterLabel;
@@ -210,6 +255,17 @@ static void migrateLook(const json& lj, Look& l) {
   if (!lj.contains("fadeFx")) l.fadeFx.assign(FX_COUNT, l.fadeTime);
 }
 
+// Before 0.8, effect 10 was Lightning; it is VIDEO now. Old looks that used Lightning get Plexus (the closest).
+static void migrateLightning(AppState& d) {
+  auto fix = [](Look& l) {
+    if (l.effect == FX_VIDEO) l.effect = FX_PLEXUS;
+  };
+  fix(d.look);
+  for (Scene& sc : d.scenes) fix(sc.look);
+  for (CueList& cl : d.cueLists)
+    for (Cue& c : cl.cues) fix(c.look);
+}
+
 static void readShowPart(const json& j, AppState& d) {
   if (j.contains("look")) {
     d.look = j["look"].get<Look>();
@@ -223,6 +279,7 @@ static void readShowPart(const json& j, AppState& d) {
   if (j.contains("cueLists")) d.cueLists = j["cueLists"].get<std::vector<CueList>>();
   d.activeList = j.value("activeList", 0);
   if (j.contains("dmx")) d.dmx = j["dmx"].get<DmxSettings>();
+  if (j.value("touchfxShow", 1) < 2) migrateLightning(d);
 }
 
 static void readMachinePart(const json& j, AppState& d) {
@@ -230,6 +287,7 @@ static void readMachinePart(const json& j, AppState& d) {
   if (j.contains("external")) d.external = j["external"].get<ExternalSettings>();
   if (j.contains("layout")) d.layout = j["layout"].get<LayoutSettings>();
   if (j.contains("audio")) d.audio = j["audio"].get<AudioSettings>();
+  if (j.contains("videoIn")) d.videoIn = j["videoIn"].get<VideoInSettings>();
   d.showMode = j.value("showMode", d.showMode);
   d.dmxAdapter = j.value("dmxAdapter", d.dmxAdapter);
   d.dmxAdapterLabel = j.value("dmxAdapterLabel", d.dmxAdapterLabel);
@@ -323,6 +381,7 @@ bool loadState(const std::string& path, AppState& s) {
     if (j.contains("layout")) d.layout = j["layout"].get<LayoutSettings>();
     if (j.contains("audio")) d.audio = j["audio"].get<AudioSettings>();
     if (j.contains("dmx")) d.dmx = j["dmx"].get<DmxSettings>();
+    migrateLightning(d);  // old settings.json: always from before 0.8
     d.blockGestures = j.value("blockGestures", d.blockGestures);
     d.gestureRestore = j.value("gestureRestore", d.gestureRestore);
     d.maxTouches = j.value("maxTouches", d.maxTouches);

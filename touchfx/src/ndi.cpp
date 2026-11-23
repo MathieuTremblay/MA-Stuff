@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <mutex>
 #include <nlohmann/json.hpp>
 
 #ifdef _WIN32
@@ -73,8 +74,16 @@ static void* sym(void* lib, const char* name) {
 #endif
 }
 
-bool NdiSender::loadRuntime() {
-  if (lib_) return true;
+namespace {
+void* g_lib = nullptr;
+bool g_inited = false;
+std::string g_loadError;
+std::mutex g_rtMtx;
+}  // namespace
+
+bool ndiRuntimeLoad(std::string& err) {
+  std::lock_guard<std::mutex> lk(g_rtMtx);
+  if (g_lib) return true;
   std::vector<std::string> candidates;
 #ifdef _WIN32
   const char* file = "Processing.NDI.Lib.x64.dll";
@@ -91,41 +100,56 @@ bool NdiSender::loadRuntime() {
   candidates.push_back("libndi.so.5");
   candidates.push_back("libndi.so");
 #endif
+  void* lib = nullptr;
   for (const auto& c : candidates) {
-    lib_ = openLib(c);
-    if (lib_) break;
+    lib = openLib(c);
+    if (lib) break;
   }
-  if (!lib_) {
-    error_ = "NDI Runtime not found. Install NDI Tools from ndi.video, then restart TouchFX.";
+  if (!lib) {
+    err = "NDI Runtime not found. Install NDI Tools from ndi.video, then restart TouchFX.";
     return false;
   }
-  ndi::initialize = (ndi::fn_initialize)sym(lib_, "NDIlib_initialize");
-  ndi::destroy = (ndi::fn_destroy)sym(lib_, "NDIlib_destroy");
-  ndi::send_create = (ndi::fn_send_create)sym(lib_, "NDIlib_send_create");
-  ndi::send_destroy = (ndi::fn_send_destroy)sym(lib_, "NDIlib_send_destroy");
-  ndi::send_video_v2 = (ndi::fn_send_video_v2)sym(lib_, "NDIlib_send_send_video_v2");
-  ndi::send_get_no_connections = (ndi::fn_send_get_no_connections)sym(lib_, "NDIlib_send_get_no_connections");
+  ndi::initialize = (ndi::fn_initialize)sym(lib, "NDIlib_initialize");
+  ndi::destroy = (ndi::fn_destroy)sym(lib, "NDIlib_destroy");
+  ndi::send_create = (ndi::fn_send_create)sym(lib, "NDIlib_send_create");
+  ndi::send_destroy = (ndi::fn_send_destroy)sym(lib, "NDIlib_send_destroy");
+  ndi::send_video_v2 = (ndi::fn_send_video_v2)sym(lib, "NDIlib_send_send_video_v2");
+  ndi::send_get_no_connections = (ndi::fn_send_get_no_connections)sym(lib, "NDIlib_send_get_no_connections");
   if (!ndi::initialize || !ndi::send_create || !ndi::send_destroy || !ndi::send_video_v2) {
-    error_ = "The installed NDI Runtime is not compatible.";
-    lib_ = nullptr;
+    err = "The installed NDI Runtime is not compatible.";
     return false;
   }
+  g_lib = lib;
   return true;
 }
 
-bool NdiSender::ensureInit() {
-  if (inited_) return true;
+void* ndiSymbol(const char* name) { return g_lib ? sym(g_lib, name) : nullptr; }
+
+bool ndiRuntimeInit(std::string& err) {
+  if (!ndiRuntimeLoad(err)) return false;
+  std::lock_guard<std::mutex> lk(g_rtMtx);
+  if (g_inited) return true;
   if (!ndi::initialize()) {
-    error_ = "NDI could not start (this CPU is not supported by NDI).";
+    err = "NDI could not start (this CPU is not supported by NDI).";
     return false;
   }
-  inited_ = true;
+  g_inited = true;
   return true;
 }
+
+void ndiRuntimeShutdown() {
+  std::lock_guard<std::mutex> lk(g_rtMtx);
+  if (g_inited && ndi::destroy) ndi::destroy();
+  g_inited = false;
+}
+
+bool NdiSender::loadRuntime() { return ndiRuntimeLoad(error_); }
+
+bool NdiSender::ensureInit() { return ndiRuntimeInit(error_); }
 
 NdiSender::~NdiSender() {
   stop();
-  if (inited_ && ndi::destroy) ndi::destroy();
+  ndiRuntimeShutdown();
 }
 
 namespace {
@@ -174,8 +198,7 @@ void NdiSender::setAdapter(const std::string& adapterIp, const std::string& conf
   }
   // NDI reads its config when it starts: stop it, change the config, it restarts on the next start().
   stop();
-  if (inited_ && ndi::destroy) ndi::destroy();
-  inited_ = false;
+  ndiRuntimeShutdown();  // (the video input stops its NDI receiver first, see App)
   if (adapterIp.empty()) {
     // automatic: back to NDI's normal configuration
     setEnv("NDI_CONFIG_DIR", g_userConfigDir.empty() ? nullptr : g_userConfigDir.c_str());

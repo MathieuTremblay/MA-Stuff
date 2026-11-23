@@ -162,7 +162,7 @@ void undoEnd(App& a) {
 
 const char* effectName(int e) {
   static const char* n[FX_COUNT] = {"FLUID",   "PARTICLES", "KALEIDO",   "LASERS",    "STROBE",   "SPARKLES",
-                                    "RIPPLES", "RIBBONS",   "SHAPES",    "TUNNEL",    "LIGHTNING", "PLEXUS",
+                                    "RIPPLES", "RIBBONS",   "SHAPES",    "TUNNEL",    "VIDEO",     "PLEXUS",
                                     "FIREWORKS", "STARFIELD", "SPECTRUM", "LED GRID"};
   return (e >= 0 && e < FX_COUNT) ? n[e] : "?";
 }
@@ -188,6 +188,7 @@ void cueFire(App& a, int index) {
     p.fadeDur = cue.fade;
     p.fading = true;
   }
+  a.bgFadeOverride = cue.fade;  // the background layer fades in / out / changes over the cue's fade too
   p.current = index;
   p.next = index + 1 < int(cl->cues.size()) ? index + 1 : -1;
   p.goTime = a.time;

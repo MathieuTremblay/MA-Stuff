@@ -36,6 +36,10 @@ struct FxCtx {
   bool onset = false;
   float drive = 1;    // multiplies how much each effect emits (1 = no audio influence)
   const float* spectrum = nullptr;  // 32 log bands 0..1 when audio is on, else nullptr
+  // video input (VIDEO effect, video colours): texture 0 = no input configured / no frame yet
+  GLuint videoTex = 0;
+  int videoW = 0, videoH = 0;
+  float videoLevel = 0;  // 1 live, fading to 0 when the signal is lost
 
   // Emitters to draw "shape" effects from: live ones, or the held ones while fading.
   const std::vector<Emitter>& shapeEmitters() const { return touching ? live : held; }
@@ -64,7 +68,7 @@ std::unique_ptr<Effect> makeRipples();
 std::unique_ptr<Effect> makeRibbons();
 std::unique_ptr<Effect> makeGeometry();
 std::unique_ptr<Effect> makeTunnel();
-std::unique_ptr<Effect> makeLightning();
+std::unique_ptr<Effect> makeVideo();
 std::unique_ptr<Effect> makePlexus();
 std::unique_ptr<Effect> makeFireworks();
 std::unique_ptr<Effect> makeStarfield();

@@ -17,6 +17,7 @@
 #include "post.hpp"
 #include "spout_out.hpp"
 #include "state.hpp"
+#include "video_in.hpp"
 
 struct ImFont;
 
@@ -81,6 +82,21 @@ struct App {
   int pboIdx = 0;
   double ndiAccum = 0, ndiRetry = 0;
 
+  // Background layer (LIVE: FRONT / BACK)
+  std::unique_ptr<Effect> bgFx[FX_COUNT];  // created when first used
+  int bgCurFx = -1;
+  Target bgScene, layerFront, layerBack;
+  Post postBg;
+  Look bgLook;              // the look the background effect sees (its own settings / mirror / colours)
+  float bgShown = 0;        // 0..1, fades in / out (and dips through black when its effect changes)
+  float bgFadeOverride = -1;  // fade time from a cue, -1 = the effect-change setting
+  struct BgPoint {
+    Vec2 pos, vel;
+    float phase = 0;
+  } bgPts[3];
+  std::vector<Emitter> bgLive;
+  int layerEdit = 0;        // which layer the LIVE tab edits: 0 FRONT, 1 BACK
+
   // External display
   SDL_Window* extWindow = nullptr;
   int extDisplay = -1;
@@ -118,6 +134,7 @@ struct App {
   uint8_t dmxFrame[512] = {};
 
   SysStats stats;
+  VideoInput video;  // after ndi: destroyed first (its NDI receiver uses the NDI runtime)
 
   // Network cards
   std::vector<NetAdapter> adapters;
@@ -170,7 +187,7 @@ struct App {
   void recallScene(int i);
 };
 
-enum SettingsTab { ST_COLOURS, ST_LOOK, ST_OUTPUT, ST_SCREEN, ST_AUDIO, ST_DMX, ST_SYSTEM, ST_COUNT };
+enum SettingsTab { ST_COLOURS, ST_LOOK, ST_OUTPUT, ST_SCREEN, ST_AUDIO, ST_DMX, ST_SYSTEM, ST_VIDEO, ST_COUNT };
 
 void drawUI(App& a);
 void setFullscreen(App& a, bool on);

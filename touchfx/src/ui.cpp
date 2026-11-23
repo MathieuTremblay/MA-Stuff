@@ -220,16 +220,22 @@ void TouchScroll() {
 }
 
 const char* kEffectNames[FX_COUNT] = {"FLUID",   "PARTICLES", "KALEIDO",   "LASERS",    "STROBE",  "SPARKLES",
-                                     "RIPPLES", "RIBBONS",   "SHAPES",    "TUNNEL",    "LIGHTNING", "PLEXUS",
+                                     "RIPPLES", "RIBBONS",   "SHAPES",    "TUNNEL",    "VIDEO",     "PLEXUS",
                                      "FIREWORKS", "STARFIELD", "SPECTRUM", "LED GRID"};
 // Display order of the effect buttons (two rows of eight).
 const int kEffectOrder[FX_COUNT] = {FX_FLUID,  FX_PARTICLES, FX_SPARKLES,  FX_RIBBONS,  FX_FIREWORKS, FX_STARFIELD,
-                                    FX_PLEXUS, FX_KALEIDO,   FX_LASERS,    FX_LIGHTNING, FX_TUNNEL,   FX_GEOMETRY,
+                                    FX_PLEXUS, FX_KALEIDO,   FX_LASERS,    FX_VIDEO,    FX_TUNNEL,   FX_GEOMETRY,
                                     FX_RIPPLES, FX_SPECTRUM, FX_GRID,      FX_STROBE};
+
+// The look the LIVE controls edit: the front look, or (BACK selected) a copy holding the background
+// layer's settings, written back at the end of the frame when something changed.
+Look* g_edit = nullptr;
+Look& EL(App& a) { return g_edit ? *g_edit : a.st.look; }
+bool editingBack() { return g_edit != nullptr; }
 
 // ---------------------------------------------------------------------------
 void EffectParams(App& a) {
-  Look& l = a.st.look;
+  Look& l = EL(a);
   float s = S();
   switch (l.effect) {
     case FX_FLUID: {
@@ -371,17 +377,34 @@ void EffectParams(App& a) {
       if (ImGui::Button("RESET TUNNEL", ImVec2(-1, 40 * s))) p = TunnelSettings();
       break;
     }
-    case FX_LIGHTNING: {
-      LightningSettings& p = l.lightning;
-      SectionLabel("LIGHTNING");
-      Pct("Branches", &p.branches);
-      Pct("Chaos", &p.chaos);
-      Pct("Flicker rate", &p.rate);
-      Pct("Reach", &p.reach);
-      Pct("Width", &p.width);
+    case FX_VIDEO: {
+      VideoSettings& p = l.video;
+      SectionLabel("VIDEO");
+      static const char* modes[] = {"REVEAL", "LIQUID", "RIPPLE", "KALEIDO", "PIXEL", "WARP"};
+      Choice("vmode", modes, VID_COUNT, &p.mode, 3);
+      static const char* help[] = {
+          "Your fingers paint the video into view; it fades back out over the Trail time.",
+          "The picture is pushed around like a liquid.",
+          "Water ripples bend the picture.",
+          "A kaleidoscope of the video around your first finger.",
+          "Big pixels where your fingers go.",
+          "The picture swirls around each finger (Strength: left pinches, right swirls)."};
+      Hint(help[std::clamp(p.mode, 0, VID_COUNT - 1)]);
+      if (a.video.state() == VS_OFF)
+        Hint("No video input: choose one in SETTINGS > VIDEO IN. Until then a palette gradient stands in.");
+      else if (a.video.state() != VS_LIVE)
+        Hint(("Video input: " + a.video.statusText()).c_str());
+      Pct("Size", &p.size);
+      Pct("Strength", &p.strength);
+      if (p.mode == VID_REVEAL || p.mode == VID_LIQUID || p.mode == VID_RIPPLE || p.mode == VID_PIXEL)
+        Pct("Trail", &p.trail);
+      if (p.mode == VID_KALEIDO) IntSlider("Segments", &p.segments, 2, 16);
+      Pct("Video level", &p.level);
       Pct("Glow", &p.glow);
-      Pct("Afterglow", &p.trail);
-      if (ImGui::Button("RESET LIGHTNING", ImVec2(-1, 40 * s))) p = LightningSettings();
+      SectionLabel("FIT");
+      static const char* fits[] = {"FILL", "FIT", "STRETCH"};
+      Choice("vfit", fits, VFIT_COUNT, &p.fit);
+      if (ImGui::Button("RESET VIDEO", ImVec2(-1, 40 * s))) p = VideoSettings();
       break;
     }
     case FX_PLEXUS: {
@@ -478,7 +501,7 @@ void EffectParams(App& a) {
 }
 
 void PaletteGrid(App& a) {
-  Look& l = a.st.look;
+  Look& l = EL(a);
   float s = S();
   float sp = ImGui::GetStyle().ItemSpacing.x;
   float w = (ImGui::GetContentRegionAvail().x - sp * 4) / 5;
@@ -517,13 +540,15 @@ void PaletteGrid(App& a) {
 }
 
 void ColorModeChoice(App& a) {
-  static const char* modes[] = {"GRADIENT", "SPEED", "POSITION", "BEAT", "RANDOM"};
-  Choice("cmode", modes, 5, &a.st.look.colorMode, 3);
+  Look& l = EL(a);
+  static const char* modes[] = {"GRADIENT", "SPEED", "POSITION", "BEAT", "RANDOM", "VIDEO"};
+  Choice("cmode", modes, COLOR_COUNT, &l.colorMode, 3);
   static const char* help[] = {
       "Low > Mid > High over the life of the effect.", "Slow finger = Low, fast finger = High.",
       "Left of the canvas = Low, right = High.", "Steps Low > Mid > High on every beat.",
-      "A random mix of the three colours."};
-  Hint(help[a.st.look.colorMode]);
+      "A random mix of the three colours.",
+      "Every pixel takes the colour of the video input under it (palette colours while there is no video)."};
+  Hint(help[std::clamp(l.colorMode, 0, COLOR_COUNT - 1)]);
 }
 
 void ColorEdit(const char* label, Color3& c, float w) {
@@ -816,6 +841,108 @@ bool AdapterPicker(App& a, const char* id, std::string& adapterId, std::string& 
   return changed;
 }
 
+// ---- SETTINGS > VIDEO IN ----
+void VideoInTab(App& a) {
+  float s = S();
+  VideoInSettings& v = a.st.videoIn;
+  SectionLabel("VIDEO INPUT (this PC) - used by the VIDEO effect and the VIDEO colour mode");
+#ifdef _WIN32
+  static const char* types[VSRC_COUNT] = {"OFF", "NDI", "CAPTURE / CAMERA", "SPOUT", "BLACKMAGIC", "AJA", "TEST"};
+#else
+  static const char* types[VSRC_COUNT] = {"OFF", "NDI", "CAPTURE (Windows)", "SPOUT (Windows)", "BLACKMAGIC (Windows)",
+                                          "AJA", "TEST"};
+#endif
+  int t = v.type;
+  if (Choice("vtype", types, VSRC_COUNT, &t, 4) && t != v.type) {
+    v.type = t;
+    v.source.clear();
+    if (t != VSRC_OFF) a.video.requestSourceList(t);
+  }
+  static const char* help[VSRC_COUNT] = {
+      "No video input.",
+      "An NDI source on the network (Resolume, another PC, a camera with NDI...).",
+      "USB capture devices (AV Matrix, Elgato, Magewell USB...), cameras, and cards whose driver appears as a camera.",
+      "Another program on this PC (Resolume, TouchDesigner, OBS...).",
+      "Blackmagic DeckLink / UltraStudio / Intensity (needs Blackmagic Desktop Video). The format is detected "
+      "automatically.",
+      "AJA KONA / Io / Corvid (needs the AJA driver). Each SDI / HDMI input is listed.",
+      "A built-in test picture (colour bars and a moving ball). \"Flaky\" drops out every 15 s to try the "
+      "lost-signal handling."};
+  Hint(help[std::clamp(v.type, 0, VSRC_COUNT - 1)]);
+  if (v.type == VSRC_OFF) return;
+
+  // source: first found, or a named one
+  SectionLabel("SOURCE");
+  {
+    std::vector<std::string> list = a.video.sourceList(v.type);
+    static int lastType = -1;
+    static double lastAsk = -100;
+    if (lastType != v.type || ImGui::GetTime() - lastAsk > 5.0) {  // refresh now and then while shown
+      a.video.requestSourceList(v.type);
+      lastType = v.type;
+      lastAsk = ImGui::GetTime();
+    }
+    float w = ImGui::GetContentRegionAvail().x;
+    ImVec2 p = ImGui::GetCursorScreenPos();
+    std::string cur = v.source.empty() ? std::string("FIRST ONE FOUND") : v.source;
+    bool missing = !v.source.empty() && std::find(list.begin(), list.end(), v.source) == list.end() && !a.video.listing();
+    if (missing) cur += "  -  NOT FOUND";
+    ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.f, 0.5f));
+    if (missing) ImGui::PushStyleColor(ImGuiCol_Button, kDanger);
+    if (ImGui::Button((cur + "##vsrc").c_str(), ImVec2(w, 48 * s))) {
+      a.video.requestSourceList(v.type);
+      ImGui::OpenPopup("##vsources");
+    }
+    if (missing) ImGui::PopStyleColor();
+    ImGui::PopStyleVar();
+    ImGui::GetWindowDrawList()->AddTriangleFilled(ImVec2(p.x + w - 34 * s, p.y + 20 * s), ImVec2(p.x + w - 18 * s, p.y + 20 * s),
+                                                  ImVec2(p.x + w - 26 * s, p.y + 29 * s), ImGui::GetColorU32(kText));
+    ImGui::SetNextWindowPos(ImVec2(p.x, p.y + 50 * s));
+    ImGui::SetNextWindowSizeConstraints(ImVec2(w, 0), ImVec2(w, 420 * s));
+    if (ImGui::BeginPopup("##vsources")) {
+      if (Toggle("FIRST ONE FOUND", v.source.empty(), ImVec2(-1, 48 * s))) {
+        v.source.clear();
+        ImGui::CloseCurrentPopup();
+      }
+      for (const std::string& n : list)
+        if (Toggle((n + "##" + n).c_str(), n == v.source, ImVec2(-1, 48 * s))) {
+          v.source = n;
+          ImGui::CloseCurrentPopup();
+        }
+      if (a.video.listing()) Hint("Searching...");
+      else if (list.empty()) Hint("Nothing found yet.");
+      TouchScroll();
+      ImGui::EndPopup();
+    }
+  }
+
+  // status + preview
+  SectionLabel("STATUS");
+  {
+    int st = a.video.state();
+    ImU32 col = st == VS_LIVE ? IM_COL32(60, 220, 100, 255) : st == VS_LOST ? IM_COL32(240, 190, 40, 255)
+                                                                           : IM_COL32(230, 70, 60, 255);
+    ImVec2 p = ImGui::GetCursorScreenPos();
+    ImGui::GetWindowDrawList()->AddCircleFilled(ImVec2(p.x + 7 * s, p.y + ImGui::GetFontSize() * 0.5f), 6 * s, col);
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 20 * s);
+    ImGui::TextWrapped("%s", a.video.statusText().c_str());
+    std::string fmt = a.video.formatText();
+    if (!fmt.empty()) {
+      char b[256];
+      std::snprintf(b, sizeof(b), "%s   (%.0f fps received)", fmt.c_str(), a.video.framesPerSecond());
+      Hint(b);
+    }
+    if (a.video.texture() && a.video.width() > 0) {
+      float w = ImGui::GetContentRegionAvail().x;
+      float h = w * a.video.height() / float(a.video.width());
+      ImGui::Image((ImTextureID)(intptr_t)a.video.texture(), ImVec2(w, h), ImVec2(0, 1), ImVec2(1, 0),
+                   ImVec4(a.video.level(), a.video.level(), a.video.level(), 1));
+    }
+  }
+  Hint("If the signal is lost, the last picture is held for 2 seconds, then fades out. TouchFX reconnects by "
+       "itself when the source comes back.");
+}
+
 void DmxTab(App& a) {
   DmxSettings& d = a.st.dmx;
   float s = S();
@@ -934,13 +1061,13 @@ void ClearBlackout(App& a, ImVec2 size, bool sameLine) {
 
 // The effect buttons, in kEffectOrder. size.x = 0 means "fill the row".
 void EffectButtons(App& a, int cols, ImVec2 size) {
-  Look& l = a.st.look;
+  Look& l = EL(a);
   float sp = ImGui::GetStyle().ItemSpacing.x;
   float w = size.x > 0 ? size.x : (ImGui::GetContentRegionAvail().x - sp * (cols - 1)) / cols;
   for (int k = 0; k < FX_COUNT; ++k) {
     int i = kEffectOrder[k];
     if (k % cols) ImGui::SameLine();
-    if (Toggle(kEffectNames[i], l.effect == i, ImVec2(w, size.y))) l.effect = i;
+    if (Toggle(kEffectNames[i], l.effect == i, ImVec2(w, size.y), editingBack() ? kBack : kAccent)) l.effect = i;
   }
 }
 
@@ -1135,7 +1262,7 @@ void LivePanel(App& a) {
       ImGui::BeginChild("##speedrow", ImVec2(full - audioW - sp, 38 * s), ImGuiChildFlags_None,
                         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoBackground);
       ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2 * s, 2 * s));
-      Choice("speed", kSpeedMultLabels, kNumSpeedMults, &l.speedMult, 0, 38 * s);
+      Choice("speed", kSpeedMultLabels, kNumSpeedMults, &EL(a).speedMult, 0, 38 * s);
       ImGui::PopStyleVar();
       ImGui::EndChild();
     }
@@ -1162,22 +1289,54 @@ void LivePanel(App& a) {
     ClearBlackout(a, ImVec2(w, 42 * s), true);
   }
 
+  // ---- layer: FRONT (played with the fingers) or BACK (background) ----
+  BgLayer& bg = l.bg;
+  {
+    float lw = (ImGui::GetContentRegionAvail().x - sp) / 2;
+    if (Toggle("FRONT", a.layerEdit == 0, ImVec2(lw, 40 * s))) a.layerEdit = 0;
+    ImGui::SameLine();
+    char bl[64];
+    std::snprintf(bl, sizeof(bl), "BACK: %s%s", bg.on ? kEffectNames[bg.effect] : "OFF", "##backbtn");
+    if (Toggle(bl, a.layerEdit == 1, ImVec2(lw, 40 * s), kBack)) a.layerEdit = 1;
+    if (editingBack()) {
+      if (Toggle(bg.on ? "ON" : "OFF", bg.on, ImVec2(90 * s, 40 * s), kBack)) bg.on = !bg.on;
+      ImGui::SameLine();
+      ImGui::BeginGroup();
+      ImGui::PushStyleColor(ImGuiCol_SliderGrab, kBack);
+      Pct("Level", &bg.level);
+      ImGui::PopStyleColor();
+      ImGui::EndGroup();
+    }
+  }
+
   // ---- everything below scrolls ----
   // mirror stays at the top with the tempo
   {
     static const char* mirrors[] = {"OFF", "L | R", "U | D", "QUAD", "RAD 6", "RAD 8"};
     ImGui::PushStyleColor(ImGuiCol_Text, kTextDim);
     ImGui::PushFont(a.fontSmall);
-    ImGui::TextUnformatted("MIRROR");
+    ImGui::TextUnformatted(editingBack() ? "MIRROR (background)" : "MIRROR");
     ImGui::PopFont();
     ImGui::PopStyleColor();
-    Choice("mirror", mirrors, MIRROR_COUNT, &l.mirror, 0, 40 * s);
+    Choice("mirror", mirrors, MIRROR_COUNT, &EL(a).mirror, 0, 40 * s);
   }
 
   ImGui::BeginChild("##live", ImVec2(0, 0), ImGuiChildFlags_AlwaysUseWindowPadding);
   if (a.st.audio.enabled) AudioLive(a);
 
-  {
+  if (editingBack()) {
+    SectionLabel("BACKGROUND LAYER");
+    Hint("Runs by itself behind the effect you play (it never fades when you lift your fingers). "
+         "Scenes and cues store it.");
+    OnOff("FOLLOW TOUCH (your fingers drive it too)", &bg.followTouch, 44 * s);
+    SectionLabel("BLEND");
+    static const char* blends[] = {"ADD", "BEHIND", "REVEAL"};
+    Choice("bgblend", blends, BLEND_COUNT, &bg.blend);
+    static const char* bhelp[] = {"Both layers glow together.", "The front effect covers the background where it is bright.",
+                                  "The background only shows where the front effect draws: paint it into view."};
+    Hint(bhelp[std::clamp(bg.blend, 0, BLEND_COUNT - 1)]);
+    Pct("Motion", &bg.motion);
+  } else {
     char lbl[64];
     std::snprintf(lbl, sizeof(lbl), "ON RELEASE (%s)", kEffectNames[l.effect]);
     SectionLabel(lbl);
@@ -1198,11 +1357,22 @@ void LivePanel(App& a) {
 
   EffectParams(a);
 
-  SectionLabel("PALETTE");
-  PaletteGrid(a);
-  QuickColours(a);
-  SectionLabel("COLOUR MODE");
-  ColorModeChoice(a);
+  if (editingBack()) {
+    SectionLabel("COLOURS");
+    OnOff("OWN COLOURS (otherwise the front layer's)", &bg.ownColors, 44 * s);
+    if (bg.ownColors) {
+      // the edit copy was made with the shared colours: start the own ones from there
+      PaletteGrid(a);
+      SectionLabel("COLOUR MODE");
+      ColorModeChoice(a);
+    }
+  } else {
+    SectionLabel("PALETTE");
+    PaletteGrid(a);
+    QuickColours(a);
+    SectionLabel("COLOUR MODE");
+    ColorModeChoice(a);
+  }
 
   if (!a.st.layout.sceneStrip) ScenesGrid(a);
   ImGui::Dummy(ImVec2(0, 24 * s));
@@ -1212,12 +1382,19 @@ void LivePanel(App& a) {
 
 void SettingsPanel(App& a) {
   float s = S();
-  static const char* tabs[ST_COUNT] = {"COLOURS", "LOOK", "OUTPUT", "SCREEN", "AUDIO", "DMX", "SYSTEM"};
+  Look* keepEdit = g_edit;
+  g_edit = nullptr;  // settings always edit the front look
+  struct Restore {
+    Look* p;
+    ~Restore() { g_edit = p; }
+  } restore{keepEdit};
+  static const char* tabs[ST_COUNT] = {"COLOURS", "LOOK", "OUTPUT", "SCREEN", "AUDIO", "DMX", "SYSTEM", "VIDEO IN"};
   Choice("stabs", tabs, ST_COUNT, &a.st.settingsTab, 4, 40 * s);
   ImGui::BeginChild("##settings", ImVec2(0, 0), ImGuiChildFlags_AlwaysUseWindowPadding);
   float sp = ImGui::GetStyle().ItemSpacing.x;
   switch (a.st.settingsTab) {
     case ST_LOOK: LookTab(a); break;
+    case ST_VIDEO: VideoInTab(a); break;
     case ST_COLOURS: {
       Look& l = a.st.look;
       SectionLabel("PALETTES (tap to select, then edit below)");
@@ -1652,6 +1829,25 @@ void drawUI(App& a) {
   float s = S();
   g_sliding = false;
 
+  // BACK selected: the LIVE controls and the effect bar edit a copy holding the background's settings
+  static Look backEdit, backOrig;
+  if (a.layerEdit == 1) {
+    const Look& f = a.st.look;
+    const BgLayer& bg = f.bg;
+    backEdit = f;
+    paramsToLook(bg.fx, backEdit);
+    backEdit.effect = bg.effect;
+    backEdit.mirror = bg.mirror;
+    backEdit.speedMult = bg.speedMult;
+    backEdit.useCustom = false;
+    if (bg.ownColors) {
+      backEdit.palette = bg.palette;
+      backEdit.colorMode = bg.colorMode;
+    }
+    backOrig = backEdit;
+    g_edit = &backEdit;
+  }
+
   Canvas(a);
   EffectStrip(a);
   SceneStrip(a);
@@ -1731,6 +1927,21 @@ void drawUI(App& a) {
       }
     }
     light(dcol, dmxs);
+    if (a.st.videoIn.type != VSRC_OFF) {
+      ImGui::SameLine(0, 14 * s);
+      int vs = a.video.state();
+      light(vs == VS_LIVE ? green : vs == VS_LOST ? yellow : red,
+            vs == VS_LIVE ? "VIDEO" : vs == VS_LOST ? "VIDEO LOST" : "NO VIDEO");
+    }
+    {
+      const BgLayer& bg = a.st.look.bg;
+      if (bg.on) {
+        ImGui::SameLine(0, 14 * s);
+        char b[64];
+        std::snprintf(b, sizeof(b), "BG: %s %.0f%%", kEffectNames[bg.effect], bg.level * 100.f);
+        ImGui::TextColored(kBack, "%s", b);
+      }
+    }
     // system stats
     char st[128];
     float cpu = a.stats.cpu(), gpu = a.stats.gpu();
@@ -1778,4 +1989,21 @@ void drawUI(App& a) {
   }
   KeyboardFrame(a);
   QuitConfirmFrame(a);
+
+  // write the background edits back (only when the user changed something, so a cue or scene recalled
+  // during this frame is not overwritten)
+  if (g_edit) {
+    if (lookToText(backEdit) != lookToText(backOrig)) {
+      BgLayer& bg = a.st.look.bg;
+      lookToParams(backEdit, bg.fx);
+      bg.effect = backEdit.effect;
+      bg.mirror = backEdit.mirror;
+      bg.speedMult = backEdit.speedMult;
+      if (bg.ownColors) {
+        bg.palette = backEdit.palette;
+        bg.colorMode = backEdit.colorMode;
+      }
+    }
+    g_edit = nullptr;
+  }
 }

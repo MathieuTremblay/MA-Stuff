@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(TouchFX VERSION 0.7.3 LANGUAGES C CXX)
+project(TouchFX VERSION 0.8.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -52,6 +52,20 @@ if(WIN32)
   endforeach()
 endif()
 
+# AJA capture cards: the open-source NTV2 SDK (MIT), built as a static library.
+option(TOUCHFX_AJA "Build with AJA capture card support" ${WIN32})
+if(TOUCHFX_AJA)
+  set(AJANTV2_DISABLE_DEMOS ON CACHE BOOL "" FORCE)
+  set(AJANTV2_DISABLE_DRIVER ON CACHE BOOL "" FORCE)
+  set(AJANTV2_DISABLE_TESTS ON CACHE BOOL "" FORCE)
+  set(AJANTV2_DISABLE_TOOLS ON CACHE BOOL "" FORCE)
+  set(AJANTV2_DISABLE_PLUGIN_LOAD ON CACHE BOOL "" FORCE)
+  set(AJANTV2_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+  FetchContent_Declare(libajantv2
+    URL https://github.com/aja-video/libajantv2/archive/aea0e08a99d913da490fae748f40a778f31e88c0.tar.gz)  # 18.1.0
+  FetchContent_MakeAvailable(libajantv2)
+endif()
+
 # Embed the UI font into the executable so the app is a single portable .exe
 set(TOUCHFX_FONT_SRC ${imgui_SOURCE_DIR}/misc/fonts/Roboto-Medium.ttf)
 set(TOUCHFX_FONT_CPP ${CMAKE_CURRENT_BINARY_DIR}/font_data.cpp)
@@ -77,7 +91,7 @@ add_executable(TouchFX WIN32
   src/fx_ribbons.cpp
   src/fx_geometry.cpp
   src/fx_tunnel.cpp
-  src/fx_lightning.cpp
+  src/fx_video.cpp
   src/fx_plexus.cpp
   src/fx_fireworks.cpp
   src/fx_starfield.cpp
@@ -93,6 +107,10 @@ add_executable(TouchFX WIN32
   src/cues.cpp
   src/log.cpp
   src/netif.cpp
+  src/video_in.cpp
+  src/video_mf.cpp
+  src/video_decklink.cpp
+  src/video_aja.cpp
   src/ui_cues.cpp
   src/ui_launcher.cpp
   src/ndi.cpp
@@ -118,11 +136,17 @@ target_compile_definitions(TouchFX PRIVATE
 
 target_link_libraries(TouchFX PRIVATE ${TOUCHFX_SDL_LIBS} nlohmann_json::nlohmann_json)
 
+if(TOUCHFX_AJA)
+  target_link_libraries(TouchFX PRIVATE ajantv2)
+  target_compile_definitions(TouchFX PRIVATE TOUCHFX_AJA)
+endif()
+
 if(WIN32)
-  target_sources(TouchFX PRIVATE res/touchfx.rc ${TOUCHFX_SPOUT_SOURCES})
-  target_include_directories(TouchFX PRIVATE ${TOUCHFX_SPOUT_DIR})
+  target_sources(TouchFX PRIVATE res/touchfx.rc ${TOUCHFX_SPOUT_SOURCES} third_party/decklink/DeckLinkAPI_i.c)
+  target_include_directories(TouchFX PRIVATE ${TOUCHFX_SPOUT_DIR} third_party/decklink)
   target_compile_definitions(TouchFX PRIVATE TOUCHFX_SPOUT)
-  target_link_libraries(TouchFX PRIVATE opengl32 d3d11 dxgi winmm comctl32 comdlg32 version)
+  target_link_libraries(TouchFX PRIVATE opengl32 d3d11 dxgi winmm comctl32 comdlg32 version
+                        mfplat mf mfreadwrite mfuuid oleaut32)
   if(MINGW)
     set_source_files_properties(${TOUCHFX_SPOUT_SOURCES} PROPERTIES COMPILE_OPTIONS "-msse4.1")
     if(CMAKE_HOST_UNIX)

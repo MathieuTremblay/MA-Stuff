@@ -8,14 +8,14 @@ using Color3 = std::array<float, 3>;
 // Values are stored in settings files: only ever append.
 enum EffectId {
   FX_FLUID, FX_PARTICLES, FX_KALEIDO, FX_LASERS, FX_STROBE, FX_SPARKLES,
-  FX_RIPPLES, FX_RIBBONS, FX_GEOMETRY, FX_TUNNEL, FX_LIGHTNING, FX_PLEXUS, FX_FIREWORKS, FX_STARFIELD,
+  FX_RIPPLES, FX_RIBBONS, FX_GEOMETRY, FX_TUNNEL, FX_VIDEO /* Lightning before 0.8 */, FX_PLEXUS, FX_FIREWORKS, FX_STARFIELD,
   FX_SPECTRUM, FX_GRID,
   FX_COUNT
 };
 constexpr int kDmxEffects = 6;  // effects reachable from the DMX effect channel (profile unchanged for now)
 enum MirrorMode { MIRROR_OFF, MIRROR_LR, MIRROR_UD, MIRROR_QUAD, MIRROR_RADIAL6, MIRROR_RADIAL8, MIRROR_COUNT };
 enum ReleaseMode { RELEASE_FADE, RELEASE_SNAP };
-enum ColorMode { COLOR_GRADIENT, COLOR_SPEED, COLOR_POSITION, COLOR_BEAT, COLOR_RANDOM, COLOR_COUNT };
+enum ColorMode { COLOR_GRADIENT, COLOR_SPEED, COLOR_POSITION, COLOR_BEAT, COLOR_RANDOM, COLOR_VIDEO, COLOR_COUNT };
 enum LaserMode { LASER_FAN, LASER_AIM, LASER_WEB, LASER_SCAN, LASER_TUNNEL, LASER_WAVE, LASER_COUNT };
 enum LaserChase { CHASE_OFF, CHASE_STEP, CHASE_ALTERNATE, CHASE_RANDOM, CHASE_COUNT };
 enum StrobeShape {
@@ -26,6 +26,9 @@ enum ShapeType { SHAPE_TRI, SHAPE_SQUARE, SHAPE_PENT, SHAPE_HEX, SHAPE_CIRCLE, S
 enum SpectrumMode { SPEC_CIRCLE, SPEC_BARS, SPEC_WAVE, SPEC_COUNT };
 enum GridMode { GRID_TRAIL, GRID_RINGS, GRID_SPARKLE, GRID_COUNT };
 enum ParticleStrobe { PSTROBE_OFF, PSTROBE_SYNC, PSTROBE_SPARKLE, PSTROBE_COUNT };
+enum VideoMode { VID_REVEAL, VID_LIQUID, VID_RIPPLE, VID_KALEIDO, VID_PIXEL, VID_WARP, VID_COUNT };
+enum VideoFit { VFIT_FILL, VFIT_FIT, VFIT_STRETCH, VFIT_COUNT };
+enum BlendMode { BLEND_ADD, BLEND_BEHIND, BLEND_REVEAL, BLEND_COUNT };
 
 // Flashes per beat for the strobe "rate" buttons.
 constexpr int kNumDivisions = 6;
@@ -85,8 +88,16 @@ struct TunnelSettings {
   bool merge = false;  // one tunnel for all fingers instead of one per finger
   float speed = 0.5f, density = 0.5f, twist = 0.5f /*centered*/, width = 0.35f, depth = 0.5f;
 };
-struct LightningSettings {
-  float branches = 0.5f, chaos = 0.5f, rate = 0.5f, width = 0.3f, glow = 0.6f, reach = 0.6f, trail = 0.25f;
+// VIDEO effect: the video input, played with the fingers.
+struct VideoSettings {
+  int mode = VID_REVEAL;
+  int fit = VFIT_FILL;
+  int segments = 6;       // KALEIDO
+  float size = 0.5f;      // brush / cell / lens size
+  float strength = 0.5f;  // how strongly the fingers act
+  float trail = 0.6f;     // how long the touched areas stay (REVEAL, LIQUID, RIPPLE)
+  float level = 0.8f;     // video brightness
+  float glow = 0.3f;      // edge glow in the effect's colours
 };
 struct PlexusSettings {
   float amount = 0.5f, range = 0.5f, size = 0.4f, drift = 0.4f, spread = 0.5f, trail = 0.1f;
@@ -123,6 +134,46 @@ struct StrobeSettings {
   bool audioHits = false;  // flash on detected audio hits instead of the rate
 };
 
+// The settings of every effect (used by the background layer, which has its own copy).
+#define TOUCHFX_FX_PARAMS(X) \
+  X(fluid) X(particles) X(kaleido) X(lasers) X(strobe) X(sparkles) X(ripples) X(ribbons) X(geometry) X(tunnel) \
+  X(video) X(plexus) X(fireworks) X(starfield) X(spectrum) X(grid)
+struct FxParams {
+  FluidSettings fluid;
+  ParticleSettings particles;
+  KaleidoSettings kaleido;
+  LaserSettings lasers;
+  StrobeSettings strobe;
+  SparkleSettings sparkles;
+  RippleSettings ripples;
+  RibbonSettings ribbons;
+  GeometrySettings geometry;
+  TunnelSettings tunnel;
+  VideoSettings video;
+  PlexusSettings plexus;
+  FireworkSettings fireworks;
+  StarfieldSettings starfield;
+  SpectrumSettings spectrum;
+  GridSettings grid;
+};
+
+// Background layer: a second effect behind the one played with the fingers. It moves by itself (and with
+// the music); it never fades on release.
+struct BgLayer {
+  bool on = false;
+  int effect = FX_STARFIELD;
+  float level = 0.6f;
+  bool followTouch = false;  // the fingers drive it too
+  int blend = BLEND_ADD;
+  int mirror = MIRROR_OFF;
+  bool ownColors = false;    // own palette / colour mode instead of the front layer's
+  int palette = 0;
+  int colorMode = COLOR_GRADIENT;
+  int speedMult = 2;
+  float motion = 0.4f;       // how fast its automatic points move
+  FxParams fx;
+};
+
 // Everything a scene stores.
 struct Look {
   int effect = FX_FLUID;
@@ -136,7 +187,7 @@ struct Look {
   RibbonSettings ribbons;
   GeometrySettings geometry;
   TunnelSettings tunnel;
-  LightningSettings lightning;
+  VideoSettings video;
   PlexusSettings plexus;
   FireworkSettings fireworks;
   StarfieldSettings starfield;
@@ -155,7 +206,12 @@ struct Look {
   float brightness = 1.0f;
   float bpm = 120.0f;
   int speedMult = 2;
+  BgLayer bg;
 };
+
+// Copies the effect settings between a look and a background layer.
+void paramsToLook(const FxParams& p, Look& l);
+void lookToParams(const Look& l, FxParams& p);
 
 struct Scene {
   bool used = false;
@@ -219,6 +275,12 @@ struct DmxSettings {
   bool lock = false;         // DMX always wins over the panel
 };
 
+enum VideoSourceType { VSRC_OFF, VSRC_NDI, VSRC_CAPTURE, VSRC_SPOUT, VSRC_DECKLINK, VSRC_AJA, VSRC_TEST, VSRC_COUNT };
+struct VideoInSettings {  // belongs to the PC
+  int type = VSRC_OFF;
+  std::string source;      // NDI source name / device name ("" = first one found)
+};
+
 struct LayoutSettings {
   bool panelLeft = false;
   float panelWidth = 1.0f;  // multiplier
@@ -241,6 +303,7 @@ struct AppState {
   ExternalSettings external;
   LayoutSettings layout;
   AudioSettings audio;
+  VideoInSettings videoIn;
   DmxSettings dmx;
   std::string dmxAdapter;       // network card DMX listens on ("" = all) - belongs to the PC, not the show
   std::string dmxAdapterLabel;

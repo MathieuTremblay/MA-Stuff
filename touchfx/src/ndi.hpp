@@ -7,6 +7,12 @@
 #include <thread>
 #include <vector>
 
+// Shared NDI runtime (the sender and the video input's receiver use the same library).
+bool ndiRuntimeLoad(std::string& err);
+bool ndiRuntimeInit(std::string& err);
+void ndiRuntimeShutdown();          // NDIlib_destroy (to apply a new network card): close receivers first
+void* ndiSymbol(const char* name);  // nullptr if missing
+
 // Sends video frames over NDI. The NDI runtime library is loaded at runtime
 // (installed with NDI Tools / NDI Runtime), so TouchFX starts fine without it.
 class NdiSender {
@@ -17,6 +23,7 @@ class NdiSender {
   // TouchFX writes its NDI config copy. Restarts NDI when the choice changes.
   void setAdapter(const std::string& adapterIp, const std::string& configDir);
   const std::string& adapter() const { return adapterApplied_; }
+  bool adapterChangeNeeded(const std::string& ip) const { return !configured_ || ip != adapterApplied_; }
   void stop();
   bool running() const { return instance_ != nullptr; }
   const std::string& name() const { return name_; }
@@ -28,11 +35,10 @@ class NdiSender {
  private:
   bool loadRuntime();
   bool ensureInit();
-  bool inited_ = false, configured_ = false;
+  bool configured_ = false;
   std::string adapterApplied_;
   void threadMain();
 
-  void* lib_ = nullptr;
   void* instance_ = nullptr;
   std::string name_, error_;
   std::atomic<int> connections_{0};

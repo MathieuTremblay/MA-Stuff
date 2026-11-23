@@ -13,6 +13,7 @@ inline constexpr ImVec4 kAccent{1.00f, 0.47f, 0.10f, 1.f};
 inline constexpr ImVec4 kAccentDim{0.55f, 0.25f, 0.05f, 1.f};
 inline constexpr ImVec4 kDanger{0.85f, 0.12f, 0.15f, 1.f};
 inline constexpr ImVec4 kGo{0.15f, 0.75f, 0.35f, 1.f};
+inline constexpr ImVec4 kBack{0.20f, 0.55f, 1.00f, 1.f};  // background layer
 inline constexpr ImVec4 kText{0.92f, 0.92f, 0.94f, 1.f};
 inline constexpr ImVec4 kTextDim{0.55f, 0.55f, 0.60f, 1.f};
 
