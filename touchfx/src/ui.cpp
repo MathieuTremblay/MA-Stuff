@@ -762,12 +762,46 @@ bool Stepper(const char* label, int* v, int lo, int hi) {
   return ch;
 }
 
+// Network card choice: AUTOMATIC or one adapter. A chosen card that is gone stays selected, in red.
+bool AdapterPicker(App& a, const char* id, std::string& adapterId, std::string& label) {
+  float s = S();
+  bool changed = false;
+  ImGui::PushID(id);
+  if (Toggle("AUTOMATIC (all network cards)", adapterId.empty(), ImVec2(-1, 44 * s))) {
+    changed = !adapterId.empty();
+    adapterId.clear();
+    label.clear();
+  }
+  for (const NetAdapter& n : a.adapters) {
+    std::string l = adapterLabel(n) + "##" + n.id;
+    if (Toggle(l.c_str(), n.id == adapterId, ImVec2(-1, 44 * s))) {
+      changed = n.id != adapterId;
+      adapterId = n.id;
+      label = n.name + " (" + ipToString(n.ip) + ")";
+    }
+  }
+  if (!adapterId.empty() && !findAdapter(a.adapters, adapterId)) {
+    std::string l = (label.empty() ? std::string("Chosen card") : label) + "  -  NOT CONNECTED##missing";
+    Toggle(l.c_str(), true, ImVec2(-1, 44 * s), kDanger);
+  }
+  ImGui::PopID();
+  return changed;
+}
+
 void DmxTab(App& a) {
   DmxSettings& d = a.st.dmx;
   float s = S();
   SectionLabel("DMX INPUT (control TouchFX from a lighting console)");
   static const char* protos[] = {"OFF", "sACN", "ART-NET"};
   Choice("proto", protos, 3, &d.protocol);
+  if (d.protocol != DMXP_OFF) {
+    SectionLabel("NETWORK CARD (this PC)");
+    AdapterPicker(a, "dmxnet", a.st.dmxAdapter, a.st.dmxAdapterLabel);
+    if (a.dmxAdapterMissing)
+      Hint("The chosen network card is not connected: DMX is paused until it comes back (cable, adapter enabled).");
+    else
+      Hint("Choose the card on the lighting network so TouchFX only listens to the console there.");
+  }
   if (d.protocol == DMXP_SACN) {
     Stepper("Universe", &d.sacnUniverse, 1, 63999);
   } else if (d.protocol == DMXP_ARTNET) {
@@ -1231,6 +1265,8 @@ void SettingsPanel(App& a) {
       }
       if (!o.ndiEnabled) {
         ImGui::TextColored(kTextDim, "NDI output is off.");
+      } else if (a.ndiAdapterMissing) {
+        ImGui::TextColored(ImVec4(1, 0.45f, 0.4f, 1), "Paused: the chosen network card is not connected.");
       } else if (a.ndi.running()) {
         int n = a.ndi.connections();
         ImGui::PushStyleColor(ImGuiCol_Text, n > 0 ? ImVec4(0.3f, 0.9f, 0.4f, 1) : kText);
@@ -1241,6 +1277,15 @@ void SettingsPanel(App& a) {
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 0.45f, 0.4f, 1));
         ImGui::TextWrapped("%s", a.ndi.error().empty() ? "Starting NDI..." : a.ndi.error().c_str());
         ImGui::PopStyleColor();
+      }
+      if (o.ndiEnabled) {
+        SectionLabel("NDI NETWORK CARD (this PC)");
+        AdapterPicker(a, "ndinet", o.ndiAdapter, o.ndiAdapterLabel);
+        if (a.ndiAdapterMissing)
+          Hint("The chosen network card is not connected: NDI is paused until it comes back.");
+        else
+          Hint("NDI is sent only on the chosen card (NDI restarts for a moment when you change it). AUTOMATIC "
+               "keeps NDI's own settings. If the feed still shows on another network, restart TouchFX.");
       }
       SectionLabel("SPOUT OUTPUT (same PC: Resolume, TouchDesigner, OBS...)");
       if (SpoutOut::available()) {
@@ -1635,6 +1680,7 @@ void drawUI(App& a) {
     int n = a.ndi.connections();
     char status[96];
     if (!o.ndiEnabled) std::snprintf(status, sizeof(status), "NDI OFF");
+    else if (a.ndiAdapterMissing) std::snprintf(status, sizeof(status), "NDI NO NETWORK");
     else if (!ok) std::snprintf(status, sizeof(status), "NDI ERROR");
     else std::snprintf(status, sizeof(status), "NDI %dx%d%s %d rx", a.out.w, a.out.h, o.alpha ? " A" : "", n);
     light(!o.ndiEnabled ? grey : !ok ? red : n > 0 ? green : yellow, status);
@@ -1652,6 +1698,10 @@ void drawUI(App& a) {
       int u = d.protocol == DMXP_SACN ? d.sacnUniverse : d.artnetUniverse;
       std::snprintf(dmxs, sizeof(dmxs), "%s U%d.%d", proto, u, d.address);
       dcol = !a.dmx.error().empty() && age > 1e8 ? red : age < 1.0 ? green : age < 1e8 ? yellow : red;
+      if (a.dmxAdapterMissing) {
+        std::snprintf(dmxs, sizeof(dmxs), "DMX NO NETWORK");
+        dcol = red;
+      }
     }
     light(dcol, dmxs);
     // system stats

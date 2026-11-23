@@ -13,6 +13,10 @@ class NdiSender {
  public:
   ~NdiSender();
   bool start(const std::string& name);  // false if the runtime is missing or creation failed
+  // Network card NDI may use: its IPv4 address, or "" for all (NDI's own settings). configDir is where
+  // TouchFX writes its NDI config copy. Restarts NDI when the choice changes.
+  void setAdapter(const std::string& adapterIp, const std::string& configDir);
+  const std::string& adapter() const { return adapterApplied_; }
   void stop();
   bool running() const { return instance_ != nullptr; }
   const std::string& name() const { return name_; }
@@ -23,6 +27,9 @@ class NdiSender {
 
  private:
   bool loadRuntime();
+  bool ensureInit();
+  bool inited_ = false, configured_ = false;
+  std::string adapterApplied_;
   void threadMain();
 
   void* lib_ = nullptr;

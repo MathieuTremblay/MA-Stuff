@@ -70,10 +70,12 @@ std::vector<uint32_t> localAddresses() {
 
 DmxInput::~DmxInput() { stop(); }
 
-void DmxInput::start(int protocol, int universe) {
+void DmxInput::start(int protocol, int universe, uint32_t adapterIp, uint32_t adapterMask) {
   stop();
   protocol_ = protocol;
   universe_ = universe;
+  adapterIp_ = adapterIp;
+  adapterMask_ = adapterMask;
   error_.clear();
   {
     std::lock_guard<std::mutex> lk(mtx_);
@@ -119,13 +121,18 @@ void DmxInput::start(int protocol, int universe) {
     ip_mreq m{};
     m.imr_multiaddr.s_addr = htonl((239u << 24) | (255u << 16) | (uint32_t(universe) & 0xFFFF));
     bool joined = false;
-    for (uint32_t ip : localAddresses()) {
-      if ((ip >> 24) == 127) continue;
-      m.imr_interface.s_addr = htonl(ip);
+    if (adapterIp) {  // only the chosen network card
+      m.imr_interface.s_addr = htonl(adapterIp);
+      joined = setsockopt(s, IPPROTO_IP, IP_ADD_MEMBERSHIP, (const char*)&m, sizeof(m)) == 0;
+    } else {
+      for (uint32_t ip : localAddresses()) {
+        if ((ip >> 24) == 127) continue;
+        m.imr_interface.s_addr = htonl(ip);
+        if (setsockopt(s, IPPROTO_IP, IP_ADD_MEMBERSHIP, (const char*)&m, sizeof(m)) == 0) joined = true;
+      }
+      m.imr_interface.s_addr = htonl(INADDR_ANY);
       if (setsockopt(s, IPPROTO_IP, IP_ADD_MEMBERSHIP, (const char*)&m, sizeof(m)) == 0) joined = true;
     }
-    m.imr_interface.s_addr = htonl(INADDR_ANY);
-    if (setsockopt(s, IPPROTO_IP, IP_ADD_MEMBERSHIP, (const char*)&m, sizeof(m)) == 0) joined = true;
     if (!joined) error_ = "Multicast join failed: only unicast sACN will be received.";
   }
   sock_ = s;
@@ -191,7 +198,7 @@ void DmxInput::replyArtPoll(uint32_t toIp) {
   std::memcpy(r, "Art-Net\0", 8);
   r[8] = 0x00;
   r[9] = 0x21;  // OpPollReply 0x2100, little endian
-  uint32_t me = localIpFor(toIp);
+  uint32_t me = adapterIp_ ? adapterIp_ : localIpFor(toIp);  // the card the console should talk to
   r[10] = (me >> 24) & 255;
   r[11] = (me >> 16) & 255;
   r[12] = (me >> 8) & 255;
@@ -257,6 +264,8 @@ void DmxInput::threadMain() {
 }
 
 void DmxInput::handlePacket(const uint8_t* p, int n, uint32_t fromIp) {
+  // A network card is chosen: ignore anything that does not come from its network (or from this PC on it).
+  if (adapterIp_ && fromIp != adapterIp_ && (fromIp & adapterMask_) != (adapterIp_ & adapterMask_)) return;
   const uint8_t* dmx = nullptr;
   int len = 0;
   std::string name;

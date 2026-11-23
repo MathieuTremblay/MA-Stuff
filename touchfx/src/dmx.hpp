@@ -12,8 +12,9 @@ enum DmxProtocol { DMXP_OFF, DMXP_SACN, DMXP_ARTNET, DMXP_COUNT };
 class DmxInput {
  public:
   ~DmxInput();
-  // universe: sACN 1..63999, Art-Net port-address 0..32767
-  void start(int protocol, int universe);
+  // universe: sACN 1..63999, Art-Net port-address 0..32767.
+  // adapterIp / adapterMask (host order): listen only on that network card; 0 = all network cards.
+  void start(int protocol, int universe, uint32_t adapterIp = 0, uint32_t adapterMask = 0);
   void stop();
   int protocol() const { return protocol_; }
   int universe() const { return universe_; }
@@ -33,6 +34,7 @@ class DmxInput {
   void handlePacket(const uint8_t* p, int n, uint32_t fromIp);
 
   int protocol_ = DMXP_OFF, universe_ = 0;
+  uint32_t adapterIp_ = 0, adapterMask_ = 0;
   std::string error_;
   std::thread thread_;
   std::atomic<bool> quit_{false};

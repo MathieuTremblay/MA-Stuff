@@ -44,7 +44,8 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Look, effect, fluid, particles, 
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene, used, name, look)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Cue, name, look, fade, follow, followValue)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(CueList, name, cues)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(OutputSettings, width, height, fps, ndiEnabled, ndiName, spout, spoutName, alpha,
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(OutputSettings, width, height, fps, ndiEnabled, ndiName, ndiAdapter,
+                                                ndiAdapterLabel, spout, spoutName, alpha,
                                                 premultiplied)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(DmxSettings, protocol, sacnUniverse, artnetUniverse, address, mode, lock)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(ExternalSettings, enabled, display, fit, windowed)
@@ -169,6 +170,8 @@ std::string serializeMachine(const AppState& s) {
   j["layout"] = s.layout;
   j["audio"] = s.audio;
   j["showMode"] = s.showMode;
+  j["dmxAdapter"] = s.dmxAdapter;
+  j["dmxAdapterLabel"] = s.dmxAdapterLabel;
   j["lastShow"] = s.lastShow;
   j["blockGestures"] = s.blockGestures;
   j["gestureRestore"] = s.gestureRestore;
@@ -221,6 +224,8 @@ static void readMachinePart(const json& j, AppState& d) {
   if (j.contains("layout")) d.layout = j["layout"].get<LayoutSettings>();
   if (j.contains("audio")) d.audio = j["audio"].get<AudioSettings>();
   d.showMode = j.value("showMode", d.showMode);
+  d.dmxAdapter = j.value("dmxAdapter", d.dmxAdapter);
+  d.dmxAdapterLabel = j.value("dmxAdapterLabel", d.dmxAdapterLabel);
   d.lastShow = j.value("lastShow", d.lastShow);
   d.blockGestures = j.value("blockGestures", d.blockGestures);
   d.gestureRestore = j.value("gestureRestore", d.gestureRestore);

@@ -69,14 +69,14 @@ Swipe up/down anywhere in the panel to scroll (sliders: swipe sideways to change
 | **COLOURS** | Edit the **LOW / MID / HIGH** colours and name of each palette. |
 | **LOOK** | Glow (bloom), glow size, saturation and brightness for every effect (saved in scenes), and the effect-change crossfade time. |
 | **AUDIO** | Input level meter (works while the tab is open, even with audio reactive off), audio source (default input, any input device, system audio, test beat), sensitivity, auto BPM, auto play. |
-| **OUTPUT** | Resolution (1920x1080, 1280x720, 960x540 or custom, max 1920x1080), 30 / 60 fps, NDI on/off and source name, **Spout** output (GPU sharing with Resolume / TouchDesigner / OBS on the same PC), **alpha channel** (straight or premultiplied). |
+| **OUTPUT** | Resolution (1920x1080, 1280x720, 960x540 or custom, max 1920x1080), 30 / 60 fps, NDI on/off, source name and **network card**, **Spout** output (GPU sharing with Resolume / TouchDesigner / OBS on the same PC), **alpha channel** (straight or premultiplied). |
 | **SCREEN** | **External display**: show the output fullscreen on another screen (fit / fill / stretch, or windowed). Layout: panel left or right, panel width, effects / scenes under the canvas, UI size, fullscreen. |
 | **DMX** | Control from a lighting console: sACN or Art-Net, universe, start address, Basic / Advanced profile, DMX lock, live channel monitor. |
 | **SYSTEM** | Current show, switch show, show and logs folders; block Windows 3/4-finger gestures, number of touch points (1–10), touch markers on the preview, reset everything. |
 
 ### DMX control (grandMA3 and other consoles)
 
-1. In *SETTINGS → DMX* pick **sACN** or **ART-NET**, the universe (default **sACN universe 100**, Art-Net 99) and the
+1. In *SETTINGS → DMX* pick **sACN** or **ART-NET**, the **network card** on the lighting network (or AUTOMATIC), the universe (default **sACN universe 100**, Art-Net 99) and the
    start address (default **1**), and the profile mode.
    The DMX effect channel controls the first six effects (Fluid, Particles, Kaleido, Lasers, Strobe, Sparkles);
    the newer ones are reached through scenes until the profile is extended.
@@ -122,6 +122,18 @@ Keyboard: `SPACE` tap tempo, `C` clear, `B` blackout, `F11` or `Alt+Enter` fulls
 
 Everything (settings, palettes, scenes) is saved automatically to `%APPDATA%\TouchFX\TouchFX\settings.json`.
 Delete that file to go back to factory defaults.
+
+## Network cards
+
+With several network cards (lighting network, video network, internet), choose which one is used:
+- **NDI** (*SETTINGS → OUTPUT*): the feed is announced and sent only on that card. TouchFX writes its own copy of
+  NDI's configuration (keeping your NDI Access Manager settings) with only that adapter allowed; AUTOMATIC leaves
+  NDI's configuration untouched. NDI restarts for a moment when you change it.
+- **DMX** (*SETTINGS → DMX*): sACN joins its multicast group only on that card, only packets from that network are
+  accepted, and the Art-Net poll reply gives the console that card's address.
+
+These choices belong to the PC (not the show). If the chosen card disappears (cable out, adapter disabled), it stays
+selected in red, the NDI / DMX lights show **NO NETWORK**, and TouchFX waits for it instead of using another network.
 
 ## Logs and crashes
 

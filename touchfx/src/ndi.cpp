@@ -3,6 +3,8 @@
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
+#include <nlohmann/json.hpp>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -108,22 +110,96 @@ bool NdiSender::loadRuntime() {
     lib_ = nullptr;
     return false;
   }
+  return true;
+}
+
+bool NdiSender::ensureInit() {
+  if (inited_) return true;
   if (!ndi::initialize()) {
     error_ = "NDI could not start (this CPU is not supported by NDI).";
-    lib_ = nullptr;
     return false;
   }
+  inited_ = true;
   return true;
 }
 
 NdiSender::~NdiSender() {
   stop();
-  if (lib_ && ndi::destroy) ndi::destroy();
+  if (inited_ && ndi::destroy) ndi::destroy();
+}
+
+namespace {
+std::string g_userConfigDir;  // NDI_CONFIG_DIR set before TouchFX started (if any)
+bool g_userConfigDirRead = false;
+
+void setEnv(const char* name, const char* value) {  // value nullptr = remove
+#ifdef _WIN32
+  SetEnvironmentVariableA(name, value);  // what the NDI DLL sees
+  _putenv_s(name, value ? value : "");
+#else
+  if (value) setenv(name, value, 1);
+  else unsetenv(name);
+#endif
+}
+
+// NDI's own config (from NDI Access Manager etc.), so we only add the adapter on top of it.
+nlohmann::json readBaseConfig() {
+  std::vector<std::string> dirs;
+  if (!g_userConfigDir.empty()) dirs.push_back(g_userConfigDir);
+#ifdef _WIN32
+  if (const char* pd = std::getenv("ProgramData")) dirs.push_back(std::string(pd) + "\\NDI");
+  if (const char* up = std::getenv("USERPROFILE")) dirs.push_back(std::string(up) + "\\.ndi");
+  const char sep = '\\';
+#else
+  if (const char* h = std::getenv("HOME")) dirs.push_back(std::string(h) + "/.ndi");
+  const char sep = '/';
+#endif
+  for (const std::string& d : dirs) {
+    std::ifstream f(d + sep + "ndi-config.v1.json");
+    if (!f) continue;
+    try {
+      return nlohmann::json::parse(f);
+    } catch (...) {
+    }
+  }
+  return nlohmann::json::object();
+}
+}  // namespace
+
+void NdiSender::setAdapter(const std::string& adapterIp, const std::string& configDir) {
+  if (configured_ && adapterIp == adapterApplied_) return;
+  if (!g_userConfigDirRead) {
+    if (const char* v = std::getenv("NDI_CONFIG_DIR")) g_userConfigDir = v;
+    g_userConfigDirRead = true;
+  }
+  // NDI reads its config when it starts: stop it, change the config, it restarts on the next start().
+  stop();
+  if (inited_ && ndi::destroy) ndi::destroy();
+  inited_ = false;
+  if (adapterIp.empty()) {
+    // automatic: back to NDI's normal configuration
+    setEnv("NDI_CONFIG_DIR", g_userConfigDir.empty() ? nullptr : g_userConfigDir.c_str());
+  } else {
+    nlohmann::json cfg = readBaseConfig();
+    if (!cfg.is_object()) cfg = nlohmann::json::object();
+    cfg["ndi"]["adapters"]["allowed"] = nlohmann::json::array({adapterIp});
+#ifdef _WIN32
+    std::string path = configDir + "\\ndi-config.v1.json";
+#else
+    std::string path = configDir + "/ndi-config.v1.json";
+#endif
+    std::ofstream f(path, std::ios::binary | std::ios::trunc);
+    f << cfg.dump(2);
+    f.close();
+    setEnv("NDI_CONFIG_DIR", configDir.c_str());
+  }
+  adapterApplied_ = adapterIp;
+  configured_ = true;
 }
 
 bool NdiSender::start(const std::string& name) {
   stop();
-  if (!loadRuntime()) return false;
+  if (!loadRuntime() || !ensureInit()) return false;
   ndi::send_create_t desc{name.c_str(), nullptr, false, false};
   instance_ = ndi::send_create(&desc);
   if (!instance_) {

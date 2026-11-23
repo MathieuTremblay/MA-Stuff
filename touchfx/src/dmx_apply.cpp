@@ -77,10 +77,24 @@ int dmxFootprint(int mode) { return mode == 0 ? kDmxBasicFootprint : kDmxAdvance
 void applyDmx(App& a, float dt) {
   const DmxSettings& d = a.st.dmx;
   int universe = d.protocol == DMXP_ARTNET ? d.artnetUniverse : d.sacnUniverse;
-  if (a.dmxRunProtocol != d.protocol || a.dmxRunUniverse != universe) {
-    a.dmx.start(d.protocol, universe);
-    a.dmxRunProtocol = d.protocol;
+  // network card (a PC setting): all cards, or only the chosen one
+  uint32_t adIp = 0, adMask = 0;
+  a.dmxAdapterMissing = false;
+  int protocol = d.protocol;
+  if (!a.st.dmxAdapter.empty()) {
+    if (const NetAdapter* n = findAdapter(a.adapters, a.st.dmxAdapter)) {
+      adIp = n->ip;
+      adMask = n->mask;
+    } else {
+      a.dmxAdapterMissing = true;  // keep waiting for that card rather than listening elsewhere
+      protocol = DMXP_OFF;
+    }
+  }
+  if (a.dmxRunProtocol != protocol || a.dmxRunUniverse != universe || a.dmxRunAdapterIp != adIp) {
+    a.dmx.start(protocol, universe, adIp, adMask);
+    a.dmxRunProtocol = protocol;
     a.dmxRunUniverse = universe;
+    a.dmxRunAdapterIp = adIp;
     a.dmxPrimed = false;
   }
   auto reset = [&] {
@@ -92,7 +106,7 @@ void applyDmx(App& a, float dt) {
     a.dmxBpm = false;
     a.dmxCursor[0].active = a.dmxCursor[1].active = false;
   };
-  if (d.protocol == DMXP_OFF || !a.dmx.snapshot(a.dmxFrame)) {
+  if (protocol == DMXP_OFF || !a.dmx.snapshot(a.dmxFrame)) {
     reset();
     a.dmxPrimed = false;
     return;

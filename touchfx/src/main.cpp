@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <filesystem>
 #include <string>
 
 #include "app.hpp"
@@ -390,6 +391,23 @@ void updateNdi(App& a, float dt) {
     if (a.ndi.running()) a.ndi.stop();
     return;
   }
+  // network card: automatic, or the chosen one (if it is missing, NDI waits instead of using another one)
+  std::string adapterIp;
+  a.ndiAdapterMissing = false;
+  if (!o.ndiAdapter.empty()) {
+    const NetAdapter* n = findAdapter(a.adapters, o.ndiAdapter);
+    if (!n) {
+      a.ndiAdapterMissing = true;
+      if (a.ndi.running()) a.ndi.stop();
+      return;
+    }
+    adapterIp = ipToString(n->ip);
+  }
+  if (!a.ndiConfigDir.empty()) {
+    bool changed = a.ndi.adapter() != adapterIp;
+    a.ndi.setAdapter(adapterIp, a.ndiConfigDir);
+    if (changed) a.ndiRetry = 0;
+  }
   if (!a.ndi.running() || a.ndi.name() != o.ndiName) {
     a.ndiRetry -= dt;
     if (a.ndiRetry <= 0) {
@@ -656,6 +674,9 @@ int main(int argc, char** argv) {
   if (!a.selftest && !a.settingsPath.empty()) {
     std::string dir = a.settingsPath.substr(0, a.settingsPath.size() - std::string("settings.json").size());
     logInit(dir);
+    a.ndiConfigDir = dir + "ndi";
+    std::error_code ec;
+    std::filesystem::create_directories(std::filesystem::u8path(a.ndiConfigDir), ec);
     platformInstallCrashHandler(dir);
     logLine("TouchFX %s starting", TOUCHFX_VERSION);
     // Before show files, settings.json held everything: turn it into a first show.
@@ -864,6 +885,11 @@ int main(int argc, char** argv) {
     ensureExternal(a);
 
     if (a.quitNow) running = false;
+    a.adapterTimer -= dt;
+    if (a.adapterTimer <= 0) {  // network cards can come and go (cable, USB adapter)
+      a.adapters = listAdapters();
+      a.adapterTimer = 3.0;
+    }
     if (a.showLoaded) cueTick(a, dt);
 
     // ---- effect switching / clearing ----

@@ -10,6 +10,7 @@
 #include "audio.hpp"
 #include "cues.hpp"
 #include "dmx.hpp"
+#include "netif.hpp"
 #include "sysstats.hpp"
 #include "effects.hpp"
 #include "ndi.hpp"
@@ -117,6 +118,13 @@ struct App {
   uint8_t dmxFrame[512] = {};
 
   SysStats stats;
+
+  // Network cards
+  std::vector<NetAdapter> adapters;
+  double adapterTimer = 0;
+  std::string ndiConfigDir;      // where TouchFX writes its NDI config copy
+  bool ndiAdapterMissing = false, dmxAdapterMissing = false;
+  uint32_t dmxRunAdapterIp = 0;
 
   TouchSlot touches[kMaxTouches];
   std::vector<Emitter> live, held;

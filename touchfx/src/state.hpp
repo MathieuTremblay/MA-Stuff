@@ -180,6 +180,8 @@ struct OutputSettings {
   int width = 1920, height = 1080, fps = 60;
   bool ndiEnabled = true;
   std::string ndiName = "TouchFX";
+  std::string ndiAdapter;       // network card for NDI ("" = automatic, all cards)
+  std::string ndiAdapterLabel;  // its name / IP, shown if it is missing
   bool spout = false;          // Spout output (Windows, same PC)
   std::string spoutName = "TouchFX";
   bool alpha = false;          // send an alpha channel (transparent background)
@@ -237,6 +239,8 @@ struct AppState {
   LayoutSettings layout;
   AudioSettings audio;
   DmxSettings dmx;
+  std::string dmxAdapter;       // network card DMX listens on ("" = all) - belongs to the PC, not the show
+  std::string dmxAdapterLabel;
   float effectFade = 0.5f;  // seconds to fade out the old effect when switching (0 = cut)
   int maxTouches = 4;  // 1..10
   bool blockGestures = true;  // turn off Windows 3/4-finger gestures while running

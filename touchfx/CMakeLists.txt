@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(TouchFX VERSION 0.7.0 LANGUAGES C CXX)
+project(TouchFX VERSION 0.7.1 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -92,6 +92,7 @@ add_executable(TouchFX WIN32
   src/show.cpp
   src/cues.cpp
   src/log.cpp
+  src/netif.cpp
   src/ui_cues.cpp
   src/ui_launcher.cpp
   src/ndi.cpp
@@ -128,7 +129,7 @@ if(WIN32)
       target_include_directories(TouchFX PRIVATE cmake/glshim)
     endif()
   endif()
-  target_link_libraries(TouchFX PRIVATE ole32 shell32 ws2_32)
+  target_link_libraries(TouchFX PRIVATE ole32 shell32 ws2_32 iphlpapi)
   target_compile_definitions(TouchFX PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)
   if(MINGW)
     target_link_options(TouchFX PRIVATE -static -static-libgcc -static-libstdc++)
