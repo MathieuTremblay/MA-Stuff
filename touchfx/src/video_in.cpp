@@ -290,6 +290,12 @@ void VideoInput::update(float dt) {
     return;
   }
   sinceFrame_ += dt;
+  if (frozen_ && out_.tex) {  // hold the picture: nothing new is shown, nothing fades
+    std::lock_guard<std::mutex> lk(mtx_);
+    fresh_ = false;  // drop what arrives meanwhile
+    level_ = std::min(1.f, level_ + dt * 2.f);
+    return;
+  }
   if (type_ == VSRC_SPOUT) {
     spoutUpdate();
   } else {
@@ -326,6 +332,7 @@ void VideoInput::update(float dt) {
 
 std::string VideoInput::statusText() const {
   std::lock_guard<std::mutex> lk(mtx_);
+  if (frozen_ && out_.tex) return "FROZEN (tap FREEZE or press F to go live)";
   switch (state_) {
     case VS_OFF: return "Off";
     case VS_LIVE: return "Live";

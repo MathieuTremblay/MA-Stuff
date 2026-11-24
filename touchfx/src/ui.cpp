@@ -311,6 +311,11 @@ void EffectParams(App& a) {
       Centered(z.mode == LASER_FAN || z.mode == LASER_WEB ? "Rotation" : "Motion", &z.rotation);
       Pct(z.mode == LASER_FAN ? "Fan width" : (z.mode == LASER_AIM ? "Rig width" : "Spread"), &z.spread);
       Pct("Swing", &z.swing);
+      if (z.mode == LASER_FAN || z.mode == LASER_AIM || z.mode == LASER_WEB || z.mode == LASER_SCAN) {
+        static const char* swings[] = {"TOGETHER", "MIRROR", "WAVE", "RANDOM"};
+        Choice("swingmode", swings, SWING_COUNT, &z.swingMode);
+        Pct("Scatter (random beam angles)", &z.scatter);
+      }
       Pct("Width", &z.width);
       Pct("Glow", &z.glow);
       Pct("Length", &z.length);
@@ -396,6 +401,11 @@ void EffectParams(App& a) {
         Hint("No video input: choose one in SETTINGS > VIDEO IN. Until then a palette gradient stands in.");
       else if (a.video.state() != VS_LIVE)
         Hint(("Video input: " + a.video.statusText()).c_str());
+      {
+        bool fz = a.video.frozen();
+        if (Toggle(fz ? "FROZEN - tap to go live (F)" : "FREEZE (hold this frame, key F)", fz, ImVec2(-1, 44 * s), kBack))
+          a.video.setFrozen(!fz);
+      }
       OnOff("ALWAYS ON (shown without fingers, no fade)", &p.alwaysOn, 44 * s);
       if (p.alwaysOn && p.mode == VID_REVEAL) Pct("Base level (not painted)", &p.base);
       if (p.mode != VID_CLEAN) {
@@ -469,12 +479,28 @@ void EffectParams(App& a) {
     case FX_GRID: {
       GridSettings& p = l.grid;
       SectionLabel("LED GRID");
-      static const char* modes[] = {"TRAIL", "RINGS", "SPARKLE"};
-      Choice("gmode", modes, GRID_COUNT, &p.mode);
+      static const char* modes[] = {"TRAIL", "RINGS", "SPARKLE", "SCROLL", "EQUALIZER", "PLASMA", "RAIN", "CHECKER",
+                                    "RADAR", "VIDEO MAP"};
+      Choice("gmode", modes, GRID_COUNT, &p.mode, 4);
+      static const char* help[] = {
+          "Tiles light under your fingers and fade.", "Rings go out from your fingers on the beat.",
+          "Random tiles sparkle around your fingers.", "Bands of colour sweep across the wall on the beat; your finger "
+          "movement sets the direction.",
+          "Each column is a VU bar (with audio reactive on; otherwise it bounces on the beat).",
+          "Smooth flowing colour over the whole wall, swirling around your first finger.",
+          "Drops fall down the columns, more where you touch.", "Checker, stripes and blocks flipping on the beat.",
+          "A sweep turns around each finger and leaves fading tiles.",
+          "The video input on the LED tiles (SETTINGS > VIDEO IN); your fingers brighten it."};
+      Hint(help[std::clamp(p.mode, 0, GRID_COUNT - 1)]);
       Pct("Tile size", &p.tile);
       Pct("Gap", &p.gap);
-      Pct("Rounded", &p.round);
-      Pct("Brush", &p.radius);
+      static const char* shapes[] = {"SQUARE", "ROUND"};
+      int shp = p.round > 0.5f ? 1 : 0;
+      if (Choice("gshape", shapes, 2, &shp)) p.round = shp ? 1.f : 0.f;
+      Pct("Bulb (incandescent)", &p.bulb);
+      Pct(p.mode <= GRID_SPARKLE || p.mode == GRID_RADAR || p.mode == GRID_RAIN || p.mode == GRID_VIDEO ? "Brush"
+                                                                                                         : "Pattern size",
+          &p.radius);
       Pct("Trail", &p.decay);
       if (ImGui::Button("RESET LED GRID", ImVec2(-1, 40 * s))) p = GridSettings();
       break;
@@ -919,6 +945,11 @@ void VideoInTab(App& a) {
     }
   }
 
+  {
+    bool fz = a.video.frozen();
+    if (Toggle(fz ? "FROZEN - tap to go live (F)" : "FREEZE (hold this frame, key F)", fz, ImVec2(-1, 44 * s), kBack))
+      a.video.setFrozen(!fz);
+  }
   // status + preview
   SectionLabel("STATUS");
   {
@@ -1349,10 +1380,13 @@ void LivePanel(App& a) {
     SectionLabel(lbl);
     int& rel = l.releaseFx[l.effect];
     float& ft = l.fadeFx[l.effect];
-    float w = (ImGui::GetContentRegionAvail().x - sp) / 2;
+    float w = (ImGui::GetContentRegionAvail().x - sp * 2) / 3;
     if (Toggle("FADE", rel == RELEASE_FADE, ImVec2(w, 44 * s))) rel = RELEASE_FADE;
     ImGui::SameLine();
     if (Toggle("SNAP", rel == RELEASE_SNAP, ImVec2(w, 44 * s))) rel = RELEASE_SNAP;
+    ImGui::SameLine();
+    if (Toggle("HOLD", rel == RELEASE_HOLD, ImVec2(w, 44 * s))) rel = RELEASE_HOLD;
+    if (rel == RELEASE_HOLD) Hint("Keeps running where your fingers were lifted, until CLEAR.");
     if (rel == RELEASE_FADE) {
       // logarithmic 0.1 .. 10 s
       float t = std::log10(std::clamp(ft, 0.1f, 10.f) / 0.1f) / 2.f;
@@ -1713,7 +1747,7 @@ void EffectStrip(App& a) {
   ImGui::PopStyleVar(3);
 }
 
-// Blackout: unmissable on the preview (striped red, big label) and as a red frame around the whole screen.
+// Blackout: unmissable on the preview (striped red, big label, red outline).
 void BlackoutOverlay(App& a) {
   bool dmx = a.dmxBlackout && !a.blackout;
   if (!a.blackout && !a.dmxBlackout) return;
@@ -1736,11 +1770,7 @@ void BlackoutOverlay(App& a) {
                     IM_COL32(0, 0, 0, 200), 10 * s);
   dl->AddText(f, size, tp, IM_COL32(255, 60 + int(60 * pulse), 60, 255), label);
   dl->PopClipRect();
-  float t = 10 * s;
   dl->AddRect(ImVec2(p0.x - 3, p0.y - 3), ImVec2(p1.x + 3, p1.y + 3), IM_COL32(255, 40, 40, 255), 0, 0, 6 * s);
-  ImVec2 d = ImGui::GetIO().DisplaySize;  // the whole screen
-  dl->AddRect(ImVec2(t * 0.5f, t * 0.5f), ImVec2(d.x - t * 0.5f, d.y - t * 0.5f),
-              IM_COL32(255, 30, 30, 150 + int(105 * pulse)), 0, 0, t);
 }
 
 // EDIT (amber) or SHOW (green): a thin line around the panel, and a badge in the header.
@@ -1987,8 +2017,11 @@ void drawUI(App& a) {
     if (a.st.videoIn.type != VSRC_OFF) {
       ImGui::SameLine(0, 14 * s);
       int vs = a.video.state();
-      light(vs == VS_LIVE ? green : vs == VS_LOST ? yellow : red,
-            vs == VS_LIVE ? "VIDEO" : vs == VS_LOST ? "VIDEO LOST" : "NO VIDEO");
+      if (a.video.frozen() && a.video.texture())
+        light(IM_COL32(60, 140, 255, 255), "VIDEO FROZEN");
+      else
+        light(vs == VS_LIVE ? green : vs == VS_LOST ? yellow : red,
+              vs == VS_LIVE ? "VIDEO" : vs == VS_LOST ? "VIDEO LOST" : "NO VIDEO");
     }
     {
       const BgLayer& bg = a.st.look.bg;

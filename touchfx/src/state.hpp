@@ -14,17 +14,19 @@ enum EffectId {
 };
 constexpr int kDmxEffects = 6;  // effects reachable from the DMX effect channel (profile unchanged for now)
 enum MirrorMode { MIRROR_OFF, MIRROR_LR, MIRROR_UD, MIRROR_QUAD, MIRROR_RADIAL6, MIRROR_RADIAL8, MIRROR_COUNT };
-enum ReleaseMode { RELEASE_FADE, RELEASE_SNAP };
+enum ReleaseMode { RELEASE_FADE, RELEASE_SNAP, RELEASE_HOLD };
 enum ColorMode { COLOR_GRADIENT, COLOR_SPEED, COLOR_POSITION, COLOR_BEAT, COLOR_RANDOM, COLOR_VIDEO, COLOR_COUNT };
 enum LaserMode { LASER_FAN, LASER_AIM, LASER_WEB, LASER_SCAN, LASER_TUNNEL, LASER_WAVE, LASER_COUNT };
 enum LaserChase { CHASE_OFF, CHASE_STEP, CHASE_ALTERNATE, CHASE_RANDOM, CHASE_COUNT };
+enum SwingMode { SWING_TOGETHER, SWING_MIRROR, SWING_WAVE, SWING_RANDOM, SWING_COUNT };
 enum StrobeShape {
   STROBE_FULL, STROBE_SPOT, STROBE_HBAR, STROBE_VBAR, STROBE_SPARKLE,
   STROBE_SHOCKWAVE, STROBE_WIPE, STROBE_BLINDER, STROBE_BLOCKS, STROBE_COUNT
 };
 enum ShapeType { SHAPE_TRI, SHAPE_SQUARE, SHAPE_PENT, SHAPE_HEX, SHAPE_CIRCLE, SHAPE_STAR, SHAPE_MIX, SHAPE_COUNT };
 enum SpectrumMode { SPEC_CIRCLE, SPEC_BARS, SPEC_WAVE, SPEC_COUNT };
-enum GridMode { GRID_TRAIL, GRID_RINGS, GRID_SPARKLE, GRID_COUNT };
+enum GridMode { GRID_TRAIL, GRID_RINGS, GRID_SPARKLE, GRID_SCROLL, GRID_EQ, GRID_PLASMA, GRID_RAIN, GRID_CHECKER,
+                GRID_RADAR, GRID_VIDEO, GRID_COUNT };
 enum ParticleStrobe { PSTROBE_OFF, PSTROBE_SYNC, PSTROBE_SPARKLE, PSTROBE_COUNT };
 enum VideoMode { VID_REVEAL, VID_LIQUID, VID_RIPPLE, VID_KALEIDO, VID_PIXEL, VID_WARP, VID_CLEAN, VID_COUNT };
 enum VideoFit { VFIT_FILL, VFIT_FIT, VFIT_STRETCH, VFIT_COUNT };
@@ -66,6 +68,8 @@ struct LaserSettings {
   float swing = 0.3f;     // back-and-forth sweep on the beat
   float width = 0.25f, glow = 0.5f, length = 1.0f, trail = 0.15f;
   int chase = CHASE_OFF;
+  int swingMode = 0;      // SwingMode
+  float scatter = 0.f;    // random offset of each beam's angle
 };
 struct SparkleSettings {
   float amount = 0.5f, size = 0.5f, spread = 0.35f, twinkle = 0.5f, life = 0.5f, drift = 0.25f, rays = 0.6f,
@@ -120,6 +124,7 @@ struct SpectrumSettings {
 struct GridSettings {
   int mode = GRID_TRAIL;
   float tile = 0.4f, gap = 0.3f, decay = 0.5f, round = 0.3f, radius = 0.4f;
+  float bulb = 0.f;  // incandescent bulbs: warm colour when dim, slow to heat / cool, round glowing bulb
 };
 
 // Global look applied after every effect.

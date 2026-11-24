@@ -87,6 +87,8 @@ class Lasers : public Effect {
 
     const std::vector<Emitter>& em = c.shapeEmitters();
     segs.clear();
+    if (!em.empty() && lastCount == 0) seed = hash32(uint32_t(c.time * 1000.f) + 7u);  // new random beams per gesture
+    lastCount = em.size();
     if (!em.empty() && c.gain > 0.001f) build(c, s, em);
 
     float px = c.H / 1080.f;
@@ -133,6 +135,27 @@ class Lasers : public Effect {
     const float len = mixf(0.08f, 1.3f, s.length) * diag;
     const int n = s.beams;
     const float swingAng = s.swing * std::sin(float(c.beat) * kPi * 0.5f) * kPi * 0.5f;
+    // swing of beam i: together, mirrored (side = -1 / +1), as a wave, or each beam its own way
+    auto swingOf = [&](int i, int touch, float side) {
+      float b = float(c.beat) * kPi * 0.5f;
+      float amp = s.swing * kPi * 0.5f;
+      uint32_t h = seed * 7919u + uint32_t(i) * 131u + uint32_t(touch) * 977u;
+      switch (s.swingMode) {
+        case SWING_MIRROR: return amp * std::sin(b) * side;
+        case SWING_WAVE: return amp * std::sin(b - i * 0.55f);
+        case SWING_RANDOM: {
+          float dir = hash01(h) < 0.5f ? -1.f : 1.f;
+          float sp = 0.6f + hash01(h + 1u);
+          float ph = hash01(h + 2u) * kTau;
+          return amp * dir * std::sin(b * sp + ph);
+        }
+        default: return swingAng;
+      }
+    };
+    // scatter: each beam a random fixed offset (unit = the gap between beams)
+    auto scatterOf = [&](int i, int touch, float unit) {
+      return (hash01(seed * 31u + uint32_t(i) * 733u + uint32_t(touch) * 53u) - 0.5f) * 2.f * s.scatter * unit;
+    };
     auto toPx = [&](Vec2 uv) { return Vec2(uv.x * W, uv.y * H); };
     auto beamColor = [&](const Emitter* e, int i, int count, uint32_t salt) {
       float g = count > 1 ? float(i) / float(count - 1) : 0.5f;
@@ -150,7 +173,9 @@ class Lasers : public Effect {
           for (int i = 0; i < n; ++i) {
             if (!visible(s, c, i, n)) continue;
             float k = full ? float(i) / n : (n > 1 ? float(i) / (n - 1) - 0.5f : 0.f);
-            float ang = kPi * 0.5f + rot + swingAng + k * fanA;
+            float unit = n > 1 ? fanA / float(full ? n : n - 1) : 0.6f;
+            float ang = kPi * 0.5f + rot + swingOf(i, e.touch, k < 0.f ? -1.f : 1.f) + k * fanA +
+                        scatterOf(i, e.touch, unit * 1.5f);
             line(o, o + dirOf(e, ang) * len, beamColor(&e, i, n, e.touch));
           }
         }
@@ -172,7 +197,9 @@ class Lasers : public Effect {
             float dl = std::max(1.f, length(d));
             d = d * (1.f / dl);
             Vec2 nrm(-d.y, d.x);
-            tgt += nrm * (std::sin(float(c.beat) * kPi * 0.5f + i * 1.7f) * s.swing * 0.12f * H);
+            float sw = s.swingMode == SWING_TOGETHER ? std::sin(float(c.beat) * kPi * 0.5f + i * 1.7f) * s.swing
+                                                     : swingOf(i, t, (i & 1) ? -1.f : 1.f) / (kPi * 0.5f);
+            tgt += nrm * (sw * 0.12f * H + scatterOf(i, t, 0.08f * H));
             d = tgt - src;
             dl = std::max(1.f, length(d));
             d = d * (1.f / dl);
@@ -202,7 +229,8 @@ class Lasers : public Effect {
         for (const Emitter& e : em) {
           Vec2 o = toPx(e.pos);
           for (int i = 0; i < extra; ++i) {
-            float ang = rot + swingAng + kTau * i / extra;
+            float ang = rot + swingOf(i, e.touch, (i & 1) ? -1.f : 1.f) + kTau * i / extra +
+                        scatterOf(i, e.touch, kTau / extra);
             line(o, o + dirOf(e, ang) * (len * 0.25f), beamColor(&e, i, extra, 3));
           }
         }
@@ -214,7 +242,8 @@ class Lasers : public Effect {
         float spacing = mixf(0.005f, 0.1f, s.spread) * mixf(0.4f, 1.f, open) * H;
         for (const Emitter& e : em) {
           Vec2 o = toPx(e.pos);
-          Vec2 d = dirOf(e, rot * 0.25f + swingAng);
+          Vec2 d = dirOf(e, rot * 0.25f + swingOf(e.touch, e.touch, (e.touch & 1) ? -1.f : 1.f) +
+                                scatterOf(0, e.touch, 0.5f));
           Vec2 nrm(-d.y, d.x);
           for (int i = 0; i < n; ++i) {
             if (!visible(s, c, i, n)) continue;
@@ -305,6 +334,8 @@ class Lasers : public Effect {
   std::vector<Seg> segs;
   std::vector<BeamVertex> verts;
   float rot = 0;
+  uint32_t seed = 1;
+  size_t lastCount = 0;
 };
 
 }  // namespace

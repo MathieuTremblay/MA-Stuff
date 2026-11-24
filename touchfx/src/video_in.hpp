@@ -51,6 +51,9 @@ class VideoInput {
   void configure(int type, const std::string& source);
   void update(float dt);   // main thread, GL: uploads the newest frame
   void pauseNdi(bool p);   // NDI restarts when the NDI output card changes
+  // FREEZE: hold the current picture (also through a lost signal) until unfrozen. A live control, not saved.
+  void setFrozen(bool f) { frozen_ = f; }
+  bool frozen() const { return frozen_; }
   GLuint texture() const { return out_.tex; }
   int width() const { return out_.w; }
   int height() const { return out_.h; }
@@ -90,6 +93,7 @@ class VideoInput {
   bool opened_ = false;
 
   // main thread
+  bool frozen_ = false;
   int state_ = VS_OFF;
   double sinceFrame_ = 1e9;
   float level_ = 0;

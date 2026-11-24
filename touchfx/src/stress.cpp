@@ -287,6 +287,9 @@ void action(App& a) {
     count("random settings");
   } else if (r < 36) {
     l.mirror = irnd(0, MIRROR_COUNT - 1);
+    l.grid.mode = irnd(0, GRID_COUNT - 1);
+    l.grid.bulb = chance(0.5f) ? rnd() : 0.f;
+    l.lasers.swingMode = irnd(0, SWING_COUNT - 1);
     l.palette = irnd(0, kNumPalettes - 1);
     l.colorMode = irnd(0, COLOR_COUNT - 1);
     l.video.mode = irnd(0, VID_COUNT - 1);
@@ -358,7 +361,8 @@ void action(App& a) {
     if (chance(0.3f)) requestClear(a);
     count("clear / blackout");
   } else if (r < 84) {
-    l.releaseFx[l.effect] = irnd(0, 1);
+    l.releaseFx[l.effect] = irnd(0, 2);
+    if (chance(0.1f)) a.video.setFrozen(!a.video.frozen());
     l.fadeFx[l.effect] = rnd(0.1f, 6.f);
     a.st.effectFade = rnd(0.f, 2.f);
     count("release / crossfade");

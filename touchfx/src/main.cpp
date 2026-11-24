@@ -20,6 +20,7 @@
 void App::clearEffect() {
   if (curFx >= 0) fx[curFx]->clear();
   fading = false;
+  holding = false;
   held.clear();
   gain = 0;
 }
@@ -86,6 +87,7 @@ void switchEffect(App& a, int newFx) {
   a.curFx = newFx;
   if (!resume) a.fx[newFx]->clear();
   a.fading = false;
+  a.holding = false;
   a.held.clear();
 }
 
@@ -325,6 +327,7 @@ void handleEvent(App& a, const SDL_Event& ev, bool& running) {
       if (a.st.showMode) {  // show mode: only tap tempo, GO and blackout from the keyboard
         if (ev.key.keysym.sym == SDLK_SPACE) a.tempo.tap(a.time, a.st.look.bpm);
         else if (ev.key.keysym.sym == SDLK_b) a.blackout = !a.blackout;
+        else if (ev.key.keysym.sym == SDLK_f) a.video.setFrozen(!a.video.frozen());
         break;
       }
       switch (ev.key.keysym.sym) {
@@ -335,6 +338,7 @@ void handleEvent(App& a, const SDL_Event& ev, bool& running) {
           break;
         case SDLK_c: requestClear(a); break;
         case SDLK_b: a.blackout = !a.blackout; break;
+        case SDLK_f: a.video.setFrozen(!a.video.frozen()); break;  // freeze the video input
         default: break;
       }
       break;
@@ -785,6 +789,7 @@ struct SelftestStep {
   int bg = -1;  // background effect (-1 = off)
   int blend = BLEND_ADD;
   int colorMode = COLOR_GRADIENT;
+  int extra = 0;  // LED grid: incandescent bulbs; lasers: random swing + scatter
 };
 const SelftestStep kSteps[] = {
     {FX_FLUID, 0, MIRROR_LR, 0, 2},          {FX_PARTICLES, 0, MIRROR_LR, 2, 2},
@@ -810,6 +815,11 @@ const SelftestStep kSteps[] = {
     {FX_FLUID, 0, MIRROR_LR, 0, 2, false, 0, -1, BLEND_ADD, COLOR_VIDEO},
     {FX_VIDEO, VID_CLEAN, MIRROR_OFF, 0, 0},  // no fingers: ALWAYS ON
     {FX_VIDEO, VID_REVEAL, MIRROR_OFF, 0, 1},  // ALWAYS ON, base level, one finger painting
+    {FX_GRID, GRID_SCROLL, MIRROR_OFF, 4, 1},  {FX_GRID, GRID_EQ, MIRROR_OFF, 1, 1, true},
+    {FX_GRID, GRID_PLASMA, MIRROR_OFF, 6, 1},  {FX_GRID, GRID_RAIN, MIRROR_OFF, 0, 2},
+    {FX_GRID, GRID_CHECKER, MIRROR_OFF, 2, 1}, {FX_GRID, GRID_RADAR, MIRROR_OFF, 7, 2},
+    {FX_GRID, GRID_VIDEO, MIRROR_OFF, 0, 1},   {FX_GRID, GRID_TRAIL, MIRROR_OFF, 2, 3, false, 0, -1, 0, 0, 1},
+    {FX_LASERS, LASER_FAN, MIRROR_OFF, 6, 2, false, 0, -1, 0, 0, 1},
 };
 constexpr int kStepFrames = 120;
 constexpr int kNumSteps = int(sizeof(kSteps) / sizeof(kSteps[0]));
@@ -1027,6 +1037,16 @@ int main(int argc, char** argv) {
         }
         if (sp.effect == FX_STROBE) a.st.look.strobe.shape = sp.laserMode ? sp.laserMode : STROBE_SPARKLE;
         if (sp.effect == FX_VIDEO) a.st.look.video.mode = sp.laserMode;
+        if (sp.effect == FX_GRID) {
+          a.st.look.grid.mode = sp.laserMode;
+          a.st.look.grid.bulb = sp.extra ? 1.f : 0.f;
+          a.st.look.grid.round = sp.extra ? 1.f : 0.3f;
+        }
+        if (sp.effect == FX_LASERS) {
+          a.st.look.lasers.swingMode = sp.extra ? SWING_RANDOM : SWING_TOGETHER;
+          a.st.look.lasers.scatter = sp.extra ? 0.7f : 0.f;
+          a.st.look.lasers.swing = sp.extra ? 0.6f : 0.3f;
+        }
         a.st.look.video.alwaysOn = sp.effect == FX_VIDEO && (sp.fingers == 0 || sp.laserMode == VID_REVEAL && sp.fingers == 1);
         a.st.videoIn.type = VSRC_TEST;
         a.st.videoIn.source = "Colour bars";
@@ -1149,8 +1169,11 @@ int main(int argc, char** argv) {
       a.clearEffect();
       a.wantClear = false;
     }
-    if (a.wantClearBg) {  // CLEAR twice: the background layer too
-      if (a.bgCurFx >= 0 && a.bgFx[a.bgCurFx]) a.bgFx[a.bgCurFx]->clear();
+    if (a.wantClearBg) {  // CLEAR twice: the background layer goes out (0.3 s) and turns OFF
+      if (look.bg.on) {
+        look.bg.on = false;
+        a.bgFadeOverride = 0.3f;
+      }
       a.wantClearBg = false;
     }
 
@@ -1170,10 +1193,13 @@ int main(int argc, char** argv) {
     if (touching) {
       a.gain = 1;
       a.fading = false;
+      a.holding = false;
       a.held = a.live;
     } else if (a.wasTouching) {
       if (look.releaseFx[a.curFx] == RELEASE_SNAP) {
         a.clearEffect();
+      } else if (look.releaseFx[a.curFx] == RELEASE_HOLD) {
+        a.holding = true;  // keeps running where the fingers were lifted, until CLEAR
       } else {
         a.fading = true;
         a.fadeElapsed = 0;
@@ -1209,7 +1235,7 @@ int main(int argc, char** argv) {
     c.live = a.live;
     c.held = a.held;
     c.touching = touching;
-    if (a.fading && !a.held.empty()) {
+    if ((a.fading || a.holding) && !a.held.empty()) {
       // Release fade: the fingers stay "down" where they were lifted (their motion slowing to a stop), so
       // effects that only draw while touched keep their image alive and the fade lasts the full time.
       float k = std::exp(-dt * 2.5f);

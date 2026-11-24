@@ -19,7 +19,7 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(ParticleSettings, amount, size, 
                                                 trail, strobe, strobeRate)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(KaleidoSettings, segments, rotation, zoom, warp, brush, trail)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(LaserSettings, mode, beams, rotation, spread, swing, width, glow, length,
-                                                trail, chase)
+                                                trail, chase, swingMode, scatter)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(SparkleSettings, amount, size, spread, twinkle, life, drift, rays, trail)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(PostSettings, bloom, bloomSize, saturation)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(RippleSettings, size, strength, decay, shine, beatDrops)
@@ -32,7 +32,7 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(PlexusSettings, amount, range, s
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(FireworkSettings, rate, rockets, size, amount, gravity, trail, sparkle)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(StarfieldSettings, amount, speed, streak, size, twinkle, brightness)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(SpectrumSettings, mode, bars, symmetric, size, gain, width, glow)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(GridSettings, mode, tile, gap, decay, round, radius)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(GridSettings, mode, tile, gap, decay, round, radius, bulb)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(StrobeSettings, shape, rate, freeHz, hz, duty, size, colorCycle,
                                                 audioHits)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(AudioSettings, enabled, device, sensitivity, autoBpm, autoPlay, points,
@@ -125,7 +125,7 @@ static void sanitizeParams(Look& l) {
   if (int(l.fadeFx.size()) < FX_COUNT) l.fadeFx.resize(FX_COUNT, l.fadeTime);
   l.releaseFx.resize(FX_COUNT);
   l.fadeFx.resize(FX_COUNT);
-  for (int& r : l.releaseFx) r = std::clamp(r, 0, 1);
+  for (int& r : l.releaseFx) r = std::clamp(r, 0, 2);
   for (float& f : l.fadeFx) f = std::clamp(f, 0.05f, 10.f);
   clampRef(l.effect, 0, FX_COUNT - 1);
   clampRef(l.mirror, 0, MIRROR_COUNT - 1);
@@ -142,6 +142,7 @@ static void sanitizeParams(Look& l) {
   clampRef(l.lasers.mode, 0, LASER_COUNT - 1);
   clampRef(l.lasers.beams, 1, 32);
   clampRef(l.lasers.chase, 0, CHASE_COUNT - 1);
+  clampRef(l.lasers.swingMode, 0, SWING_COUNT - 1);
   clampRef(l.strobe.shape, 0, STROBE_COUNT - 1);
   clampRef(l.strobe.rate, 0, kNumDivisions - 1);
   clampRef(l.ribbons.strands, 1, 6);

@@ -153,6 +153,7 @@ struct App {
   TouchSlot touches[kMaxTouches];
   std::vector<Emitter> live, held;
   bool wasTouching = false, fading = false;
+  bool holding = false;  // release HOLD: the effect keeps running at the last finger positions until CLEAR
   float fadeElapsed = 0, gain = 1;
   bool blackout = false;
 
