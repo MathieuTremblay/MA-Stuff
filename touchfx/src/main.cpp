@@ -89,6 +89,12 @@ void switchEffect(App& a, int newFx) {
   a.held.clear();
 }
 
+void requestClear(App& a) {
+  a.wantClear = true;
+  if (a.time - a.lastClear < 1.0) a.wantClearBg = true;  // twice in a row: the background too
+  a.lastClear = a.time;
+}
+
 void App::recallScene(int i) {
   if (i < 0 || i >= kNumScenes || !st.scenes[i].used) return;
   float bpm = st.look.bpm;  // scenes never change the tempo
@@ -190,6 +196,7 @@ Vec2 toUv(const App& a, float x, float y) {
 
 void touchDown(App& a, int64_t id, float x, float y) {
   if (!a.showLoaded || !a.canvas.contains(x, y)) return;
+  if (a.uiBlocksCanvas) return;  // a window / pop-up is open over the canvas: the tap is for it
   int maxT = std::clamp(a.st.maxTouches, 1, kMaxTouches);
   for (int i = 0; i < kMaxTouches; ++i)
     if (a.touches[i].active && a.touches[i].id == id) return;
@@ -273,6 +280,11 @@ void handleEvent(App& a, const SDL_Event& ev, bool& running) {
         if (ev.key.keysym.sym == SDLK_ESCAPE && a.isFullscreen) setFullscreen(a, false);
         break;
       }
+      if (a.cueEditOpen) {  // cue edit window: Enter = DONE, Escape = close, nothing else reaches the show
+        SDL_Keycode k = ev.key.keysym.sym;
+        if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_ESCAPE) a.cueEditClose = true;
+        break;
+      }
       if (ev.key.keysym.sym == SDLK_RETURN || ev.key.keysym.sym == SDLK_KP_ENTER) {
         cueCommand(a, CUE_GO);  // Enter = GO (every tab)
         break;
@@ -293,6 +305,19 @@ void handleEvent(App& a, const SDL_Event& ev, bool& running) {
           case SDLK_LEFT: cueCommand(a, CUE_SONG_PREV); break;
           case SDLK_RIGHT: cueCommand(a, CUE_SONG_NEXT); break;
           case SDLK_t: a.tempo.tap(a.time, a.st.look.bpm); break;  // tap tempo moves to T here
+          case SDLK_e:  // edit the NEXT cue (not in show mode)
+            if (!a.st.showMode) a.cueEditRequest = true;
+            break;
+          case SDLK_DELETE:  // delete the NEXT cue: press twice
+            if (!a.st.showMode) {
+              if (a.time - a.cueDelArmed < 3.0) {
+                a.cueDeleteRequest = true;
+                a.cueDelArmed = -10;
+              } else {
+                a.cueDelArmed = a.time;
+              }
+            }
+            break;
           default: done = false; break;
         }
         if (done) break;
@@ -308,7 +333,7 @@ void handleEvent(App& a, const SDL_Event& ev, bool& running) {
         case SDLK_ESCAPE:
           if (a.isFullscreen) setFullscreen(a, false);
           break;
-        case SDLK_c: a.wantClear = true; break;
+        case SDLK_c: requestClear(a); break;
         case SDLK_b: a.blackout = !a.blackout; break;
         default: break;
       }
@@ -783,6 +808,8 @@ const SelftestStep kSteps[] = {
     {FX_FLUID, 0, MIRROR_LR, 0, 2, false, 0, FX_VIDEO, BLEND_REVEAL},
     {FX_LASERS, LASER_FAN, MIRROR_LR, 6, 2, false, 0, FX_TUNNEL, BLEND_BEHIND},
     {FX_FLUID, 0, MIRROR_LR, 0, 2, false, 0, -1, BLEND_ADD, COLOR_VIDEO},
+    {FX_VIDEO, VID_CLEAN, MIRROR_OFF, 0, 0},  // no fingers: ALWAYS ON
+    {FX_VIDEO, VID_REVEAL, MIRROR_OFF, 0, 1},  // ALWAYS ON, base level, one finger painting
 };
 constexpr int kStepFrames = 120;
 constexpr int kNumSteps = int(sizeof(kSteps) / sizeof(kSteps[0]));
@@ -1000,6 +1027,7 @@ int main(int argc, char** argv) {
         }
         if (sp.effect == FX_STROBE) a.st.look.strobe.shape = sp.laserMode ? sp.laserMode : STROBE_SPARKLE;
         if (sp.effect == FX_VIDEO) a.st.look.video.mode = sp.laserMode;
+        a.st.look.video.alwaysOn = sp.effect == FX_VIDEO && (sp.fingers == 0 || sp.laserMode == VID_REVEAL && sp.fingers == 1);
         a.st.videoIn.type = VSRC_TEST;
         a.st.videoIn.source = "Colour bars";
         a.st.look.colorMode = sp.colorMode;
@@ -1121,6 +1149,10 @@ int main(int argc, char** argv) {
       a.clearEffect();
       a.wantClear = false;
     }
+    if (a.wantClearBg) {  // CLEAR twice: the background layer too
+      if (a.bgCurFx >= 0 && a.bgFx[a.bgCurFx]) a.bgFx[a.bgCurFx]->clear();
+      a.wantClearBg = false;
+    }
 
     // ---- tempo, fingers, release ----
     a.tempo.advance(dt, look.bpm);
@@ -1130,6 +1162,10 @@ int main(int argc, char** argv) {
     if (look.effect != a.curFx) switchEffect(a, look.effect);  // DMX may have changed the effect
     buildEmitters(a, dt);
     bool touching = !a.live.empty();
+    if (look.effect == FX_VIDEO && look.video.alwaysOn) {  // the picture stays up without fingers
+      touching = true;
+      a.fading = false;
+    }
     float fadeMul = 1.f;
     if (touching) {
       a.gain = 1;

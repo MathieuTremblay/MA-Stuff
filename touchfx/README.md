@@ -25,6 +25,9 @@ Shows from before 0.8 that used **Lightning** (replaced by **Video**) open with 
 
 ## Show mode
 
+The header shows the mode at a glance: an amber **EDIT** badge and amber outline around the panel when unlocked,
+a green **SHOW** badge and outline in show mode (a blackout's red frame takes over).
+
 **SHOW MODE** (top of the panel) locks everything that could break a show: SETTINGS, scene STORE / DELETE,
 saving palettes, cue editing, undo, and the keyboard except SPACE (tap, or GO in the CUES view), ENTER (GO), B
 (blackout) and the CUES view keys. Closing TouchFX asks for confirmation. Effects, their sliders, colours, mirror, BPM, scenes and GO keep working.
@@ -49,6 +52,8 @@ The **CUES** tab is a cue list per song:
   (cue 1 of the next song that has cues). A follow on the last cue follows that setting too.
 - **UNDO / REDO** (or **Ctrl+Z / Ctrl+Y**) undo cue, song and scene changes (record, update, edit, delete, renumber,
   scene store / delete / rename...). The button shows what it will undo. 50 steps, cleared when the show closes.
+- In the CUES view: **E** opens the edit window of the NEXT cue, **Delete** twice deletes it (Ctrl+Z brings it
+  back). In the edit window, **Enter** = DONE and **Esc** closes it; taps on it never reach the canvas.
 - Keyboard: **Enter** = GO in every tab. In the CUES view: **Space** = GO, **Up / Down** = choose the next cue,
   **Backspace** = BACK, **Left / Right** = previous / next song, **T** = tap tempo. In the other tabs Space stays tap
   tempo. These keys work in show mode too.
@@ -64,13 +69,13 @@ Swipe up/down anywhere in the panel to scroll (sliders: swipe sideways to change
 |---|---|
 | **BPM** | Tap **TAP** (or press SPACE) to set the tempo, or **tap the BPM number** to type it on a keypad; **-/+** nudge it. `x1/4 … x4` scale effect speed. The 4 lights show the beat. |
 | **AUDIO** | Turns audio reactive mode on (blue button, with a level bar). See *Audio reactive* below. |
-| **Effects** | 16 effects in the bar under the canvas (or in the LIVE tab, see *SCREEN*): Fluid, Particles, Sparkles, Ribbons, Fireworks, Starfield, Plexus, Kaleido, Lasers, **Video**, Tunnel, Shapes, Ripples, Spectrum, LED grid, Strobe. **CLEAR** wipes the canvas, **BLACKOUT** kills the output. |
+| **Effects** | 16 effects in the bar under the canvas (or in the LIVE tab, see *SCREEN*): Fluid, Particles, Sparkles, Ribbons, Fireworks, Starfield, Plexus, Kaleido, Lasers, **Video**, Tunnel, Shapes, Ripples, Spectrum, LED grid, Strobe. **CLEAR** wipes the canvas (**twice in a row**: the background layer too), **BLACKOUT** kills the output: the preview turns red and striped with a big BLACKOUT label, a red frame goes around the whole screen and the button pulses (DMX blackout shows the same). |
 | **Mirror** | Off, left/right, up/down, quad (both), radial 6, radial 8 (always visible under the tempo). Guides are drawn on the preview only. |
 | **On release** | Set **per effect**: **FADE** (the effect keeps going where your fingers were lifted and the image fades out over the chosen time) or **SNAP** (off instantly). Switching effect crossfades: the old effect fades out (time in *SETTINGS → LOOK*). |
 | **Effect settings** | Sliders for the current effect (size, trail, speed, glow, strobe rate…) and a reset button. |
 | **New in 0.5** | **Ripples** (water surface, drops on the beat), **Ribbons** (glowing strands following the fingers), **Shapes** (neon polygons / stars popping on the beat), **Tunnel** (full-screen tunnel, vanishing point under the finger), **Plexus** (connected points), **Fireworks** (rockets bursting at the finger), **Starfield** (hyperspace streaks), **Spectrum** (audio equaliser: circle, bars or wave), **LED grid** (LED-wall tiles: trail, rings, sparkle). Strobe gains **Shockwave**, **Wipe**, **Blinder** and **Blocks**. |
 | **FRONT / BACK** | Which layer the LIVE controls edit. **FRONT** (orange) is the effect you play with your fingers. **BACK** (blue) is the background layer: the effect bar, sliders, mirror and speed then edit the background (see *Background layer*). |
-| **Video** | The video input played with the fingers (choose the input in *SETTINGS → VIDEO IN*): **REVEAL** (paint the video into view, it fades back over the trail time), **LIQUID** (push the picture like a liquid), **RIPPLE** (water ripples bend it), **KALEIDO** (kaleidoscope around your first finger), **PIXEL** (big pixels where your fingers go), **WARP** (swirl / pinch around each finger). Fit: fill, fit or stretch. Without an input, a palette gradient stands in. |
+| **Video** | The video input played with the fingers (choose the input in *SETTINGS → VIDEO IN*): **REVEAL** (paint the video into view, it fades back over the trail time), **LIQUID** (push the picture like a liquid), **RIPPLE** (water ripples bend it), **KALEIDO** (kaleidoscope around your first finger), **PIXEL** (big pixels where your fingers go), **WARP** (swirl / pinch around each finger), **CLEAN** (just the video, nothing added). **ALWAYS ON** keeps the picture up without fingers and it never fades on release (with REVEAL, the unpainted video shows at the *base level*). Fit: fill, fit or stretch. The palette only colours the glow / highlights the effect adds (Glow at 0 = pure video) and the gradient that stands in when there is no input. |
 | **Lasers** | Laser-show modes: **FAN** (fan of beams from the finger), **AIM** (projectors along the bottom converge on your finger), **TUNNEL** (rings on the beat), **WAVE**, **SCAN**, **WEB**. *Swing* sweeps on the beat, *Chase* makes beams blink in sequence / alternate / random. |
 | **Quick colours** | Tap LOW / MID / HIGH under the palettes to override the colours live without touching the palette. **SAVE TO …** stores them in the palette, **BACK TO PALETTE** drops the override. Scenes remember overrides. |
 | **Palette / colour mode** | Pick one of the 10 palettes. Colour mode: Gradient (over the effect's life), Speed (finger speed), Position (left to right), Beat (steps each beat), Random, **Video** (every pixel takes the colour of the video input under it). |

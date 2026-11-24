@@ -97,6 +97,12 @@ struct App {
   } bgPts[3];
   std::vector<Emitter> bgLive;
   int layerEdit = 0;        // which layer the LIVE tab edits: 0 FRONT, 1 BACK
+  bool wantClearBg = false;
+  double lastClear = -10;   // CLEAR twice within a second clears the background too
+  bool uiBlocksCanvas = false;  // a pop-up is open: canvas taps are ignored
+  // CUES keys
+  bool cueEditOpen = false, cueEditClose = false, cueEditRequest = false, cueDeleteRequest = false;
+  double cueDelArmed = -10;
 
   // External display
   SDL_Window* extWindow = nullptr;
@@ -198,5 +204,6 @@ bool newShow(App& a, const std::string& name);
 void closeShow(App& a);  // save and go back to the launcher
 void saveShowNow(App& a);
 void applyDmx(App& a, float dt);
+void requestClear(App& a);  // CLEAR button / key
 int dmxFootprint(int mode);
 void rebuildFonts(App& a, float scale);

@@ -26,7 +26,7 @@ enum ShapeType { SHAPE_TRI, SHAPE_SQUARE, SHAPE_PENT, SHAPE_HEX, SHAPE_CIRCLE, S
 enum SpectrumMode { SPEC_CIRCLE, SPEC_BARS, SPEC_WAVE, SPEC_COUNT };
 enum GridMode { GRID_TRAIL, GRID_RINGS, GRID_SPARKLE, GRID_COUNT };
 enum ParticleStrobe { PSTROBE_OFF, PSTROBE_SYNC, PSTROBE_SPARKLE, PSTROBE_COUNT };
-enum VideoMode { VID_REVEAL, VID_LIQUID, VID_RIPPLE, VID_KALEIDO, VID_PIXEL, VID_WARP, VID_COUNT };
+enum VideoMode { VID_REVEAL, VID_LIQUID, VID_RIPPLE, VID_KALEIDO, VID_PIXEL, VID_WARP, VID_CLEAN, VID_COUNT };
 enum VideoFit { VFIT_FILL, VFIT_FIT, VFIT_STRETCH, VFIT_COUNT };
 enum BlendMode { BLEND_ADD, BLEND_BEHIND, BLEND_REVEAL, BLEND_COUNT };
 
@@ -98,6 +98,8 @@ struct VideoSettings {
   float trail = 0.6f;     // how long the touched areas stay (REVEAL, LIQUID, RIPPLE)
   float level = 0.8f;     // video brightness
   float glow = 0.3f;      // edge glow in the effect's colours
+  bool alwaysOn = false;  // the picture stays up without fingers (and does not fade on release)
+  float base = 0.3f;      // REVEAL + ALWAYS ON: level of the unrevealed video
 };
 struct PlexusSettings {
   float amount = 0.5f, range = 0.5f, size = 0.4f, drift = 0.4f, spread = 0.5f, trail = 0.1f;

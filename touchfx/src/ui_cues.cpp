@@ -37,6 +37,17 @@ double g_songDelArmed = -10;
 std::string g_numError;   // "cue 3 already exists"
 double g_numErrorTime = -10;
 
+// Removes a cue and keeps the player on the right cues.
+void deleteCue(App& a, CueList& cl, int i) {
+  CuePlayer& p = a.cue;
+  if (i < 0 || i >= int(cl.cues.size())) return;
+  cl.cues.erase(cl.cues.begin() + i);
+  if (p.current == i) p.current = -1;
+  else if (p.current > i) --p.current;
+  if (p.next == i) p.next = i < int(cl.cues.size()) ? i : -1;
+  else if (p.next > i) --p.next;
+}
+
 // Edit sheet for one cue: number, name, fade, follow, move, copy, delete.
 void CueEditSheet(App& a) {
   float s = S();
@@ -50,11 +61,24 @@ void CueEditSheet(App& a) {
     ImGui::EndPopup();
     return;
   }
+  if (a.cueEditClose) {  // Enter / Escape on the keyboard
+    a.cueEditClose = false;
+    g_sheetReturn = false;
+    ImGui::CloseCurrentPopup();
+    ImGui::EndPopup();
+    return;
+  }
   Cue& c = cl.cues[g_edit];
   float sp = ImGui::GetStyle().ItemSpacing.x;
   ImGui::PushFont(a.fontBig);
   ImGui::Text("Cue %s", cueNumText(c.number).c_str());
   ImGui::PopFont();
+  ImGui::SameLine();
+  ImGui::PushStyleColor(ImGuiCol_Text, kTextDim);
+  ImGui::PushFont(a.fontSmall);
+  ImGui::TextUnformatted("   Enter = done, Esc = close");
+  ImGui::PopFont();
+  ImGui::PopStyleColor();
   // number + name (both open the on-screen keyboard)
   char nb[64];
   std::snprintf(nb, sizeof(nb), "No. %s##cuenum", cueNumText(c.number).c_str());
@@ -136,11 +160,7 @@ void CueEditSheet(App& a) {
   if (Toggle(armed ? "TAP AGAIN" : "DELETE", armed, ImVec2(w4, 48 * s), kDanger)) {
     if (armed) {
       if (a.undo.hasPending) a.undo.pending.label = "delete " + cueLabel(cl, g_edit);
-      cl.cues.erase(cl.cues.begin() + g_edit);
-      if (p.current == g_edit) p.current = -1;
-      else if (p.current > g_edit) --p.current;
-      if (p.next == g_edit) p.next = g_edit < int(cl.cues.size()) ? g_edit : -1;
-      else if (p.next > g_edit) --p.next;
+      deleteCue(a, cl, g_edit);
       g_delArmed = -10;
       g_edit = -1;
       g_sheetReturn = false;
@@ -428,11 +448,17 @@ void CuesPanel(App& a) {
     ImGui::SameLine();
     int target = p.next >= 0 ? p.next : p.current;
     ImGui::BeginDisabled(target < 0);
-    if (ImGui::Button("EDIT", ImVec2(bw, 56 * s))) {
+    if (ImGui::Button("EDIT", ImVec2(bw, 56 * s)) || (a.cueEditRequest && target >= 0)) {  // or the E key
       g_edit = target;
       ImGui::OpenPopup("##cueedit");
     }
     ImGui::EndDisabled();
+    a.cueEditRequest = false;
+    if (a.cueDeleteRequest && target >= 0) {  // Delete key pressed twice
+      undoPush(a, "delete " + cueLabel(cl, target));
+      deleteCue(a, cl, target);
+    }
+    a.cueDeleteRequest = false;
     ImGui::SameLine();
     UndoButton(a, false, ImVec2(uw, 56 * s));
     ImGui::SameLine();
@@ -443,9 +469,11 @@ void CuesPanel(App& a) {
       if (g_edit >= 0 && g_edit < int(active(a).cues.size())) ImGui::OpenPopup("##cueedit");
     }
     bool open = ImGui::IsPopupOpen("##cueedit");
+    a.cueEditOpen = open;
     if (open && !g_sheetOpen) undoBegin(a, "edit " + cueLabel(active(a), g_edit));  // all changes = one undo step
     CueEditSheet(a);
     open = ImGui::IsPopupOpen("##cueedit");
+    a.cueEditOpen = open;
     if (!open && g_sheetOpen) undoEnd(a);
     g_sheetOpen = open;
   }
@@ -459,7 +487,11 @@ void CuesPanel(App& a) {
                     cur.cues[p.current].name.c_str(), p.modified ? "  (modified - UPDATE to keep)" : "");
     else
       std::snprintf(st, sizeof(st), "Ready: GO starts %s", cur.name.c_str());
-    ImGui::PushStyleColor(ImGuiCol_Text, kTextDim);
+    int delTarget = p.next >= 0 ? p.next : p.current;
+    if (a.time - a.cueDelArmed < 3.0 && delTarget >= 0 && delTarget < int(cur.cues.size()))
+      std::snprintf(st, sizeof(st), "Press Delete again to delete cue %s", cueNumText(cur.cues[delTarget].number).c_str());
+    bool armedDel = a.time - a.cueDelArmed < 3.0;
+    ImGui::PushStyleColor(ImGuiCol_Text, armedDel ? ImVec4(1, 0.45f, 0.4f, 1) : kTextDim);
     ImGui::TextUnformatted(st);
     ImGui::PopStyleColor();
     // progress: fade, then follow countdown

@@ -1,5 +1,6 @@
 // Touch-friendly control panel (Dear ImGui).
 #include <algorithm>
+#include <cfloat>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -380,27 +381,32 @@ void EffectParams(App& a) {
     case FX_VIDEO: {
       VideoSettings& p = l.video;
       SectionLabel("VIDEO");
-      static const char* modes[] = {"REVEAL", "LIQUID", "RIPPLE", "KALEIDO", "PIXEL", "WARP"};
-      Choice("vmode", modes, VID_COUNT, &p.mode, 3);
+      static const char* modes[] = {"REVEAL", "LIQUID", "RIPPLE", "KALEIDO", "PIXEL", "WARP", "CLEAN"};
+      Choice("vmode", modes, VID_COUNT, &p.mode, 4);
       static const char* help[] = {
           "Your fingers paint the video into view; it fades back out over the Trail time.",
           "The picture is pushed around like a liquid.",
           "Water ripples bend the picture.",
           "A kaleidoscope of the video around your first finger.",
           "Big pixels where your fingers go.",
-          "The picture swirls around each finger (Strength: left pinches, right swirls)."};
+          "The picture swirls around each finger (Strength: left pinches, right swirls).",
+          "Just the video, nothing added (no distortion, no glow)."};
       Hint(help[std::clamp(p.mode, 0, VID_COUNT - 1)]);
       if (a.video.state() == VS_OFF)
         Hint("No video input: choose one in SETTINGS > VIDEO IN. Until then a palette gradient stands in.");
       else if (a.video.state() != VS_LIVE)
         Hint(("Video input: " + a.video.statusText()).c_str());
-      Pct("Size", &p.size);
-      Pct("Strength", &p.strength);
-      if (p.mode == VID_REVEAL || p.mode == VID_LIQUID || p.mode == VID_RIPPLE || p.mode == VID_PIXEL)
-        Pct("Trail", &p.trail);
-      if (p.mode == VID_KALEIDO) IntSlider("Segments", &p.segments, 2, 16);
+      OnOff("ALWAYS ON (shown without fingers, no fade)", &p.alwaysOn, 44 * s);
+      if (p.alwaysOn && p.mode == VID_REVEAL) Pct("Base level (not painted)", &p.base);
+      if (p.mode != VID_CLEAN) {
+        Pct("Size", &p.size);
+        Pct("Strength", &p.strength);
+        if (p.mode == VID_REVEAL || p.mode == VID_LIQUID || p.mode == VID_RIPPLE || p.mode == VID_PIXEL)
+          Pct("Trail", &p.trail);
+        if (p.mode == VID_KALEIDO) IntSlider("Segments", &p.segments, 2, 16);
+      }
       Pct("Video level", &p.level);
-      Pct("Glow", &p.glow);
+      if (p.mode != VID_CLEAN) Pct("Glow (palette colours)", &p.glow);
       SectionLabel("FIT");
       static const char* fits[] = {"FILL", "FIT", "STRETCH"};
       Choice("vfit", fits, VFIT_COUNT, &p.fit);
@@ -1050,10 +1056,14 @@ void DmxTab(App& a) {
 void ClearBlackout(App& a, ImVec2 size, bool sameLine) {
   ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.30f, 0.12f, 0.12f, 1));
   ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.30f, 0.12f, 0.12f, 1));
-  if (ImGui::Button("CLEAR", size)) a.wantClear = true;
+  if (ImGui::Button("CLEAR", size)) requestClear(a);  // twice in a row: the background too
   ImGui::PopStyleColor(2);
   if (sameLine) ImGui::SameLine();
-  if (Toggle("BLACKOUT", a.blackout, size, kDanger)) a.blackout = !a.blackout;
+  // pulses while active so it is seen from the corner of the eye
+  float pulse = 0.65f + 0.35f * std::sin(float(ImGui::GetTime()) * 6.f);
+  ImVec4 col(kDanger.x * pulse + (1 - pulse), kDanger.y * pulse, kDanger.z * pulse, 1);
+  if (Toggle("BLACKOUT", a.blackout, size, a.blackout ? col : kDanger))
+    a.blackout = !a.blackout;
 }
 
 // The effect buttons, in kEffectOrder. size.x = 0 means "fill the row".
@@ -1703,6 +1713,46 @@ void EffectStrip(App& a) {
   ImGui::PopStyleVar(3);
 }
 
+// Blackout: unmissable on the preview (striped red, big label) and as a red frame around the whole screen.
+void BlackoutOverlay(App& a) {
+  bool dmx = a.dmxBlackout && !a.blackout;
+  if (!a.blackout && !a.dmxBlackout) return;
+  float s = S();
+  ImDrawList* dl = ImGui::GetForegroundDrawList();
+  float pulse = 0.5f + 0.5f * std::sin(float(ImGui::GetTime()) * 5.f);
+  ImVec2 p0(a.canvas.x, a.canvas.y), p1(a.canvas.x + a.canvas.w, a.canvas.y + a.canvas.h);
+  dl->PushClipRect(p0, p1, true);
+  dl->AddRectFilled(p0, p1, IM_COL32(120, 0, 0, 90 + int(50 * pulse)));
+  float step = 46 * s;
+  for (float x = p0.x - a.canvas.h; x < p1.x; x += step)  // diagonal hazard stripes
+    dl->AddQuadFilled(ImVec2(x, p1.y), ImVec2(x + step * 0.5f, p1.y), ImVec2(x + step * 0.5f + a.canvas.h, p0.y),
+                      ImVec2(x + a.canvas.h, p0.y), IM_COL32(230, 30, 30, 60));
+  const char* label = dmx ? "DMX BLACKOUT" : "BLACKOUT";
+  float size = std::min(a.canvas.h * 0.28f, a.canvas.w / (dmx ? 7.5f : 5.0f));
+  ImFont* f = a.fontBig;
+  ImVec2 ts = f->CalcTextSizeA(size, FLT_MAX, 0, label);
+  ImVec2 tp(p0.x + (a.canvas.w - ts.x) * 0.5f, p0.y + (a.canvas.h - ts.y) * 0.5f);
+  dl->AddRectFilled(ImVec2(tp.x - 20 * s, tp.y - 6 * s), ImVec2(tp.x + ts.x + 20 * s, tp.y + ts.y + 6 * s),
+                    IM_COL32(0, 0, 0, 200), 10 * s);
+  dl->AddText(f, size, tp, IM_COL32(255, 60 + int(60 * pulse), 60, 255), label);
+  dl->PopClipRect();
+  float t = 10 * s;
+  dl->AddRect(ImVec2(p0.x - 3, p0.y - 3), ImVec2(p1.x + 3, p1.y + 3), IM_COL32(255, 40, 40, 255), 0, 0, 6 * s);
+  ImVec2 d = ImGui::GetIO().DisplaySize;  // the whole screen
+  dl->AddRect(ImVec2(t * 0.5f, t * 0.5f), ImVec2(d.x - t * 0.5f, d.y - t * 0.5f),
+              IM_COL32(255, 30, 30, 150 + int(105 * pulse)), 0, 0, t);
+}
+
+// EDIT (amber) or SHOW (green): a thin line around the panel, and a badge in the header.
+void ModeOutline(App& a) {
+  if (a.blackout || a.dmxBlackout) return;  // the red frame wins
+  float s = S();
+  ImU32 c = a.st.showMode ? IM_COL32(60, 210, 100, 230) : IM_COL32(255, 176, 0, 230);
+  ImGui::GetForegroundDrawList()->AddRect(ImVec2(a.panel.x + 2, a.panel.y + 2),
+                                          ImVec2(a.panel.x + a.panel.w - 2, a.panel.y + a.panel.h - 2), c, 6 * s, 0,
+                                          3 * s);
+}
+
 void Canvas(App& a) {
   ImDrawList* dl = ImGui::GetBackgroundDrawList();
   ImVec2 p0(a.canvas.x, a.canvas.y), p1(a.canvas.x + a.canvas.w, a.canvas.y + a.canvas.h);
@@ -1746,15 +1796,10 @@ void Canvas(App& a) {
         dl->AddCircle(c, 12 * S(), IM_COL32(255, 255, 255, 60), 24, 1.5f * S());
     }
   }
-  if (a.dmxActive && (a.dmxDim < 0.02f || a.dmxBlackout) && !a.blackout) {
-    const char* t = a.dmxBlackout ? "DMX BLACKOUT" : "DMX DIMMER AT 0";
+  if (a.dmxActive && a.dmxDim < 0.02f && !a.dmxBlackout && !a.blackout) {  // (blackouts: BlackoutOverlay)
+    const char* t = "DMX DIMMER AT 0";
     ImVec2 ts = ImGui::CalcTextSize(t);
     dl->AddText(ImVec2(mx - ts.x * 0.5f, my - ts.y * 0.5f), IM_COL32(255, 180, 60, 230), t);
-  }
-  if (a.blackout) {
-    const char* t = "BLACKOUT";
-    ImVec2 ts = ImGui::CalcTextSize(t);
-    dl->AddText(ImVec2(mx - ts.x * 0.5f, my - ts.y * 0.5f), IM_COL32(255, 60, 60, 220), t);
   }
 }
 
@@ -1825,6 +1870,7 @@ void drawUI(App& a) {
   }
   float s = S();
   g_sliding = false;
+  a.cueEditOpen = false;  // set again by the CUES view while its edit window is open
 
   // BACK selected: the LIVE controls and the effect bar edit a copy holding the background's settings
   static Look backEdit, backOrig;
@@ -1859,6 +1905,20 @@ void drawUI(App& a) {
 
   // ---- header: title + clock, then NDI / DMX status lights and system stats ----
   ImGui::TextColored(kAccent, "TOUCHFX");
+  {  // EDIT / SHOW badge
+    ImGui::SameLine();
+    ImGui::PushFont(a.fontSmall);
+    const char* m = a.st.showMode ? " SHOW " : " EDIT ";
+    ImVec4 bc = a.st.showMode ? ImVec4(0.2f, 0.75f, 0.35f, 1) : ImVec4(1.f, 0.69f, 0.f, 1);
+    ImVec2 p = ImGui::GetCursorScreenPos();
+    ImVec2 ts = ImGui::CalcTextSize(m);
+    float yo = (ImGui::GetTextLineHeight() - ts.y) * 0.5f + 2 * s;
+    ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(p.x, p.y + yo), ImVec2(p.x + ts.x, p.y + yo + ts.y),
+                                              ImGui::GetColorU32(bc), 4 * s);
+    ImGui::SetCursorScreenPos(ImVec2(p.x, p.y + yo));
+    ImGui::TextColored(ImVec4(0.05f, 0.05f, 0.05f, 1), "%s", m);
+    ImGui::PopFont();
+  }
   ImGui::SameLine();
   ImGui::PushFont(a.fontSmall);
   ImGui::AlignTextToFramePadding();
@@ -1986,6 +2046,10 @@ void drawUI(App& a) {
   }
   KeyboardFrame(a);
   QuitConfirmFrame(a);
+  BlackoutOverlay(a);
+  ModeOutline(a);
+  // pop-ups over the canvas take the taps (see touchDown)
+  a.uiBlocksCanvas = ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
 
   // write the background edits back (only when the user changed something, so a cue or scene recalled
   // during this frame is not overwritten)

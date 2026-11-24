@@ -355,6 +355,7 @@ void action(App& a) {
   } else if (r < 78) {
     if (chance(0.5f)) a.wantClear = true;
     else a.blackout = chance(0.2f);
+    if (chance(0.3f)) requestClear(a);
     count("clear / blackout");
   } else if (r < 84) {
     l.releaseFx[l.effect] = irnd(0, 1);

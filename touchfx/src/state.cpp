@@ -26,7 +26,8 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(RippleSettings, size, strength, 
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(RibbonSettings, strands, length, width, wind, flutter, stiffness, sheen)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(GeometrySettings, shape, rate, size, spin, width, life, glow)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(TunnelSettings, sides, merge, speed, density, twist, width, depth)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(VideoSettings, mode, fit, segments, size, strength, trail, level, glow)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(VideoSettings, mode, fit, segments, size, strength, trail, level, glow,
+                                                alwaysOn, base)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(PlexusSettings, amount, range, size, drift, spread, trail)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(FireworkSettings, rate, rockets, size, amount, gravity, trail, sparkle)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(StarfieldSettings, amount, speed, streak, size, twinkle, brightness)

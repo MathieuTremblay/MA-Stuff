@@ -47,7 +47,7 @@ in vec2 vUv; out vec4 o;
 uniform sampler2D uVideo; uniform sampler2D uField;
 uniform int uHasVideo, uMode, uCount, uSegs;
 uniform vec2 uFit, uTexel, uRes, uPts[8];
-uniform float uAspect, uLevel, uGain, uStrength, uSize, uGlow, uRot;
+uniform float uAspect, uLevel, uGain, uStrength, uSize, uGlow, uRot, uBase;
 uniform vec3 uLow, uMid, uHigh;
 
 vec3 vid(vec2 uv) {
@@ -78,7 +78,7 @@ void main() {
   vec3 extra = vec3(0.0);
   if (uMode == 0) {  // REVEAL
     float m = clamp(texture(uField, uv).r, 0.0, 1.0);
-    col = vid(uv) * smoothstep(0.0, 1.0, m);
+    col = vid(uv) * mix(uBase, 1.0, smoothstep(0.0, 1.0, m));  // uBase > 0 with ALWAYS ON
     extra = uMid * (m * (1.0 - m) * 4.0) * uGlow * 1.2;
   } else if (uMode == 1) {  // LIQUID
     vec2 d = texture(uField, uv).rg;
@@ -110,6 +110,8 @@ void main() {
     vec2 px = uv * uRes;
     vec2 q = (floor(px / cell) + 0.5) * cell / uRes;
     col = vid(cell > 1.5 ? q : uv);
+  } else if (uMode == 6) {  // CLEAN: just the video
+    col = vid(uv);
   } else {  // WARP
     vec2 w = uv;
     float s = 0.01 + uSize * uSize * 0.12;
@@ -123,7 +125,7 @@ void main() {
     }
     col = vid(w);
   }
-  if (uMode != 0) extra += uMid * halo(uv) * uGlow * 0.35;
+  if (uMode != 0 && uMode != 6) extra += uMid * halo(uv) * uGlow * 0.35;
   o = vec4((col * uLevel + extra) * uGain, 1.0);
 }
 )";
@@ -234,7 +236,8 @@ class Video : public Effect {
     pDraw.setf("uAspect", aspect);
     // a lost input fades to black (hold, then fade, in VideoInput); no input at all shows the palette gradient
     pDraw.setf("uLevel", s.level * 1.25f * c.look->brightness * (c.videoTex ? c.videoLevel : 1.f));
-    pDraw.setf("uGain", c.gain);
+    pDraw.setf("uGain", s.alwaysOn ? 1.f : c.gain);
+    pDraw.setf("uBase", s.alwaysOn ? s.base : 0.f);
     pDraw.setf("uStrength", s.strength);
     pDraw.setf("uSize", s.size);
     pDraw.setf("uGlow", s.glow);
