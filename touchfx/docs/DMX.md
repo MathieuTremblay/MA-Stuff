@@ -93,9 +93,9 @@ Sub-fixtures: **Main** (master), **Front** (the effect you play), **Back** (back
 |---|---|---|---|
 | 1 | Main | Master dimmer | 0-255 = 0-100 % |
 | 2 | Main | Strobe | 0-31 open, 32-223 strobe 1-25 Hz, 224-255 open |
-| 3 | Main | BPM | 0 = TouchFX tempo, 1-255 = bpm number (value = number) |
-| 4 | Main | Scene | 0 = Keep, 1-12 = scene number (value = number), above = keep |
-| 5 | Main | Song | 0 = Keep, 1-255 = song number (value = number) |
+| 3 | Main | BPM | 0-19 = TouchFX tempo, 20-255 = bpm (value = number) |
+| 4 | Main | Scene | 0 = Keep, 1-12 = scene (value = number), above = keep |
+| 5 | Main | Song | 0 = Keep, 1-255 = song (value = number) |
 | 6-7 | Main | Cue | 16-bit, 0 = keep, otherwise cue number x 10 (cue 2.5 = 25); fires when the value changes |
 | 8 | Main | Cue command | 0-9 idle, 10-49 GO, 50-89 BACK, 90-129 Next song, 130-169 Previous song, 170-209 Restart song, 210-255 idle (fires on entering a range) |
 | 9 | Main | Action | 0-9 idle, 10-49 Clear front, 50-89 Clear front + back, 90-129 Tap tempo, 130-255 idle (fires on entering a range) |

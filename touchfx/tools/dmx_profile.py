@@ -215,8 +215,8 @@ TRIG_CUE = ["GO", "BACK", "Next song", "Previous song", "Restart song"]
 TRIG_ACT = ["Clear front", "Clear front + back", "Tap tempo"]
 c2("M_DIMMER", "Body", "Dimmer", 1, "Master dimmer", "dim", default=255)
 c2("M_SHUTTER", "Body", "Shutter1", 1, "Strobe", "shutter", default=0)
-c2("M_BPM", "Body", "Effects1Rate", 1, "BPM", "value", lo=1, hi=255, zero="TouchFX tempo", default=0,
-   note="0 = TouchFX keeps its own tempo; 1-255 = BPM")
+c2("M_BPM", "Body", "Effects1Rate", 1, "BPM", "value", lo=20, hi=255, zero="TouchFX tempo", default=0,
+   note="0-19 = TouchFX keeps its own tempo; 20-255 = BPM")
 c2("M_SCENE", "Body", "MediaContent1", 1, "Scene", "value", lo=1, hi=12, zero="Keep", default=0)
 c2("M_SONG", "Body", "MediaFolder1", 1, "Song", "value", lo=1, hi=255, zero="Keep", default=0)
 c2("M_CUE", "Body", "MediaContent2", 2, "Cue", "cue", default=0)
@@ -702,7 +702,8 @@ def v2_values_text(c):
     if k == "shutter":
         return "0-31 open, 32-223 strobe 1-25 Hz, 224-255 open"
     if k == "value":
-        return f"0 = {c['zero']}, {c['lo']}-{c['hi']} = {c['name'].lower()} number (value = number)" + (
+        z = "0" if c["lo"] == 1 else f"0-{c['lo'] - 1}"
+        return f"{z} = {c['zero']}, {c['lo']}-{c['hi']} = {c['name'].lower()} (value = number)" + (
             ", above = keep" if c["hi"] < 255 else "")
     if k == "cue":
         return "16-bit, 0 = keep, otherwise cue number x 10 (cue 2.5 = 25); fires when the value changes"

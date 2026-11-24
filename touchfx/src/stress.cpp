@@ -8,6 +8,7 @@
 #include <ctime>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <map>
 #include <nlohmann/json.hpp>
 #include <random>
@@ -556,7 +557,31 @@ void stressTick(App& a, float dt, float frameSeconds) {
     ++g.roundTrips;
     if (!loadShow(path, s) || serializeShow(s) != text) {
       ++g.roundTripMismatch;
-      if (g.notes.size() < 20) g.notes.push_back("Show file round trip changed the show at " + std::to_string(int(g.elapsed)) + " s");
+      // name the first setting that changed
+      std::string where = "?";
+      std::function<bool(const json&, const json&, const std::string&)> diff = [&](const json& x, const json& y,
+                                                                                    const std::string& at) {
+        if (x.type() != y.type()) { where = at; return true; }
+        if (x.is_object()) {
+          for (auto it = x.begin(); it != x.end(); ++it)
+            if (!y.contains(it.key()) || diff(it.value(), y[it.key()], at + "/" + it.key())) return true;
+          return false;
+        }
+        if (x.is_array()) {
+          for (size_t i = 0; i < x.size() && i < y.size(); ++i)
+            if (diff(x[i], y[i], at + "/" + std::to_string(i))) return true;
+          if (x.size() != y.size()) { where = at; return true; }
+          return false;
+        }
+        if (x != y) { where = at + " " + x.dump() + " -> " + y.dump(); return true; }
+        return false;
+      };
+      try {
+        diff(json::parse(text), json::parse(serializeShow(s)), "");
+      } catch (...) {
+      }
+      if (g.notes.size() < 20)
+        g.notes.push_back("Show file round trip changed " + where + " at " + std::to_string(int(g.elapsed)) + " s");
     }
     std::remove(path.c_str());
     g.nextRoundTrip = g.elapsed + 15;

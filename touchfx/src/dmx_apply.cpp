@@ -112,7 +112,7 @@ void applyV2(App& a, float dt) {
     if (v >= 32 && v <= 223) a.dmxStrobeHz = 1.f + (v - 32) / 191.f * 24.f;
   }
   a.dmxBlackout = false;
-  a.dmxBpm = present[D2_M_BPM] && vals[D2_M_BPM] > 0;
+  a.dmxBpm = present[D2_M_BPM] && vals[D2_M_BPM] >= 20;  // 0-19: TouchFX keeps its own tempo
   if (a.dmxBpm && changed(D2_M_BPM)) l.bpm = float(vals[D2_M_BPM]);
   if (present[D2_LOW_R]) {
     auto rgb = [&](DmxFn2 r, DmxFn2 g, DmxFn2 b) { return Color3{vals[r] / 255.f, vals[g] / 255.f, vals[b] / 255.f}; };
