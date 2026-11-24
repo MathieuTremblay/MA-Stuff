@@ -17,10 +17,12 @@ import time
 import uuid
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from dmx_profile import ADVANCED, BASIC, F, SLOT_START, layout, slot_size  # noqa: E402
+from dmx_profile import (ADVANCED, BASIC, F, FX2, SLOT_START, choice_dmx_default, layout, layout2,  # noqa: E402
+                         param_dmx_default, slot_ranges, slot_size)
 
 ARGS = [a for a in sys.argv[1:] if not a.startswith("--")]
 POLL = "--poll" in sys.argv  # also act like a console doing Art-Net discovery, and print TouchFX's reply
+V2 = "--v2" in sys.argv  # Full v2 at address 1 instead (a scripted sequence, see v2_frame)
 TARGET = ARGS[0] if len(ARGS) > 0 else "127.0.0.1"
 DURATION = float(ARGS[1]) if len(ARGS) > 1 else 1e9
 SACN_UNIVERSE, ARTNET_UNIVERSE = 100, 99
@@ -89,6 +91,70 @@ def art_poll_reply_console():
     return bytes(r)
 
 
+def v2_put(frame, address, values):
+    lay, _ = layout2()
+    for c, off in lay:
+        if c["id"] not in values:
+            continue
+        v = int(values[c["id"]])
+        a = address - 1 + off
+        if c["bytes"] == 2:
+            frame[a], frame[a + 1] = (v >> 8) & 255, v & 255
+        else:
+            frame[a] = v & 255
+
+
+def mid(i, n):
+    a, b = slot_ranges(n)[i]
+    return (a + b) // 2
+
+
+def fx_index(name):
+    return [f[1] for f in FX2].index(name)
+
+
+def v2_frame(t):
+    """0-8 s: Lasers (fan, random swing, 12 beams) over a Starfield background, 4 cursors, palette 3.
+    8-16 s: LED grid plasma, DMX colours (red / green / blue), background off, glow up.
+    16 s: song 1, cue 2 (DMX 20). 20 s: cue command GO. 22 s: idle."""
+    f = [0] * 512
+    n = len(FX2)
+    v = {"M_DIMMER": 255, "M_BPM": 128, "M_GLOW": 140}
+    for k in range(4):
+        a = t * (0.7 + k * 0.25) + k * 1.57
+        v[f"C{k + 1}_DIM"] = 255
+        v[f"C{k + 1}_X"] = 32768 + 20000 * math.cos(a)
+        v[f"C{k + 1}_Y"] = 32768 + 15000 * math.sin(a)
+    if t < 8:
+        v.update({"F_EFFECT": mid(fx_index("Lasers"), n), "F_MODE": mid(0, 6), "F_OPT2": mid(3, 4),
+                  "F_P1": round((12 - 1) / 31 * 255), "F_P4": 200, "F_P5": 160, "F_PALETTE": mid(2, 10),
+                  "B_LEVEL": 160, "B_EFFECT": mid(fx_index("Starfield"), n)})
+    elif t < 16:
+        v.update({"F_EFFECT": mid(fx_index("LED grid"), n), "F_MODE": mid(5, 10), "F_PALETTE": 252, "B_LEVEL": 0,
+                  "LOW_R": 255, "MID_G": 255, "HIGH_B": 255, "M_GLOW": 220})
+    else:
+        v.update({"M_SONG": 1, "M_CUE": 20})
+        if 20 <= t < 22:
+            v["M_CUECMD"] = 30  # GO
+    # everything else at the GDTF defaults, like a console with the fixture patched
+    full = {}
+    for c, _ in layout2()[0]:
+        full[c["id"]] = c.get("default", 0)
+    for layer in ("F", "B"):
+        eff = v.get(f"{layer}_EFFECT")
+        if eff is None:
+            continue
+        fx = FX2[next(i for i, (a, b) in enumerate(slot_ranges(n)) if a <= eff <= b)]
+        for i, pr in enumerate(fx[5]):
+            full[f"{layer}_P{i + 1}"] = param_dmx_default(pr)
+        for key, ch in (("MODE", fx[2]), ("OPT1", fx[3]), ("OPT2", fx[4])):
+            if ch:
+                full[f"{layer}_{key}"] = choice_dmx_default(ch)
+    full.update(v)
+    v2_put(f, 1, full)
+    return f
+
+
 def main():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     ps = poll_socket() if POLL else None
@@ -100,7 +166,10 @@ def main():
     while time.time() - t0 < DURATION:
         t = time.time() - t0
         frame = [0] * 512
-        put(frame, ADVANCED, 1, {
+        if V2:
+            frame = v2_frame(t)
+        else:
+            put(frame, ADVANCED, 1, {
             "DIMMER": 255, "EFFECT": slot(3, 6), "FXMODE": slot(4, 8), "PALETTE_ADV": 255, "MIRROR": slot(0, 6),
             "BPM": bpm16(128), "SHUTTER": 0, "PARAM1": 140, "PARAM2": 160, "PARAM3": 90, "PARAM4": 70, "GLOW": 190,
             "SATURATION": 170, "LOW_R": 255, "LOW_G": 0, "LOW_B": 0, "MID_R": 0, "MID_G": 255, "MID_B": 0,
@@ -108,7 +177,7 @@ def main():
             "CUR1_DIM": 255, "CUR1_X": 32768 + 18000 * math.cos(t * 1.3), "CUR1_Y": 32768 + 15000 * math.sin(t * 1.3),
             "CUR2_DIM": 255, "CUR2_X": 32768 + 22000 * math.cos(-t * 0.9 + 2), "CUR2_Y": 32768 + 12000 * math.sin(-t * 0.9 + 2),
         })
-        put(frame, BASIC, 101, {
+            put(frame, BASIC, 101, {
             "DIMMER": 204, "EFFECT": slot(5, 6), "PALETTE": slot(6, 10), "MIRROR": slot(3, 6), "BPM": 0,
             "SHUTTER": 60, "PARAM1": 220, "GLOW": 160,
         })

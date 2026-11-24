@@ -127,6 +127,9 @@ struct App {
   bool dmxActive = false;     // data has been received (TouchFX holds the last look if it stops)
   bool dmxPrimed = false;
   int dmxLast[64] = {};
+  int dmxLast2[128] = {};      // Full v2
+  int dmxTrig[2] = {-1, -1};  // Full v2 trigger channels: range they are in
+  bool dmxColorsBack = false; // Full v2: the back layer uses the DMX colours
   float dmxDim = 1;           // master dimmer
   float dmxStrobeHz = 0;      // shutter strobe (0 = open)
   double dmxStrobePhase = 0;
@@ -137,7 +140,7 @@ struct App {
   struct Cursor {
     bool active = false;
     Vec2 pos, lastPos, vel;
-  } dmxCursor[2];
+  } dmxCursor[4];
   uint8_t dmxFrame[512] = {};
 
   SysStats stats;

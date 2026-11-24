@@ -450,7 +450,7 @@ bool renderBackground(App& a, const FxCtx& front, float dt) {
   }
   FxCtx c = front;
   c.look = &bl;
-  if (bg.ownColors) c.pal = &a.st.palettes[bg.palette];
+  if (bg.ownColors) c.pal = (a.dmxActive && a.dmxColorsBack && a.st.dmx.mode == 2) ? &a.dmxPalette : &a.st.palettes[bg.palette];
   c.speed = look.bpm / 120.f * kSpeedMults[bg.speedMult];
   c.live = a.bgLive;
   c.held = a.bgLive;
@@ -729,7 +729,7 @@ void buildEmitters(App& a, float dt) {
   a.live.clear();
   updateVirtualPoints(a, dt, aspect, mats);
   // DMX cursors (Advanced mode): the console moves them with Pan/Tilt.
-  for (int k = 0; k < 2; ++k) {
+  for (int k = 0; k < 4; ++k) {
     App::Cursor& c = a.dmxCursor[k];
     if (!c.active) continue;
     Vec2 d = c.pos - c.lastPos;
@@ -1230,7 +1230,7 @@ int main(int argc, char** argv) {
     c.H = a.out.h;
     c.aspect = float(c.W) / c.H;
     c.look = &look;
-    c.pal = (a.dmxActive && a.dmxColors && a.st.dmx.mode == 1) ? &a.dmxPalette
+    c.pal = (a.dmxActive && a.dmxColors && a.st.dmx.mode >= 1) ? &a.dmxPalette
             : look.useCustom                                     ? &look.custom
                                                                  : &a.st.palettes[look.palette];
     c.live = a.live;

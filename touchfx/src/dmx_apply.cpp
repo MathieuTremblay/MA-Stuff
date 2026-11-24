@@ -4,9 +4,12 @@
 #include <cstring>
 
 #include "app.hpp"
+#include "cues.hpp"
 #include "dmx_profile.inc"
+#include "log.hpp"
 
 static_assert(DMX_FN_COUNT <= 64, "App::dmxLast is too small");
+static_assert(D2_COUNT <= 128, "App::dmxLast2 is too small");
 
 namespace {
 
@@ -72,7 +75,189 @@ void setMode(Look& l, int slot) {
 
 }  // namespace
 
-int dmxFootprint(int mode) { return mode == 0 ? kDmxBasicFootprint : kDmxAdvancedFootprint; }
+int dmxFootprint(int mode) {
+  return mode == 0 ? kDmxBasicFootprint : mode == 1 ? kDmxAdvancedFootprint : kDmxFullFootprint;
+}
+
+namespace {
+
+// ---- Full v2 ---------------------------------------------------------------------------------------------
+// Trigger channels: ranges of 40 from 10; fires once when the value enters a range.
+int trigRange(int v, int count) {
+  if (v < 10) return -1;
+  int r = (v - 10) / 40;
+  return r < count ? r : -1;
+}
+
+void applyV2(App& a, float dt) {
+  const DmxSettings& d = a.st.dmx;
+  int vals[D2_COUNT];
+  bool present[D2_COUNT] = {};
+  for (const DmxChannelDef2& c : kDmxFull) {
+    int addr = d.address - 1 + c.offset;
+    if (addr + c.bytes > 512) continue;
+    vals[c.fn] = c.bytes == 2 ? (a.dmxFrame[addr] << 8) | a.dmxFrame[addr + 1] : a.dmxFrame[addr];
+    present[c.fn] = true;
+  }
+  auto changed = [&](DmxFn2 f) { return present[f] && (d.lock || !a.dmxPrimed || vals[f] != a.dmxLast2[f]); };
+  auto slot = [&](DmxFn2 f, int n) { return present[f] ? dmx2Slot(vals[f], n) : -1; };
+  Look& l = a.st.look;
+  BgLayer& bg = l.bg;
+
+  // ---- master: continuous ----
+  a.dmxDim = present[D2_M_DIMMER] ? vals[D2_M_DIMMER] / 255.f : 1.f;
+  a.dmxStrobeHz = 0;
+  if (present[D2_M_SHUTTER]) {
+    int v = vals[D2_M_SHUTTER];
+    if (v >= 32 && v <= 223) a.dmxStrobeHz = 1.f + (v - 32) / 191.f * 24.f;
+  }
+  a.dmxBlackout = false;
+  a.dmxBpm = present[D2_M_BPM] && vals[D2_M_BPM] > 0;
+  if (a.dmxBpm && changed(D2_M_BPM)) l.bpm = float(vals[D2_M_BPM]);
+  if (present[D2_LOW_R]) {
+    auto rgb = [&](DmxFn2 r, DmxFn2 g, DmxFn2 b) { return Color3{vals[r] / 255.f, vals[g] / 255.f, vals[b] / 255.f}; };
+    a.dmxPalette.name = "DMX";
+    a.dmxPalette.low = rgb(D2_LOW_R, D2_LOW_G, D2_LOW_B);
+    a.dmxPalette.mid = rgb(D2_MID_R, D2_MID_G, D2_MID_B);
+    a.dmxPalette.high = rgb(D2_HIGH_R, D2_HIGH_G, D2_HIGH_B);
+  }
+  const DmxFn2 cur[4][3] = {{D2_C1_DIM, D2_C1_X, D2_C1_Y}, {D2_C2_DIM, D2_C2_X, D2_C2_Y},
+                            {D2_C3_DIM, D2_C3_X, D2_C3_Y}, {D2_C4_DIM, D2_C4_X, D2_C4_Y}};
+  for (int k = 0; k < 4; ++k) {
+    App::Cursor& c = a.dmxCursor[k];
+    bool on = present[cur[k][0]] && vals[cur[k][0]] >= 3;
+    Vec2 p = present[cur[k][1]] ? Vec2(vals[cur[k][1]] / 65535.f, vals[cur[k][2]] / 65535.f) : Vec2(0.5f, 0.5f);
+    if (on && !c.active) c.lastPos = c.pos = p;
+    c.active = on;
+    c.pos = p;
+  }
+
+  // ---- master: songs, cues, scenes (fire when the value changes) ----
+  if (changed(D2_M_SONG) && vals[D2_M_SONG] >= 1 && vals[D2_M_SONG] <= int(a.st.cueLists.size()) && a.dmxPrimed)
+    cueSelectList(a, vals[D2_M_SONG] - 1);
+  if (changed(D2_M_CUE) && vals[D2_M_CUE] > 0 && a.dmxPrimed && !a.st.cueLists.empty()) {
+    float num = vals[D2_M_CUE] / 10.f;
+    int i = cueFindNumber(a.st.cueLists[std::clamp(a.st.activeList, 0, int(a.st.cueLists.size()) - 1)], num);
+    if (i >= 0) cueFire(a, i);
+    else logLine("DMX: cue %.1f is not in the current song", num);
+  }
+  if (changed(D2_M_SCENE) && vals[D2_M_SCENE] >= 1 && vals[D2_M_SCENE] <= kNumScenes && a.dmxPrimed)
+    a.recallScene(vals[D2_M_SCENE] - 1);
+  int cr = present[D2_M_CUECMD] ? trigRange(vals[D2_M_CUECMD], 5) : -1;
+  if (cr != a.dmxTrig[0] && cr >= 0 && a.dmxPrimed) {
+    switch (cr) {
+      case 0: cueCommand(a, CUE_GO); break;
+      case 1: cueCommand(a, CUE_BACK); break;
+      case 2: cueCommand(a, CUE_SONG_NEXT); break;
+      case 3: cueCommand(a, CUE_SONG_PREV); break;
+      default: cueSelectList(a, a.st.activeList); cueCommand(a, CUE_GO); break;  // restart: cue 1
+    }
+  }
+  a.dmxTrig[0] = cr;
+  int ar = present[D2_M_ACTION] ? trigRange(vals[D2_M_ACTION], 3) : -1;
+  if (ar != a.dmxTrig[1] && ar >= 0 && a.dmxPrimed) {
+    if (ar == 0) a.wantClear = true;
+    else if (ar == 1) {
+      a.wantClear = true;
+      a.wantClearBg = true;
+    } else {
+      a.tempo.tap(a.time, l.bpm);
+    }
+  }
+  a.dmxTrig[1] = ar;
+  int s;
+  if (changed(D2_M_AUDIO) && (s = slot(D2_M_AUDIO, 2)) >= 0) a.st.audio.enabled = s == 1;
+  if (changed(D2_M_AUTOPLAY) && (s = slot(D2_M_AUTOPLAY, 2)) >= 0) a.st.audio.autoPlay = s == 1;
+  if (changed(D2_M_FREEZE) && (s = slot(D2_M_FREEZE, 2)) >= 0) a.video.setFrozen(s == 1);
+  if (changed(D2_M_GLOW)) l.post.bloom = vals[D2_M_GLOW] / 255.f;
+  if (changed(D2_M_GLOWSIZE)) l.post.bloomSize = vals[D2_M_GLOWSIZE] / 255.f;
+  if (changed(D2_M_SAT)) l.post.saturation = vals[D2_M_SAT] / 255.f;
+  if (changed(D2_M_BRIGHT)) l.brightness = vals[D2_M_BRIGHT] / 255.f * 2.f;
+
+  // ---- front layer ----
+  bool fxChanged = false;
+  if (changed(D2_F_EFFECT) && (s = slot(D2_F_EFFECT, kDmx2FxCount)) >= 0 && kDmx2Effects[s] != l.effect) {
+    l.effect = kDmx2Effects[s];
+    fxChanged = true;
+  }
+  const DmxFn2 fch[3] = {D2_F_MODE, D2_F_OPT1, D2_F_OPT2};
+  for (int w = 0; w < 3; ++w)
+    if (changed(fch[w]) || (fxChanged && present[fch[w]]))
+      dmx2SetChoice(l, l.effect, w, slot(fch[w], dmx2ChoiceCount(l.effect, w)));
+  const DmxFn2 fp[10] = {D2_F_P1, D2_F_P2, D2_F_P3, D2_F_P4, D2_F_P5, D2_F_P6, D2_F_P7, D2_F_P8, D2_F_P9, D2_F_P10};
+  for (int i = 0; i < 10; ++i)
+    if (changed(fp[i]) || (fxChanged && present[fp[i]])) dmx2SetParam(l, l.effect, i, vals[fp[i]]);
+  if ((changed(D2_F_RELEASE) || fxChanged) && (s = slot(D2_F_RELEASE, 3)) >= 0) l.releaseFx[l.effect] = s;
+  if ((changed(D2_F_FADETIME) || fxChanged) && present[D2_F_FADETIME])
+    l.fadeFx[l.effect] = std::max(0.05f, vals[D2_F_FADETIME] / 255.f * 10.f);
+  if (changed(D2_F_SPEED) && (s = slot(D2_F_SPEED, kNumSpeedMults)) >= 0) l.speedMult = s;
+  if (changed(D2_F_MIRROR) && (s = slot(D2_F_MIRROR, MIRROR_COUNT)) >= 0) l.mirror = s;
+  if (changed(D2_F_PALETTE)) {
+    int v = vals[D2_F_PALETTE];
+    if ((s = dmx2Slot(v, kNumPalettes)) >= 0) {
+      l.palette = s;
+      l.useCustom = false;
+      a.dmxColors = false;
+    } else if (v >= 250) {
+      a.dmxColors = true;
+    }
+  }
+  if (changed(D2_F_CMODE) && (s = slot(D2_F_CMODE, COLOR_COUNT)) >= 0) l.colorMode = s;
+
+  // ---- back layer (its own copy of the effect settings) ----
+  if (changed(D2_B_LEVEL)) {
+    int v = vals[D2_B_LEVEL];
+    bg.on = v > 0;
+    if (v > 0) bg.level = v / 255.f;
+  }
+  {
+    Look t;
+    paramsToLook(bg.fx, t);
+    t.effect = bg.effect;
+    bool bfx = false;
+    if (changed(D2_B_EFFECT) && (s = slot(D2_B_EFFECT, kDmx2FxCount)) >= 0 && kDmx2Effects[s] != t.effect) {
+      t.effect = kDmx2Effects[s];
+      bfx = true;
+    }
+    const DmxFn2 bch[3] = {D2_B_MODE, D2_B_OPT1, D2_B_OPT2};
+    for (int w = 0; w < 3; ++w)
+      if (changed(bch[w]) || (bfx && present[bch[w]]))
+        dmx2SetChoice(t, t.effect, w, slot(bch[w], dmx2ChoiceCount(t.effect, w)));
+    const DmxFn2 bp[10] = {D2_B_P1, D2_B_P2, D2_B_P3, D2_B_P4, D2_B_P5, D2_B_P6, D2_B_P7, D2_B_P8, D2_B_P9, D2_B_P10};
+    for (int i = 0; i < 10; ++i)
+      if (changed(bp[i]) || (bfx && present[bp[i]])) dmx2SetParam(t, t.effect, i, vals[bp[i]]);
+    lookToParams(t, bg.fx);
+    bg.effect = t.effect;
+  }
+  if (changed(D2_B_BLEND) && (s = slot(D2_B_BLEND, BLEND_COUNT)) >= 0) bg.blend = s;
+  if (changed(D2_B_MOTION)) bg.motion = vals[D2_B_MOTION] / 255.f;
+  if (changed(D2_B_FOLLOW) && (s = slot(D2_B_FOLLOW, 2)) >= 0) bg.followTouch = s == 1;
+  if (changed(D2_B_SPEED) && (s = slot(D2_B_SPEED, kNumSpeedMults)) >= 0) bg.speedMult = s;
+  if (changed(D2_B_MIRROR) && (s = slot(D2_B_MIRROR, MIRROR_COUNT)) >= 0) bg.mirror = s;
+  if (changed(D2_B_PALETTE) || changed(D2_B_CMODE)) {
+    // palette: same as front / palette 1-10 / DMX colours; colour mode: same as front / a mode
+    int pv = present[D2_B_PALETTE] ? vals[D2_B_PALETTE] : 0, cv = present[D2_B_CMODE] ? vals[D2_B_CMODE] : 0;
+    int ps = dmx2Slot(pv, 1 + kNumPalettes), cs = dmx2Slot(cv, 1 + COLOR_COUNT);
+    bool dmxCol = pv >= 250;
+    if (ps >= 0 || cs >= 0 || dmxCol) {
+      bool own = dmxCol || ps >= 1 || cs >= 1;
+      bg.ownColors = own;
+      a.dmxColorsBack = dmxCol;
+      if (own) {
+        bg.palette = ps >= 1 ? ps - 1 : l.palette;
+        bg.colorMode = cs >= 1 ? cs - 1 : l.colorMode;
+      }
+    }
+  }
+
+  for (int f = 0; f < D2_COUNT; ++f)
+    if (present[f]) a.dmxLast2[f] = vals[f];
+  a.dmxPrimed = true;
+  if (a.dmxStrobeHz > 0) a.dmxStrobePhase = std::fmod(a.dmxStrobePhase + dt * a.dmxStrobeHz, 1.0);
+  else a.dmxStrobePhase = 0;
+}
+
+}  // namespace
 
 void applyDmx(App& a, float dt) {
   const DmxSettings& d = a.st.dmx;
@@ -104,7 +289,8 @@ void applyDmx(App& a, float dt) {
     a.dmxBlackout = false;
     a.dmxColors = false;
     a.dmxBpm = false;
-    a.dmxCursor[0].active = a.dmxCursor[1].active = false;
+    for (auto& c : a.dmxCursor) c.active = false;
+    a.dmxTrig[0] = a.dmxTrig[1] = -1;
   };
   if (protocol == DMXP_OFF || !a.dmx.snapshot(a.dmxFrame)) {
     reset();
@@ -112,6 +298,11 @@ void applyDmx(App& a, float dt) {
     return;
   }
   a.dmxActive = true;  // keeps the last received values if the console goes quiet
+  if (d.mode == 2) {
+    applyV2(a, dt);
+    return;
+  }
+  a.dmxColorsBack = false;
 
   const DmxChannelDef* defs = d.mode == 0 ? kDmxBasic : kDmxAdvanced;
   int n = d.mode == 0 ? int(sizeof(kDmxBasic) / sizeof(kDmxBasic[0]))

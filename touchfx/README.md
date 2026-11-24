@@ -119,22 +119,33 @@ comes back. If the NDI output card is changed, the NDI input reconnects automati
 ### DMX control (grandMA3 and other consoles)
 
 1. In *SETTINGS → DMX* pick **sACN** or **ART-NET**, the **network card** on the lighting network (or AUTOMATIC), the universe (default **sACN universe 100**, Art-Net 99) and the
-   start address (default **1**), and the profile mode.
-   The DMX effect channel controls the first six effects (Fluid, Particles, Kaleido, Lasers, Strobe, Sparkles);
-   the newer ones are reached through scenes until the profile is extended.
+   start address (default **1**), and the profile mode (**FULL v2** for new shows).
 2. Import `gdtf/TouchFX@TouchFX.gdtf` (in the download zip) into grandMA3 and patch **TouchFX** in the same mode at
    the same address.
 3. The **DMX** light in the header turns green when data arrives (yellow = signal lost, TouchFX keeps the last look).
 
-Two modes:
-- **Basic (12 ch)**: dimmer, effect, scene, palette, mirror, BPM, speed, shutter / strobe, size / amount, glow, control.
-- **Advanced (36 ch)**: everything, with **instances**: *Low*, *Mid*, *High* colours (RGB, so colour presets, pickers
-  and colour phasers work) and *Cursor 1 / Cursor 2* (dimmer + 16-bit Pan/Tilt = X/Y on the canvas, so position
-  presets and position effects draw on the canvas; a cursor draws while its dimmer is up).
+Three modes (old patches keep working):
+- **Full v2 (87 ch)**, new in 0.9: sub-fixtures **Main**, **Front**, **Back**, **Low / Mid / High** and **Cursor 1-4**.
+  - *Main*: master dimmer, strobe, BPM (value = BPM, 0 = TouchFX keeps its tempo), scene, **song** and **cue**
+    (cue number x 10, so cue 2.5 = 25; fires that TouchFX cue), cue command (GO / BACK / next / previous / restart
+    song), action (clear front, clear front + back, tap), audio reactive, auto play, video freeze, glow, glow size,
+    saturation, brightness.
+  - *Front* and *Back* have the same channels: effect (all 16), mode, option 1-2, **param 1-10**, speed, mirror,
+    palette (or DMX colours), colour mode; Front adds release and fade time, Back adds level (0 = off), blend,
+    motion, follow touch, and "same as front" for palette / colour mode.
+  - **The encoders take the effect's names**: with Lasers selected, Param 1 is *Beams*, Option 2 *Swing pattern*;
+    with Fluid, Param 1 is *Size* (GDTF mode dependencies). Each effect's defaults are TouchFX's defaults.
+  - *Cursor 1-4*: virtual fingers (on/off + 16-bit Pan/Tilt). While the console moves them, TouchFX shows them as
+    green **C1-C4** crosshairs on the preview (not on the output).
+  - Two ways to work: program the look from the console, or fire TouchFX's own cues with Song + Cue.
+- **Basic v1 (12 ch)** and **Advanced v1 (36 ch)**: unchanged from 0.5 (first six effects, 2 cursors).
+
+Choice channels use 0-9 = **keep** (no change), then named values. When the Effect channel changes, that effect's
+mode, options and params are all applied at once.
 
 With **Art-Net**, TouchFX answers the console's Art-Net polls, so it appears in grandMA3's Art-Net node list; the DMX
 tab shows which console has seen it. Channel chart: [`docs/DMX.md`](docs/DMX.md). *Last change wins* between console and panel; **DMX LOCK** makes the
-console the only master. No console at hand? `python3 tools/dmx_test_sender.py <TouchFX-PC-IP>` sends test DMX.
+console the only master. No console at hand? `python3 tools/dmx_test_sender.py <TouchFX-PC-IP>` sends test DMX (add `--v2` for a scripted Full v2 sequence).
 
 The header also shows the **clock**, and **CPU / GPU / RAM** usage (GPU = Windows' 3D engine load, like Task Manager).
 

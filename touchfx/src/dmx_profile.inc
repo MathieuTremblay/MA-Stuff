@@ -95,3 +95,503 @@ static const DmxChannelDef kDmxAdvanced[] = {
     {DMX_CUR2_Y, 34, 2},  // 35: Cursor2 Tilt (Y)
 };
 constexpr int kDmxAdvancedFootprint = 36;
+
+
+// ---- Full v2 -------------------------------------------------------------------------------------
+enum DmxFn2 {
+  D2_M_DIMMER,
+  D2_M_SHUTTER,
+  D2_M_BPM,
+  D2_M_SCENE,
+  D2_M_SONG,
+  D2_M_CUE,
+  D2_M_CUECMD,
+  D2_M_ACTION,
+  D2_M_AUDIO,
+  D2_M_AUTOPLAY,
+  D2_M_FREEZE,
+  D2_M_GLOW,
+  D2_M_GLOWSIZE,
+  D2_M_SAT,
+  D2_M_BRIGHT,
+  D2_F_EFFECT,
+  D2_F_MODE,
+  D2_F_OPT1,
+  D2_F_OPT2,
+  D2_F_RELEASE,
+  D2_F_FADETIME,
+  D2_F_SPEED,
+  D2_F_MIRROR,
+  D2_F_PALETTE,
+  D2_F_CMODE,
+  D2_F_P1,
+  D2_F_P2,
+  D2_F_P3,
+  D2_F_P4,
+  D2_F_P5,
+  D2_F_P6,
+  D2_F_P7,
+  D2_F_P8,
+  D2_F_P9,
+  D2_F_P10,
+  D2_B_LEVEL,
+  D2_B_EFFECT,
+  D2_B_MODE,
+  D2_B_OPT1,
+  D2_B_OPT2,
+  D2_B_BLEND,
+  D2_B_MOTION,
+  D2_B_FOLLOW,
+  D2_B_SPEED,
+  D2_B_MIRROR,
+  D2_B_PALETTE,
+  D2_B_CMODE,
+  D2_B_P1,
+  D2_B_P2,
+  D2_B_P3,
+  D2_B_P4,
+  D2_B_P5,
+  D2_B_P6,
+  D2_B_P7,
+  D2_B_P8,
+  D2_B_P9,
+  D2_B_P10,
+  D2_LOW_R,
+  D2_LOW_G,
+  D2_LOW_B,
+  D2_MID_R,
+  D2_MID_G,
+  D2_MID_B,
+  D2_HIGH_R,
+  D2_HIGH_G,
+  D2_HIGH_B,
+  D2_C1_DIM,
+  D2_C1_X,
+  D2_C1_Y,
+  D2_C2_DIM,
+  D2_C2_X,
+  D2_C2_Y,
+  D2_C3_DIM,
+  D2_C3_X,
+  D2_C3_Y,
+  D2_C4_DIM,
+  D2_C4_X,
+  D2_C4_Y,
+  D2_COUNT
+};
+
+struct DmxChannelDef2 {
+  DmxFn2 fn;
+  int offset;
+  int bytes;
+};
+
+static const DmxChannelDef2 kDmxFull[] = {
+    {D2_M_DIMMER, 0, 1},  // 1: Body Master dimmer
+    {D2_M_SHUTTER, 1, 1},  // 2: Body Strobe
+    {D2_M_BPM, 2, 1},  // 3: Body BPM
+    {D2_M_SCENE, 3, 1},  // 4: Body Scene
+    {D2_M_SONG, 4, 1},  // 5: Body Song
+    {D2_M_CUE, 5, 2},  // 6: Body Cue
+    {D2_M_CUECMD, 7, 1},  // 8: Body Cue command
+    {D2_M_ACTION, 8, 1},  // 9: Body Action
+    {D2_M_AUDIO, 9, 1},  // 10: Body Audio reactive
+    {D2_M_AUTOPLAY, 10, 1},  // 11: Body Auto play
+    {D2_M_FREEZE, 11, 1},  // 12: Body Video freeze
+    {D2_M_GLOW, 12, 1},  // 13: Body Glow
+    {D2_M_GLOWSIZE, 13, 1},  // 14: Body Glow size
+    {D2_M_SAT, 14, 1},  // 15: Body Saturation
+    {D2_M_BRIGHT, 15, 1},  // 16: Body Brightness
+    {D2_F_EFFECT, 16, 1},  // 17: Front Effect
+    {D2_F_MODE, 17, 1},  // 18: Front Mode
+    {D2_F_OPT1, 18, 1},  // 19: Front Option 1
+    {D2_F_OPT2, 19, 1},  // 20: Front Option 2
+    {D2_F_RELEASE, 20, 1},  // 21: Front Release
+    {D2_F_FADETIME, 21, 1},  // 22: Front Fade time
+    {D2_F_SPEED, 22, 1},  // 23: Front Speed
+    {D2_F_MIRROR, 23, 1},  // 24: Front Mirror
+    {D2_F_PALETTE, 24, 1},  // 25: Front Palette
+    {D2_F_CMODE, 25, 1},  // 26: Front Colour mode
+    {D2_F_P1, 26, 1},  // 27: Front Param 1
+    {D2_F_P2, 27, 1},  // 28: Front Param 2
+    {D2_F_P3, 28, 1},  // 29: Front Param 3
+    {D2_F_P4, 29, 1},  // 30: Front Param 4
+    {D2_F_P5, 30, 1},  // 31: Front Param 5
+    {D2_F_P6, 31, 1},  // 32: Front Param 6
+    {D2_F_P7, 32, 1},  // 33: Front Param 7
+    {D2_F_P8, 33, 1},  // 34: Front Param 8
+    {D2_F_P9, 34, 1},  // 35: Front Param 9
+    {D2_F_P10, 35, 1},  // 36: Front Param 10
+    {D2_B_LEVEL, 36, 1},  // 37: Back Level
+    {D2_B_EFFECT, 37, 1},  // 38: Back Effect
+    {D2_B_MODE, 38, 1},  // 39: Back Mode
+    {D2_B_OPT1, 39, 1},  // 40: Back Option 1
+    {D2_B_OPT2, 40, 1},  // 41: Back Option 2
+    {D2_B_BLEND, 41, 1},  // 42: Back Blend
+    {D2_B_MOTION, 42, 1},  // 43: Back Motion
+    {D2_B_FOLLOW, 43, 1},  // 44: Back Follow touch
+    {D2_B_SPEED, 44, 1},  // 45: Back Speed
+    {D2_B_MIRROR, 45, 1},  // 46: Back Mirror
+    {D2_B_PALETTE, 46, 1},  // 47: Back Palette
+    {D2_B_CMODE, 47, 1},  // 48: Back Colour mode
+    {D2_B_P1, 48, 1},  // 49: Back Param 1
+    {D2_B_P2, 49, 1},  // 50: Back Param 2
+    {D2_B_P3, 50, 1},  // 51: Back Param 3
+    {D2_B_P4, 51, 1},  // 52: Back Param 4
+    {D2_B_P5, 52, 1},  // 53: Back Param 5
+    {D2_B_P6, 53, 1},  // 54: Back Param 6
+    {D2_B_P7, 54, 1},  // 55: Back Param 7
+    {D2_B_P8, 55, 1},  // 56: Back Param 8
+    {D2_B_P9, 56, 1},  // 57: Back Param 9
+    {D2_B_P10, 57, 1},  // 58: Back Param 10
+    {D2_LOW_R, 58, 1},  // 59: Low Red
+    {D2_LOW_G, 59, 1},  // 60: Low Green
+    {D2_LOW_B, 60, 1},  // 61: Low Blue
+    {D2_MID_R, 61, 1},  // 62: Mid Red
+    {D2_MID_G, 62, 1},  // 63: Mid Green
+    {D2_MID_B, 63, 1},  // 64: Mid Blue
+    {D2_HIGH_R, 64, 1},  // 65: High Red
+    {D2_HIGH_G, 65, 1},  // 66: High Green
+    {D2_HIGH_B, 66, 1},  // 67: High Blue
+    {D2_C1_DIM, 67, 1},  // 68: Cursor1 On / off
+    {D2_C1_X, 68, 2},  // 69: Cursor1 Pan (X)
+    {D2_C1_Y, 70, 2},  // 71: Cursor1 Tilt (Y)
+    {D2_C2_DIM, 72, 1},  // 73: Cursor2 On / off
+    {D2_C2_X, 73, 2},  // 74: Cursor2 Pan (X)
+    {D2_C2_Y, 75, 2},  // 76: Cursor2 Tilt (Y)
+    {D2_C3_DIM, 77, 1},  // 78: Cursor3 On / off
+    {D2_C3_X, 78, 2},  // 79: Cursor3 Pan (X)
+    {D2_C3_Y, 80, 2},  // 81: Cursor3 Tilt (Y)
+    {D2_C4_DIM, 82, 1},  // 83: Cursor4 On / off
+    {D2_C4_X, 83, 2},  // 84: Cursor4 Pan (X)
+    {D2_C4_Y, 85, 2},  // 86: Cursor4 Tilt (Y)
+};
+constexpr int kDmxFullFootprint = 87;
+
+constexpr int kDmx2FxCount = 16;
+// effects in the order of the Effect channel
+static const int kDmx2Effects[kDmx2FxCount] = {FX_FLUID, FX_PARTICLES, FX_SPARKLES, FX_RIBBONS, FX_FIREWORKS, FX_STARFIELD, FX_PLEXUS, FX_KALEIDO, FX_LASERS, FX_VIDEO, FX_TUNNEL, FX_GEOMETRY, FX_RIPPLES, FX_SPECTRUM, FX_GRID, FX_STROBE};
+
+// 0-9 and 250-255 = keep (-1), otherwise the slot (the last slot runs to 249)
+inline int dmx2Slot(int v, int n) {
+  if (n <= 0 || v < 10 || v > 249) return -1;
+  int s = (v - 10) / (240 / n);
+  return s < n ? s : n - 1;
+}
+
+// number of named choices of Mode (0), Option 1 (1), Option 2 (2) for an effect
+inline int dmx2ChoiceCount(int fx, int which) {
+  static const int n[3][kDmx2FxCount] = {
+      {0, 3, 0, 0, 0, 0, 0, 0, 6, 7, 7, 7, 0, 3, 10, 9},
+      {0, 6, 0, 0, 6, 0, 0, 0, 4, 3, 2, 6, 2, 2, 2, 8},
+      {0, 0, 0, 0, 2, 0, 0, 0, 4, 2, 0, 0, 0, 0, 0, 2}};
+  for (int i = 0; i < kDmx2FxCount; ++i)
+    if (kDmx2Effects[i] == fx) return n[which][i];
+  return 0;
+}
+
+// sets Mode (which 0) / Option 1 (1) / Option 2 (2) of effect fx to slot
+inline void dmx2SetChoice(Look& l, int fx, int which, int slot) {
+  if (slot < 0) return;
+  if (which == 0) switch (fx) {
+    case FX_PARTICLES: {
+      static const int v[] = {0, 1, 2};
+      if (slot < 3) l.particles.strobe = decltype(l.particles.strobe)(v[slot]);
+      break;
+    }
+    case FX_LASERS: {
+      static const int v[] = {0, 1, 2, 3, 4, 5};
+      if (slot < 6) l.lasers.mode = decltype(l.lasers.mode)(v[slot]);
+      break;
+    }
+    case FX_VIDEO: {
+      static const int v[] = {0, 1, 2, 3, 4, 5, 6};
+      if (slot < 7) l.video.mode = decltype(l.video.mode)(v[slot]);
+      break;
+    }
+    case FX_TUNNEL: {
+      static const int v[] = {0, 3, 4, 5, 6, 7, 8};
+      if (slot < 7) l.tunnel.sides = decltype(l.tunnel.sides)(v[slot]);
+      break;
+    }
+    case FX_GEOMETRY: {
+      static const int v[] = {0, 1, 2, 3, 4, 5, 6};
+      if (slot < 7) l.geometry.shape = decltype(l.geometry.shape)(v[slot]);
+      break;
+    }
+    case FX_SPECTRUM: {
+      static const int v[] = {0, 1, 2};
+      if (slot < 3) l.spectrum.mode = decltype(l.spectrum.mode)(v[slot]);
+      break;
+    }
+    case FX_GRID: {
+      static const int v[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
+      if (slot < 10) l.grid.mode = decltype(l.grid.mode)(v[slot]);
+      break;
+    }
+    case FX_STROBE: {
+      static const int v[] = {0, 1, 2, 3, 4, 5, 6, 7, 8};
+      if (slot < 9) l.strobe.shape = decltype(l.strobe.shape)(v[slot]);
+      break;
+    }
+    default: break;
+  }
+  if (which == 1) switch (fx) {
+    case FX_PARTICLES: {
+      static const int v[] = {0, 1, 2, 3, 4, 5};
+      if (slot < 6) l.particles.strobeRate = decltype(l.particles.strobeRate)(v[slot]);
+      break;
+    }
+    case FX_FIREWORKS: {
+      static const int v[] = {0, 1, 2, 3, 4, 5};
+      if (slot < 6) l.fireworks.rate = decltype(l.fireworks.rate)(v[slot]);
+      break;
+    }
+    case FX_LASERS: {
+      static const int v[] = {0, 1, 2, 3};
+      if (slot < 4) l.lasers.chase = decltype(l.lasers.chase)(v[slot]);
+      break;
+    }
+    case FX_VIDEO: {
+      static const int v[] = {0, 1, 2};
+      if (slot < 3) l.video.fit = decltype(l.video.fit)(v[slot]);
+      break;
+    }
+    case FX_TUNNEL: {
+      static const int v[] = {0, 1};
+      if (slot < 2) l.tunnel.merge = decltype(l.tunnel.merge)(v[slot]);
+      break;
+    }
+    case FX_GEOMETRY: {
+      static const int v[] = {0, 1, 2, 3, 4, 5};
+      if (slot < 6) l.geometry.rate = decltype(l.geometry.rate)(v[slot]);
+      break;
+    }
+    case FX_RIPPLES: {
+      static const int v[] = {0, 1};
+      if (slot < 2) l.ripples.beatDrops = decltype(l.ripples.beatDrops)(v[slot]);
+      break;
+    }
+    case FX_SPECTRUM: {
+      static const int v[] = {0, 1};
+      if (slot < 2) l.spectrum.symmetric = decltype(l.spectrum.symmetric)(v[slot]);
+      break;
+    }
+    case FX_GRID: {
+      static const float v[] = {0.0f, 1.0f};
+      if (slot < 2) l.grid.round = decltype(l.grid.round)(v[slot]);
+      break;
+    }
+    case FX_STROBE: {
+      if (slot < 6) { l.strobe.rate = slot; l.strobe.freeHz = false; l.strobe.audioHits = false; }
+      else if (slot == 6) { l.strobe.freeHz = true; l.strobe.audioHits = false; }
+      else { l.strobe.audioHits = true; }
+      break;
+    }
+    default: break;
+  }
+  if (which == 2) switch (fx) {
+    case FX_FIREWORKS: {
+      static const int v[] = {0, 1};
+      if (slot < 2) l.fireworks.rockets = decltype(l.fireworks.rockets)(v[slot]);
+      break;
+    }
+    case FX_LASERS: {
+      static const int v[] = {0, 1, 2, 3};
+      if (slot < 4) l.lasers.swingMode = decltype(l.lasers.swingMode)(v[slot]);
+      break;
+    }
+    case FX_VIDEO: {
+      static const int v[] = {0, 1};
+      if (slot < 2) l.video.alwaysOn = decltype(l.video.alwaysOn)(v[slot]);
+      break;
+    }
+    case FX_STROBE: {
+      static const int v[] = {0, 1};
+      if (slot < 2) l.strobe.colorCycle = decltype(l.strobe.colorCycle)(v[slot]);
+      break;
+    }
+    default: break;
+  }
+}
+
+// Param 1-10 (index 0-9) of effect fx from a DMX value 0-255
+inline void dmx2SetParam(Look& l, int fx, int index, int v) {
+  float t = v / 255.f;
+  switch (fx) {
+    case FX_FLUID:
+      switch (index) {
+        case 0: l.fluid.size = t; break;
+        case 1: l.fluid.force = t; break;
+        case 2: l.fluid.swirl = t; break;
+        case 3: l.fluid.trail = t; break;
+        case 4: l.fluid.intensity = t; break;
+        default: break;
+      }
+      break;
+    case FX_PARTICLES:
+      switch (index) {
+        case 0: l.particles.amount = t; break;
+        case 1: l.particles.size = t; break;
+        case 2: l.particles.life = t; break;
+        case 3: l.particles.speed = t; break;
+        case 4: l.particles.spread = t; break;
+        case 5: l.particles.gravity = t; break;
+        case 6: l.particles.trail = t; break;
+        default: break;
+      }
+      break;
+    case FX_SPARKLES:
+      switch (index) {
+        case 0: l.sparkles.amount = t; break;
+        case 1: l.sparkles.size = t; break;
+        case 2: l.sparkles.spread = t; break;
+        case 3: l.sparkles.twinkle = t; break;
+        case 4: l.sparkles.life = t; break;
+        case 5: l.sparkles.drift = t; break;
+        case 6: l.sparkles.rays = t; break;
+        case 7: l.sparkles.trail = t; break;
+        default: break;
+      }
+      break;
+    case FX_RIBBONS:
+      switch (index) {
+        case 0: l.ribbons.strands = 1 + int(t * 5 + 0.5f); break;
+        case 1: l.ribbons.length = t; break;
+        case 2: l.ribbons.width = t; break;
+        case 3: l.ribbons.wind = t; break;
+        case 4: l.ribbons.flutter = t; break;
+        case 5: l.ribbons.stiffness = t; break;
+        case 6: l.ribbons.sheen = t; break;
+        default: break;
+      }
+      break;
+    case FX_FIREWORKS:
+      switch (index) {
+        case 0: l.fireworks.size = t; break;
+        case 1: l.fireworks.amount = t; break;
+        case 2: l.fireworks.gravity = t; break;
+        case 3: l.fireworks.trail = t; break;
+        case 4: l.fireworks.sparkle = t; break;
+        default: break;
+      }
+      break;
+    case FX_STARFIELD:
+      switch (index) {
+        case 0: l.starfield.amount = t; break;
+        case 1: l.starfield.speed = t; break;
+        case 2: l.starfield.streak = t; break;
+        case 3: l.starfield.size = t; break;
+        case 4: l.starfield.twinkle = t; break;
+        case 5: l.starfield.brightness = t; break;
+        default: break;
+      }
+      break;
+    case FX_PLEXUS:
+      switch (index) {
+        case 0: l.plexus.amount = t; break;
+        case 1: l.plexus.range = t; break;
+        case 2: l.plexus.size = t; break;
+        case 3: l.plexus.drift = t; break;
+        case 4: l.plexus.spread = t; break;
+        case 5: l.plexus.trail = t; break;
+        default: break;
+      }
+      break;
+    case FX_KALEIDO:
+      switch (index) {
+        case 0: l.kaleido.segments = 2 + int(t * 14 + 0.5f); break;
+        case 1: l.kaleido.rotation = t; break;
+        case 2: l.kaleido.zoom = t; break;
+        case 3: l.kaleido.warp = t; break;
+        case 4: l.kaleido.brush = t; break;
+        case 5: l.kaleido.trail = t; break;
+        default: break;
+      }
+      break;
+    case FX_LASERS:
+      switch (index) {
+        case 0: l.lasers.beams = 1 + int(t * 31 + 0.5f); break;
+        case 1: l.lasers.rotation = t; break;
+        case 2: l.lasers.spread = t; break;
+        case 3: l.lasers.swing = t; break;
+        case 4: l.lasers.scatter = t; break;
+        case 5: l.lasers.width = t; break;
+        case 6: l.lasers.glow = t; break;
+        case 7: l.lasers.length = t; break;
+        case 8: l.lasers.trail = t; break;
+        default: break;
+      }
+      break;
+    case FX_VIDEO:
+      switch (index) {
+        case 0: l.video.size = t; break;
+        case 1: l.video.strength = t; break;
+        case 2: l.video.trail = t; break;
+        case 3: l.video.level = t; break;
+        case 4: l.video.glow = t; break;
+        case 5: l.video.base = t; break;
+        case 6: l.video.segments = 2 + int(t * 14 + 0.5f); break;
+        default: break;
+      }
+      break;
+    case FX_TUNNEL:
+      switch (index) {
+        case 0: l.tunnel.speed = t; break;
+        case 1: l.tunnel.density = t; break;
+        case 2: l.tunnel.twist = t; break;
+        case 3: l.tunnel.width = t; break;
+        case 4: l.tunnel.depth = t; break;
+        default: break;
+      }
+      break;
+    case FX_GEOMETRY:
+      switch (index) {
+        case 0: l.geometry.size = t; break;
+        case 1: l.geometry.spin = t; break;
+        case 2: l.geometry.width = t; break;
+        case 3: l.geometry.life = t; break;
+        case 4: l.geometry.glow = t; break;
+        default: break;
+      }
+      break;
+    case FX_RIPPLES:
+      switch (index) {
+        case 0: l.ripples.size = t; break;
+        case 1: l.ripples.strength = t; break;
+        case 2: l.ripples.decay = t; break;
+        case 3: l.ripples.shine = t; break;
+        default: break;
+      }
+      break;
+    case FX_SPECTRUM:
+      switch (index) {
+        case 0: l.spectrum.bars = 8 + int(t * 120 + 0.5f); break;
+        case 1: l.spectrum.size = t; break;
+        case 2: l.spectrum.gain = t; break;
+        case 3: l.spectrum.width = t; break;
+        case 4: l.spectrum.glow = t; break;
+        default: break;
+      }
+      break;
+    case FX_GRID:
+      switch (index) {
+        case 0: l.grid.tile = t; break;
+        case 1: l.grid.gap = t; break;
+        case 2: l.grid.bulb = t; break;
+        case 3: l.grid.radius = t; break;
+        case 4: l.grid.decay = t; break;
+        default: break;
+      }
+      break;
+    case FX_STROBE:
+      switch (index) {
+        case 0: l.strobe.duty = t; break;
+        case 1: l.strobe.size = t; break;
+        case 2: l.strobe.hz = 1.0f + t * 24.0f; break;
+        default: break;
+      }
+      break;
+    default: break;
+  }
+}

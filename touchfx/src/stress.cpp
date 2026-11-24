@@ -536,7 +536,8 @@ void stressTick(App& a, float dt, float frameSeconds) {
   // DMX floods: 10-20 s of random frames at 40 Hz every minute or two (only when DMX listens on all cards)
   if (g.elapsed >= g.nextDmx && a.st.dmx.protocol != DMXP_OFF && a.st.dmxAdapter.empty()) {
     g.dmxUntil = g.elapsed + rnd(10.f, 20.f);
-    g.nextDmx = g.elapsed + rnd(60.f, 120.f);
+    a.st.dmx.mode = chance(0.6f) ? 2 : irnd(0, 1);  // mostly the Full v2 profile
+    g.nextDmx = g.elapsed + rnd(25.f, 60.f);
     count("DMX flood");
   }
   if (g.elapsed < g.dmxUntil) {

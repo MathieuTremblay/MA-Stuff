@@ -1006,8 +1006,11 @@ void DmxTab(App& a) {
   }
   Stepper("Start address", &d.address, 1, 512);
   SectionLabel("PROFILE (GDTF mode)");
-  static const char* modes[] = {"BASIC (12 ch)", "ADVANCED (36 ch)"};
-  Choice("dmode", modes, 2, &d.mode);
+  static const char* modes[] = {"BASIC v1 (12 ch)", "ADVANCED v1 (36 ch)", "FULL v2 (87 ch)"};
+  Choice("dmode", modes, 3, &d.mode);
+  if (d.mode == 2)
+    Hint("Both layers, cues and songs, video freeze, 4 cursors. In grandMA3 the encoders show each effect's own names. "
+         "See DMX-chart in the gdtf folder.");
   int foot = dmxFootprint(d.mode);
   int last = d.address + foot - 1;
   char buf[200];
@@ -1019,7 +1022,7 @@ void DmxTab(App& a) {
     ImGui::PopStyleColor();
   } else {
     std::snprintf(buf, sizeof(buf), "Uses channels %d-%d. Patch the \"TouchFX\" fixture (gdtf folder next to TouchFX.exe) "
-                  "in mode %s.", d.address, last, d.mode == 0 ? "Basic" : "Advanced");
+                  "in mode %s.", d.address, last, d.mode == 0 ? "Basic" : d.mode == 1 ? "Advanced" : "Full v2");
     Hint(buf);
   }
   OnOff("DMX LOCK (console always wins)", &d.lock);
@@ -1827,6 +1830,22 @@ void Canvas(App& a) {
       else
         dl->AddCircle(c, 12 * S(), IM_COL32(255, 255, 255, 60), 24, 1.5f * S());
     }
+  }
+  // DMX cursors: a green crosshair with its number, on the preview only (to see where the console points)
+  for (int k = 0; k < 4; ++k) {
+    const App::Cursor& cu = a.dmxCursor[k];
+    if (!a.dmxActive || !cu.active) continue;
+    float s = S();
+    ImVec2 c(a.canvas.x + cu.pos.x * a.canvas.w, a.canvas.y + (1.f - cu.pos.y) * a.canvas.h);
+    ImU32 g = IM_COL32(90, 255, 140, 230);
+    dl->AddCircle(c, 18 * s, g, 32, 2.f * s);
+    dl->AddLine(ImVec2(c.x - 28 * s, c.y), ImVec2(c.x - 10 * s, c.y), g, 2.f * s);
+    dl->AddLine(ImVec2(c.x + 10 * s, c.y), ImVec2(c.x + 28 * s, c.y), g, 2.f * s);
+    dl->AddLine(ImVec2(c.x, c.y - 28 * s), ImVec2(c.x, c.y - 10 * s), g, 2.f * s);
+    dl->AddLine(ImVec2(c.x, c.y + 10 * s), ImVec2(c.x, c.y + 28 * s), g, 2.f * s);
+    char t[8];
+    std::snprintf(t, sizeof(t), "C%d", k + 1);
+    dl->AddText(ImVec2(c.x + 14 * s, c.y - 30 * s), g, t);
   }
   if (a.dmxActive && a.dmxDim < 0.02f && !a.dmxBlackout && !a.blackout) {  // (blackouts: BlackoutOverlay)
     const char* t = "DMX DIMMER AT 0";

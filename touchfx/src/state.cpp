@@ -194,7 +194,7 @@ void sanitize(AppState& s) {
   clampRef(s.dmx.sacnUniverse, 1, 63999);
   clampRef(s.dmx.artnetUniverse, 0, 32767);
   clampRef(s.dmx.address, 1, 512);
-  clampRef(s.dmx.mode, 0, 1);
+  clampRef(s.dmx.mode, 0, 2);
   clampRef(s.audio.points, 1, 4);
   clampRef(s.maxTouches, 1, kMaxTouches);
   clampRef(s.external.display, 0, 15);
