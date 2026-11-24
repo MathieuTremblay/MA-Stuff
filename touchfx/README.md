@@ -31,7 +31,7 @@ a green **SHOW** badge and outline in show mode (a blackout's red frame takes ov
 **SHOW MODE** (top of the panel) locks everything that could break a show: SETTINGS, scene STORE / DELETE,
 saving palettes, cue editing, undo, and the keyboard except SPACE (tap, or GO in the CUES view), ENTER (GO), B
 (blackout) and the CUES view keys. Closing TouchFX asks for confirmation. Effects, their sliders, colours, mirror, BPM, scenes and GO keep working.
-**Hold the SHOW button for 3 seconds** to unlock. Windows sleep / screen saver are blocked while TouchFX runs.
+**Hold the SHOW button for 2 seconds** to unlock. Windows sleep / screen saver are blocked while TouchFX runs.
 
 ## Cues
 
@@ -45,7 +45,7 @@ The **CUES** tab is a cue list per song:
   **follow** (go on automatically after N seconds or N bars). BPM is never recalled.
 - **GO** fires the next cue (orange outline), **BACK** the previous one; tap a cue to make it the next one.
   Different effects crossfade over the cue's fade, the same effect glides every value.
-- **RECORD** stores the live look as a new cue after the one on stage, **UPDATE** saves live tweaks into it
+- **RECORD** stores the live look as a new cue after the one on stage, **UPDATE** saves the live look into the cue on stage, or into the cue you picked yourself (tapped or chosen with the arrows) since the last GO; the button shows which (*UPDATE 3*, *UPDATE 4.5 (sel.)*)
   (the cue shows *modified* when you changed something), **EDIT** opens the number, name, fade, follow, move, copy,
   delete.
 - **GO on the last cue** (set per song in the song list): **STOP** (end of song), **LOOP TO CUE 1**, or **NEXT SONG**
@@ -77,9 +77,9 @@ Swipe up/down anywhere in the panel to scroll (sliders: swipe sideways to change
 | **FRONT / BACK** | Which layer the LIVE controls edit. **FRONT** (orange) is the effect you play with your fingers. **BACK** (blue) is the background layer: the effect bar, sliders, mirror and speed then edit the background (see *Background layer*). |
 | **Video** | The video input played with the fingers (choose the input in *SETTINGS → VIDEO IN*): **REVEAL** (paint the video into view, it fades back over the trail time), **LIQUID** (push the picture like a liquid), **RIPPLE** (water ripples bend it), **KALEIDO** (kaleidoscope around your first finger), **PIXEL** (big pixels where your fingers go), **WARP** (swirl / pinch around each finger), **CLEAN** (just the video, nothing added). **ALWAYS ON** keeps the picture up without fingers and it never fades on release (with REVEAL, the unpainted video shows at the *base level*). **FREEZE** (or the **F** key) holds the current frame for both layers, even through a lost signal, until you tap it again (header: *VIDEO FROZEN*; not stored in scenes or cues). Fit: fill, fit or stretch. The palette only colours the glow / highlights the effect adds (Glow at 0 = pure video) and the gradient that stands in when there is no input. |
 | **LED grid** | LED-wall tiles: **TRAIL**, **RINGS**, **SPARKLE**, **SCROLL** (colour bands sweeping on the beat, direction from your finger), **EQUALIZER** (VU columns from the audio), **PLASMA**, **RAIN**, **CHECKER** (checker / stripes / quarters flipping on the beat), **RADAR** (sweep around each finger), **VIDEO MAP** (the video input on the tiles). Square or round tiles, gap, size, and **Bulb**: incandescent lamps (amber when dim, warm white at full, slow to heat up and cool down, a glowing round bulb). |
-| **Lasers** | Laser-show modes: **FAN** (fan of beams from the finger), **AIM** (projectors along the bottom converge on your finger), **TUNNEL** (rings on the beat), **WAVE**, **SCAN**, **WEB**. *Swing* sweeps on the beat (**TOGETHER**, **MIRROR** each side opposite, **WAVE** one after the other, **RANDOM** each beam its own direction, speed and start, re-picked at every touch); *Scatter* gives each beam a random angle offset; *Chase* makes beams blink in sequence / alternate / random. |
+| **Lasers** | Laser-show modes: **FAN** (fan of beams from the finger), **AIM** (projectors along the bottom converge on your finger), **TUNNEL** (rings on the beat), **WAVE**, **SCAN**, **WEB**. *Swing* sweeps on the beat and *Rotation* turns the beams, both following the **swing pattern** (**TOGETHER**, **MIRROR** each side opposite, **WAVE** one after the other / the fan opens and closes, **RANDOM** each beam its own direction, speed and start, re-picked at every touch); *Scatter* gives each beam a random angle offset; *Chase* makes beams blink in sequence / alternate / random. |
 | **Quick colours** | Tap LOW / MID / HIGH under the palettes to override the colours live without touching the palette. **SAVE TO …** stores them in the palette, **BACK TO PALETTE** drops the override. Scenes remember overrides. |
-| **Palette / colour mode** | Pick one of the 10 palettes. Colour mode: Gradient (over the effect's life), Speed (finger speed), Position (left to right), Beat (steps each beat), Random, **Video** (every pixel takes the colour of the video input under it). |
+| **Palette / colour mode** | Pick one of the 10 palettes. Colour mode: Gradient (over the effect's life), Speed (finger speed), Position (left to right), Beat (steps each beat), Random, **Video** (picks up the video's colour where your fingers are and the effect carries it: smoke swirls it, particles keep it), **Video mask** (every pixel takes the colour of the video under it). |
 | **Scenes** | Under the canvas (or in the LIVE tab). **STORE** then tap a slot to save the whole look and name it; tap a slot to recall (the BPM is never changed by a scene). Long-press a scene to rename it. **DELETE** then tap to clear. |
 
 ### SETTINGS

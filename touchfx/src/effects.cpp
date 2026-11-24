@@ -11,7 +11,30 @@ Vec3 paletteAt(const Palette& p, float t) {
   return t < 0.5f ? mix3(lo, mi, t * 2.f) : mix3(mi, hi, (t - 0.5f) * 2.f);
 }
 
-Vec3 FxCtx::color(float t) const { return paletteAt(*pal, t); }
+// VIDEO colour mode: colorT() returns 2 + an encoded canvas position; color() looks the video up there.
+static float encodePos(Vec2 p) {
+  int x = std::clamp(int(p.x * 1023.f + 0.5f), 0, 1023), y = std::clamp(int(p.y * 1023.f + 0.5f), 0, 1023);
+  return 2.f + float(y * 1024 + x) / (1024.f * 1024.f);
+}
+
+Vec3 FxCtx::color(float t) const {
+  if (t < 2.f) return paletteAt(*pal, t);
+  int code = std::clamp(int((t - 2.f) * (1024.f * 1024.f) + 0.5f), 0, 1024 * 1024 - 1);
+  Vec2 p((code % 1024) / 1023.f, (code / 1024) / 1023.f);
+  if (!vidThumb || vidThumbW <= 0 || vidThumbH <= 0) return paletteAt(*pal, p.x);  // no video: palette by position
+  float u = (p.x - 0.5f) * vidFitX + 0.5f, v = (p.y - 0.5f) * vidFitY + 0.5f;
+  float fx = std::clamp(u, 0.f, 1.f) * (vidThumbW - 1), fy = std::clamp(v, 0.f, 1.f) * (vidThumbH - 1);
+  int x0 = int(fx), y0 = int(fy), x1 = std::min(x0 + 1, vidThumbW - 1), y1 = std::min(y0 + 1, vidThumbH - 1);
+  float ax = fx - x0, ay = fy - y0;
+  auto px = [&](int x, int y) {
+    const float* q = vidThumb + (size_t(y) * vidThumbW + x) * 3;
+    return Vec3(q[0], q[1], q[2]);
+  };
+  Vec3 col = (px(x0, y0) * (1 - ax) + px(x1, y0) * ax) * (1 - ay) + (px(x0, y1) * (1 - ax) + px(x1, y1) * ax) * ay;
+  // keep the hue, soften the darkness a little so dark parts of the video still give some light
+  float m = std::max(col.x, std::max(col.y, col.z));
+  return col * ((0.35f + 0.65f * m) / std::max(m, 0.12f));
+}
 
 float FxCtx::colorT(const Emitter* e, float gradient, float rnd) const {
   switch (look->colorMode) {
@@ -23,6 +46,16 @@ float FxCtx::colorT(const Emitter* e, float gradient, float rnd) const {
       return step * 0.5f;  // low -> mid -> high, one per beat
     }
     case COLOR_RANDOM: return saturate(rnd);
+    case COLOR_VIDEO: {
+      // the video's colour where the finger is (no finger given: near one of the fingers, picked by rnd)
+      Vec2 p(saturate(gradient), 0.5f);
+      if (e) p = e->pos;
+      else if (!live.empty()) {
+        const Emitter& f = live[size_t(rnd * live.size()) % live.size()];
+        p = f.pos + Vec2(hash01(uint32_t(rnd * 9e6f)) - 0.5f, hash01(uint32_t(rnd * 7e6f) + 3u) - 0.5f) * 0.08f;
+      }
+      return encodePos(p);
+    }
   }
   return 0.5f;
 }

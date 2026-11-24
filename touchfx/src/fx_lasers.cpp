@@ -81,7 +81,6 @@ class Lasers : public Effect {
     const LaserSettings& s = c.look->lasers;
     float dt = std::min(c.dt, 0.05f);
     rot += dt * c.speed * (s.rotation - 0.5f) * 2.f * kPi * 0.5f;
-    rot = std::fmod(rot, kTau * 64.f);
 
     fxFade(trail, std::exp(-dt * mixf(90.f, 1.5f, s.trail)) * c.fadeMul);
 
@@ -152,6 +151,18 @@ class Lasers : public Effect {
         default: return swingAng;
       }
     };
+    // rotation of beam i, with the same pattern as the swing
+    auto rotOf = [&](int i, int touch, float side, double scale = 1.0) {
+      double r = rot;
+      uint32_t h = seed * 7919u + uint32_t(i) * 131u + uint32_t(touch) * 977u;
+      switch (s.swingMode) {
+        case SWING_MIRROR: r = rot * side; break;
+        case SWING_WAVE: r = rot + 0.6 * std::sin(rot * 0.7 - i * 0.5); break;  // the fan opens and closes
+        case SWING_RANDOM: r = rot * (hash01(h + 5u) < 0.5f ? -1.0 : 1.0) * (0.5 + hash01(h + 6u)); break;
+        default: break;
+      }
+      return float(std::fmod(r * scale, double(kTau)));
+    };
     // scatter: each beam a random fixed offset (unit = the gap between beams)
     auto scatterOf = [&](int i, int touch, float unit) {
       return (hash01(seed * 31u + uint32_t(i) * 733u + uint32_t(touch) * 53u) - 0.5f) * 2.f * s.scatter * unit;
@@ -174,7 +185,8 @@ class Lasers : public Effect {
             if (!visible(s, c, i, n)) continue;
             float k = full ? float(i) / n : (n > 1 ? float(i) / (n - 1) - 0.5f : 0.f);
             float unit = n > 1 ? fanA / float(full ? n : n - 1) : 0.6f;
-            float ang = kPi * 0.5f + rot + swingOf(i, e.touch, k < 0.f ? -1.f : 1.f) + k * fanA +
+            float side = k < 0.f ? -1.f : 1.f;
+            float ang = kPi * 0.5f + rotOf(i, e.touch, side) + swingOf(i, e.touch, side) + k * fanA +
                         scatterOf(i, e.touch, unit * 1.5f);
             line(o, o + dirOf(e, ang) * len, beamColor(&e, i, n, e.touch));
           }
@@ -229,7 +241,7 @@ class Lasers : public Effect {
         for (const Emitter& e : em) {
           Vec2 o = toPx(e.pos);
           for (int i = 0; i < extra; ++i) {
-            float ang = rot + swingOf(i, e.touch, (i & 1) ? -1.f : 1.f) + kTau * i / extra +
+            float ang = rotOf(i, e.touch, (i & 1) ? -1.f : 1.f) + swingOf(i, e.touch, (i & 1) ? -1.f : 1.f) + kTau * i / extra +
                         scatterOf(i, e.touch, kTau / extra);
             line(o, o + dirOf(e, ang) * (len * 0.25f), beamColor(&e, i, extra, 3));
           }
@@ -242,7 +254,7 @@ class Lasers : public Effect {
         float spacing = mixf(0.005f, 0.1f, s.spread) * mixf(0.4f, 1.f, open) * H;
         for (const Emitter& e : em) {
           Vec2 o = toPx(e.pos);
-          Vec2 d = dirOf(e, rot * 0.25f + swingOf(e.touch, e.touch, (e.touch & 1) ? -1.f : 1.f) +
+          Vec2 d = dirOf(e, rotOf(e.touch, e.touch, (e.touch & 1) ? -1.f : 1.f, 0.25) + swingOf(e.touch, e.touch, (e.touch & 1) ? -1.f : 1.f) +
                                 scatterOf(0, e.touch, 0.5f));
           Vec2 nrm(-d.y, d.x);
           for (int i = 0; i < n; ++i) {
@@ -270,7 +282,7 @@ class Lasers : public Effect {
             float wob = s.swing * 0.25f;
             Vec2 prev;
             for (int k = 0; k <= sides; ++k) {
-              float a = kTau * k / sides + rot;
+              float a = kTau * k / sides + float(std::fmod(rot, double(kTau)));
               float rr = r * (1.f + wob * std::sin(a * 3.f + float(c.beat) * kPi));
               Vec2 p = o + Vec2(std::cos(a), std::sin(a)) * rr;
               if (k) line(prev, p, col, 0.f, 0.f);
@@ -291,7 +303,7 @@ class Lasers : public Effect {
           for (int j = 0; j < lines; ++j) {
             if (!visible(s, c, j, lines)) continue;
             float freq = kTau / W * (1.5f + j * 0.5f + s.swing * 3.f);
-            float phase = rot * 2.f + j * 0.9f + float(c.beat) * kPi * 0.5f;
+            float phase = float(std::fmod(rot * 2.0, double(kTau))) + j * 0.9f + float(c.beat) * kPi * 0.5f;
             Vec3 col = beamColor(&e, j, lines, 6);
             Vec2 prev;
             for (float x = 0; x <= W + step; x += step) {
@@ -333,7 +345,7 @@ class Lasers : public Effect {
   Target trail;
   std::vector<Seg> segs;
   std::vector<BeamVertex> verts;
-  float rot = 0;
+  double rot = 0;  // not wrapped: beams turning at different speeds must not jump
   uint32_t seed = 1;
   size_t lastCount = 0;
 };

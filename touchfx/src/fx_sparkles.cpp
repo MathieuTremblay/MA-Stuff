@@ -10,7 +10,7 @@ constexpr int kMaxSparkles = 6000;
 
 struct Sparkle {
   Vec2 pos, vel;  // aspect space
-  float life, maxLife, size, phase, freq, rnd, speedT, posT;
+  float life, maxLife, size, phase, freq, rnd, speedT, posT, vidT;
 };
 
 class Sparkles : public Effect {
@@ -60,6 +60,7 @@ class Sparkles : public Effect {
           p.rnd = rng.next();
           p.speedT = saturate(e.speed / 1.5f);
           p.posT = saturate(e.pos.x);
+          p.vidT = c.look->colorMode == COLOR_VIDEO ? c.colorT(&e, 0.f, p.rnd) : 0.f;
           sp.push_back(p);
         }
       }
@@ -91,6 +92,7 @@ class Sparkles : public Effect {
         case COLOR_SPEED: t = p.speedT; break;
         case COLOR_POSITION: t = p.posT; break;
         case COLOR_RANDOM: t = p.rnd; break;
+        case COLOR_VIDEO: t = p.vidT; break;
         default: t = c.colorT(nullptr, age, p.rnd);
       }
       Vec3 col = c.color(t) * 2.2f;

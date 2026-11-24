@@ -42,6 +42,7 @@ void deleteCue(App& a, CueList& cl, int i) {
   CuePlayer& p = a.cue;
   if (i < 0 || i >= int(cl.cues.size())) return;
   cl.cues.erase(cl.cues.begin() + i);
+  p.chosen = -1;
   if (p.current == i) p.current = -1;
   else if (p.current > i) --p.current;
   if (p.next == i) p.next = i < int(cl.cues.size()) ? i : -1;
@@ -128,6 +129,7 @@ void CueEditSheet(App& a) {
     std::swap(cl.cues[g_edit].number, cl.cues[g_edit - 1].number);
     fixIndex(p.current, g_edit, g_edit - 1);
     fixIndex(p.next, g_edit, g_edit - 1);
+    fixIndex(p.chosen, g_edit, g_edit - 1);
     --g_edit;
   }
   ImGui::EndDisabled();
@@ -138,6 +140,7 @@ void CueEditSheet(App& a) {
     std::swap(cl.cues[g_edit].number, cl.cues[g_edit + 1].number);
     fixIndex(p.current, g_edit, g_edit + 1);
     fixIndex(p.next, g_edit, g_edit + 1);
+    fixIndex(p.chosen, g_edit, g_edit + 1);
     ++g_edit;
   }
   ImGui::EndDisabled();
@@ -370,7 +373,10 @@ void CuesPanel(App& a) {
     ImGui::PushID(i);
     ImVec2 pos = ImGui::GetCursorScreenPos();
     float w = ImGui::GetContentRegionAvail().x;
-    if (ImGui::InvisibleButton("row", ImVec2(w, rowH))) p.next = i;  // tap = make it the next cue
+    if (ImGui::InvisibleButton("row", ImVec2(w, rowH))) {  // tap = make it the next cue (and UPDATE's target)
+      p.next = i;
+      p.chosen = i;
+    }
     bool cur = p.current == i, nxt = p.next == i;
     if (nxt && p.scrollToNext) {
       ImGui::SetScrollHereY(0.5f);
@@ -439,11 +445,17 @@ void CuesPanel(App& a) {
       if (!a.undo.undo.empty()) a.undo.undo.back().label = "record " + cueLabel(cl, p.current);
     }
     ImGui::SameLine();
-    ImGui::BeginDisabled(p.current < 0);
-    if (Toggle("UPDATE", p.modified, ImVec2(bw, 56 * s))) {
-      undoPush(a, "update " + cueLabel(cl, p.current));
-      cueUpdate(a);
+    int upd = cueUpdateTarget(a);
+    bool sel = upd >= 0 && upd != p.current;
+    std::string ul = upd < 0 ? std::string("UPDATE")
+                             : "UPDATE\n" + cueNumText(cl.cues[upd].number) + (sel ? " (sel.)" : "");
+    ImGui::BeginDisabled(upd < 0);
+    ImGui::PushFont(a.fontSmall);
+    if (Toggle((ul + "##upd").c_str(), (p.modified && !sel) || sel, ImVec2(bw, 56 * s), sel ? kAccent : kAccent)) {
+      undoPush(a, "update " + cueLabel(cl, upd));
+      cueUpdate(a, upd);
     }
+    ImGui::PopFont();
     ImGui::EndDisabled();
     ImGui::SameLine();
     int target = p.next >= 0 ? p.next : p.current;

@@ -290,6 +290,7 @@ void action(App& a) {
     l.grid.mode = irnd(0, GRID_COUNT - 1);
     l.grid.bulb = chance(0.5f) ? rnd() : 0.f;
     l.lasers.swingMode = irnd(0, SWING_COUNT - 1);
+    if (chance(0.3f)) l.colorMode = COLOR_VIDEO;
     l.palette = irnd(0, kNumPalettes - 1);
     l.colorMode = irnd(0, COLOR_COUNT - 1);
     l.video.mode = irnd(0, VID_COUNT - 1);
@@ -318,7 +319,12 @@ void action(App& a) {
         a.st.cueLists[a.st.activeList].cues.back().fade = rnd(0.f, 3.f);
         count("cue record");
         break;
-      case 2: case 3: case 4: cueCommand(a, CUE_GO); count("cue GO"); break;
+      case 2: case 3: cueCommand(a, CUE_GO); count("cue GO"); break;
+      case 4:
+        undoPush(a, "update cue");
+        cueUpdate(a, cueUpdateTarget(a));
+        count("cue update");
+        break;
       case 5: cueCommand(a, CUE_BACK); count("cue BACK"); break;
       case 6: cueCommand(a, chance(0.5f) ? CUE_SELECT_NEXT : CUE_SELECT_PREV); count("cue select"); break;
       case 7: undoApply(a, chance(0.3f)); count("undo / redo"); break;

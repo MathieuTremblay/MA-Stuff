@@ -13,6 +13,7 @@ struct Particle {
   float life, maxLife, size, rnd, phase;
   const Emitter* src;  // only valid on spawn frame
   float speedT, posT;  // stored for the speed / position colour modes
+  float vidT;          // VIDEO colour mode: the colour picked up where it was born
 };
 
 class Particles : public Effect {
@@ -88,6 +89,7 @@ class Particles : public Effect {
         case COLOR_SPEED: t = p.speedT; break;
         case COLOR_POSITION: t = p.posT; break;
         case COLOR_RANDOM: t = p.rnd; break;
+        case COLOR_VIDEO: t = p.vidT; break;
         default: t = c.colorT(nullptr, age, p.rnd);
       }
       Vec3 col = c.color(t) * 2.6f;
@@ -113,6 +115,7 @@ class Particles : public Effect {
     p.phase = rng.next();
     p.speedT = saturate(e.speed / 1.5f);
     p.posT = saturate(e.pos.x);
+    p.vidT = c.look->colorMode == COLOR_VIDEO ? c.colorT(&e, 0.f, p.rnd) : 0.f;
     p.src = nullptr;
     (void)c;
     ps.push_back(p);

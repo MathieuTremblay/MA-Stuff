@@ -573,13 +573,15 @@ void PaletteGrid(App& a) {
 
 void ColorModeChoice(App& a) {
   Look& l = EL(a);
-  static const char* modes[] = {"GRADIENT", "SPEED", "POSITION", "BEAT", "RANDOM", "VIDEO"};
-  Choice("cmode", modes, COLOR_COUNT, &l.colorMode, 3);
+  static const char* modes[] = {"GRADIENT", "SPEED", "POSITION", "BEAT", "RANDOM", "VIDEO", "VIDEO MASK"};
+  Choice("cmode", modes, COLOR_COUNT, &l.colorMode, 4);
   static const char* help[] = {
       "Low > Mid > High over the life of the effect.", "Slow finger = Low, fast finger = High.",
       "Left of the canvas = Low, right = High.", "Steps Low > Mid > High on every beat.",
       "A random mix of the three colours.",
-      "Every pixel takes the colour of the video input under it (palette colours while there is no video)."};
+      "Picks up the video's colour where your fingers are; the effect carries it (smoke swirls it, particles keep "
+      "it). Palette colours while there is no video.",
+      "Every pixel takes the colour of the video under it, like a mask (palette colours while there is no video)."};
   Hint(help[std::clamp(l.colorMode, 0, COLOR_COUNT - 1)]);
 }
 

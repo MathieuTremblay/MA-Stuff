@@ -53,6 +53,11 @@ class VideoInput {
   void pauseNdi(bool p);   // NDI restarts when the NDI output card changes
   // FREEZE: hold the current picture (also through a lost signal) until unfrozen. A live control, not saved.
   void setFrozen(bool f) { frozen_ = f; }
+  // small RGB copy of the picture (64 x 36, row 0 at the bottom) for the VIDEO colour mode; made only when wanted
+  void setWantThumb(bool w) { wantThumb_ = w; }
+  const float* thumb() const { return thumb_.empty() ? nullptr : thumb_.data(); }
+  int thumbW() const { return 64; }
+  int thumbH() const { return 36; }
   bool frozen() const { return frozen_; }
   GLuint texture() const { return out_.tex; }
   int width() const { return out_.w; }
@@ -94,6 +99,11 @@ class VideoInput {
 
   // main thread
   bool frozen_ = false;
+  bool wantThumb_ = false;
+  uint64_t thumbFrame_ = 0;
+  Target thumbA_, thumbB_;
+  std::vector<float> thumb_;
+  void makeThumb();
   int state_ = VS_OFF;
   double sinceFrame_ = 1e9;
   float level_ = 0;

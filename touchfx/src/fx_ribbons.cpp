@@ -172,7 +172,7 @@ class Ribbons : public Effect {
         float hw = width * 0.5f * (1.f - 0.45f * u) * facing;
         float colorPos = c.look->colorMode == COLOR_GRADIENT ? u : c.colorT(nullptr, u, hash01(uint32_t(r.touch) * 7u));
         Vec3 front = c.color(colorPos);
-        Vec3 back = c.color(1.f - colorPos) * 0.55f;
+        Vec3 back = colorPos >= 2.f ? front * 0.55f : c.color(1.f - colorPos) * 0.55f;  // (VIDEO: same colour)
         float f = std::fabs(facing);
         Vec3 col = (facing >= 0 ? front : back) * (0.3f + 0.9f * f);
         col = col + Vec3(1, 1, 1) * (s.sheen * 0.7f * std::pow(f, 14.f));  // silk highlight when flat to us

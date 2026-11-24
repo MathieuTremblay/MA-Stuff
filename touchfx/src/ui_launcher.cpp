@@ -194,23 +194,23 @@ void ShowModeButton(App& a, ImVec2 size) {
     }
     return;
   }
-  // Locked: hold 3 seconds to unlock (a brush of the hand can't do it).
+  // Locked: hold 2 seconds to unlock (a brush of the hand can't do it).
   ImVec2 p = ImGui::GetCursorScreenPos();
   ImGui::InvisibleButton("##unlock", size);
   bool held = ImGui::IsItemActive();
   a.unlockHold = held ? a.unlockHold + ImGui::GetIO().DeltaTime : 0.f;
-  float t = std::min(1.f, a.unlockHold / 3.f);
+  float t = std::min(1.f, a.unlockHold / 2.f);
   ImDrawList* dl = ImGui::GetWindowDrawList();
   ImVec2 p1(p.x + size.x, p.y + size.y);
   float r = 6 * s;
   dl->AddRectFilled(p, p1, ImGui::GetColorU32(kDanger), r);
   if (t > 0) dl->AddRectFilled(p, ImVec2(p.x + size.x * t, p1.y), IM_COL32(255, 255, 255, 90), r);
-  const char* lbl = held ? "KEEP HOLDING..." : "SHOW (HOLD 3s)";
+  const char* lbl = held ? "KEEP HOLDING..." : "SHOW (HOLD 2s)";
   ImGui::PushFont(a.fontSmall);
   ImVec2 ts = ImGui::CalcTextSize(lbl);
   dl->AddText(ImVec2(p.x + (size.x - ts.x) * 0.5f, p.y + (size.y - ts.y) * 0.5f), IM_COL32(255, 255, 255, 255), lbl);
   ImGui::PopFont();
-  if (a.unlockHold >= 3.f) {
+  if (a.unlockHold >= 2.f) {
     a.st.showMode = false;
     a.unlockHold = 0;
     logLine("Show mode off");

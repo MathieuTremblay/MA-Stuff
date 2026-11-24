@@ -76,6 +76,7 @@ void cueSort(App& a, int* track) {
   };
   remap(a.cue.current);
   remap(a.cue.next);
+  remap(a.cue.chosen);
   if (track) remap(*track);
 }
 
@@ -116,6 +117,7 @@ bool undoApply(App& a, bool redo) {
   p.current = step.current < n ? step.current : -1;
   p.next = step.next < n ? step.next : -1;
   p.fading = false;
+  p.chosen = -1;
   if (p.current >= 0) {
     p.snapshot = lookFingerprint(a.st.cueLists[a.st.activeList].cues[p.current].look);
     p.modified = lookFingerprint(a.st.look) != p.snapshot;
@@ -189,6 +191,7 @@ void cueFire(App& a, int index) {
     p.fading = true;
   }
   a.bgFadeOverride = cue.fade;  // the background layer fades in / out / changes over the cue's fade too
+  p.chosen = -1;  // after a GO, UPDATE is for the cue on stage again
   p.current = index;
   p.next = index + 1 < int(cl->cues.size()) ? index + 1 : -1;
   p.goTime = a.time;
@@ -252,11 +255,13 @@ void cueCommand(App& a, CueCommand cmd) {
     case CUE_SELECT_PREV:
       if (n == 0) break;
       p.next = p.next < 0 ? n - 1 : std::max(0, p.next - 1);
+      p.chosen = p.next;
       p.scrollToNext = true;
       break;
     case CUE_SELECT_NEXT:
       if (n == 0) break;
       p.next = p.next < 0 ? n - 1 : std::min(n - 1, p.next + 1);
+      p.chosen = p.next;
       p.scrollToNext = true;
       break;
     case CUE_SONG_PREV: cueSelectList(a, a.st.activeList - 1); break;
@@ -271,6 +276,7 @@ void cueBack(App& a) {
 void cueSelectList(App& a, int list) {
   if (list < 0 || list >= int(a.st.cueLists.size())) return;
   a.st.activeList = list;
+  a.cue.chosen = -1;
   a.cue.current = -1;
   a.cue.next = a.st.cueLists[list].cues.empty() ? -1 : 0;
   a.cue.fading = false;
@@ -302,12 +308,23 @@ void cueRecord(App& a) {
   a.cue.modified = false;
 }
 
-void cueUpdate(App& a) {
+void cueUpdate(App& a, int index) {
   CueList* cl = activeList(a);
-  if (!cl || a.cue.current < 0 || a.cue.current >= int(cl->cues.size())) return;
-  cl->cues[a.cue.current].look = a.st.look;
-  a.cue.snapshot = lookFingerprint(a.st.look);
-  a.cue.modified = false;
+  if (!cl || index < 0 || index >= int(cl->cues.size())) return;
+  cl->cues[index].look = a.st.look;
+  if (index == a.cue.current) {
+    a.cue.snapshot = lookFingerprint(a.st.look);
+    a.cue.modified = false;
+  }
+  logLine("Updated cue %s", cueNumText(cl->cues[index].number).c_str());
+}
+
+int cueUpdateTarget(App& a) {
+  CueList* cl = activeList(a);
+  if (!cl) return -1;
+  int n = int(cl->cues.size());
+  if (a.cue.chosen >= 0 && a.cue.chosen < n) return a.cue.chosen;
+  return a.cue.current < n ? a.cue.current : -1;
 }
 
 void cueTick(App& a, float dt) {

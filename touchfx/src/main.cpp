@@ -813,6 +813,7 @@ const SelftestStep kSteps[] = {
     {FX_FLUID, 0, MIRROR_LR, 0, 2, false, 0, FX_VIDEO, BLEND_REVEAL},
     {FX_LASERS, LASER_FAN, MIRROR_LR, 6, 2, false, 0, FX_TUNNEL, BLEND_BEHIND},
     {FX_FLUID, 0, MIRROR_LR, 0, 2, false, 0, -1, BLEND_ADD, COLOR_VIDEO},
+    {FX_FLUID, 0, MIRROR_LR, 0, 2, false, 0, -1, BLEND_ADD, COLOR_VIDEO_MASK},
     {FX_VIDEO, VID_CLEAN, MIRROR_OFF, 0, 0},  // no fingers: ALWAYS ON
     {FX_VIDEO, VID_REVEAL, MIRROR_OFF, 0, 1},  // ALWAYS ON, base level, one finger painting
     {FX_GRID, GRID_SCROLL, MIRROR_OFF, 4, 1},  {FX_GRID, GRID_EQ, MIRROR_OFF, 1, 1, true},
@@ -1270,6 +1271,13 @@ int main(int argc, char** argv) {
     c.videoW = a.video.width();
     c.videoH = a.video.height();
     c.videoLevel = a.video.level();
+    a.video.setWantThumb(look.colorMode == COLOR_VIDEO || (look.bg.on && look.bg.ownColors && look.bg.colorMode == COLOR_VIDEO));
+    if (a.video.thumb() && a.video.state() != VS_OFF) {
+      c.vidThumb = a.video.thumb();
+      c.vidThumbW = a.video.thumbW();
+      c.vidThumbH = a.video.thumbH();
+      videoFillFit(a, c.vidFitX, c.vidFitY);
+    }
     a.fx[a.curFx]->frame(c, a.scene);
     // ---- crossfade: the previous effect fades out on top of the new one ----
     if (a.prevFx >= 0) {
@@ -1298,7 +1306,7 @@ int main(int argc, char** argv) {
     }
     // video colours (front layer)
     VideoTint frontTint;
-    if (look.colorMode == COLOR_VIDEO && a.video.texture() && a.video.state() != VS_OFF) {
+    if (look.colorMode == COLOR_VIDEO_MASK && a.video.texture() && a.video.state() != VS_OFF) {
       frontTint.tex = a.video.texture();
       frontTint.amount = a.video.level();
       videoFillFit(a, frontTint.fitX, frontTint.fitY);
@@ -1313,7 +1321,7 @@ int main(int argc, char** argv) {
       a.post.run(a.scene, a.layerFront, post, true, true, a.releaseLevel, &frontTint);
       VideoTint backTint;
       int bgColorMode = bg.ownColors ? bg.colorMode : look.colorMode;
-      if (bgColorMode == COLOR_VIDEO && a.video.texture() && a.video.state() != VS_OFF) {
+      if (bgColorMode == COLOR_VIDEO_MASK && a.video.texture() && a.video.state() != VS_OFF) {
         backTint.tex = a.video.texture();
         backTint.amount = a.video.level();
         videoFillFit(a, backTint.fitX, backTint.fitY);

@@ -15,7 +15,11 @@ enum EffectId {
 constexpr int kDmxEffects = 6;  // effects reachable from the DMX effect channel (profile unchanged for now)
 enum MirrorMode { MIRROR_OFF, MIRROR_LR, MIRROR_UD, MIRROR_QUAD, MIRROR_RADIAL6, MIRROR_RADIAL8, MIRROR_COUNT };
 enum ReleaseMode { RELEASE_FADE, RELEASE_SNAP, RELEASE_HOLD };
-enum ColorMode { COLOR_GRADIENT, COLOR_SPEED, COLOR_POSITION, COLOR_BEAT, COLOR_RANDOM, COLOR_VIDEO, COLOR_COUNT };
+// COLOR_VIDEO: picks up the video's colour where the fingers are (the effect carries it);
+// COLOR_VIDEO_MASK: every pixel takes the colour of the video under it.
+enum ColorMode {
+  COLOR_GRADIENT, COLOR_SPEED, COLOR_POSITION, COLOR_BEAT, COLOR_RANDOM, COLOR_VIDEO, COLOR_VIDEO_MASK, COLOR_COUNT
+};
 enum LaserMode { LASER_FAN, LASER_AIM, LASER_WEB, LASER_SCAN, LASER_TUNNEL, LASER_WAVE, LASER_COUNT };
 enum LaserChase { CHASE_OFF, CHASE_STEP, CHASE_ALTERNATE, CHASE_RANDOM, CHASE_COUNT };
 enum SwingMode { SWING_TOGETHER, SWING_MIRROR, SWING_WAVE, SWING_RANDOM, SWING_COUNT };

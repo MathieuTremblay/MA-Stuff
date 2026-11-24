@@ -294,6 +294,7 @@ void VideoInput::update(float dt) {
     std::lock_guard<std::mutex> lk(mtx_);
     fresh_ = false;  // drop what arrives meanwhile
     level_ = std::min(1.f, level_ + dt * 2.f);
+    if (wantThumb_ && thumb_.empty()) makeThumb();
     return;
   }
   if (type_ == VSRC_SPOUT) {
@@ -316,6 +317,7 @@ void VideoInput::update(float dt) {
       ++fpsCount_;
     }
   }
+  if (wantThumb_ && frames_ != thumbFrame_ && out_.tex) makeThumb();
   fpsAcc_ += dt;
   if (fpsAcc_ >= 1.0) {
     fps_ = fpsCount_ / fpsAcc_;
@@ -328,6 +330,24 @@ void VideoInput::update(float dt) {
   else state_ = frames_ > 0 && sinceFrame_ < 1e8 ? VS_LOST : VS_CONNECTING;
   if (live) level_ = std::min(1.f, level_ + dt * 2.f);
   else if (sinceFrame_ > 2.0) level_ = std::max(0.f, level_ - dt);
+}
+
+// 1920 -> 256 -> 64 wide in two linear steps (an average over the area), then read back (small: cheap).
+void VideoInput::makeThumb() {
+  thumbFrame_ = frames_;
+  if (!thumbA_.tex) {
+    thumbA_.create(256, 144, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE, GL_LINEAR);
+    thumbB_.create(64, 36, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE, GL_LINEAR);
+  }
+  fxCopy(thumbA_, out_.tex, 1.f);
+  fxCopy(thumbB_, thumbA_.tex, 1.f);
+  std::vector<uint8_t> px(64 * 36 * 4);
+  glBindFramebuffer(GL_FRAMEBUFFER, thumbB_.fbo);
+  glPixelStorei(GL_PACK_ALIGNMENT, 1);
+  glReadPixels(0, 0, 64, 36, GL_RGBA, GL_UNSIGNED_BYTE, px.data());
+  thumb_.resize(64 * 36 * 3);
+  for (int i = 0; i < 64 * 36; ++i)
+    for (int k = 0; k < 3; ++k) thumb_[size_t(i) * 3 + k] = px[size_t(i) * 4 + k] / 255.f;
 }
 
 std::string VideoInput::statusText() const {

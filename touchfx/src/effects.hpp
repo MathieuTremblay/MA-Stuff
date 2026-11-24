@@ -40,6 +40,10 @@ struct FxCtx {
   GLuint videoTex = 0;
   int videoW = 0, videoH = 0;
   float videoLevel = 0;  // 1 live, fading to 0 when the signal is lost
+  // small copy of the video (RGB floats, row 0 at the bottom) for the VIDEO colour mode (pick-up)
+  const float* vidThumb = nullptr;
+  int vidThumbW = 0, vidThumbH = 0;
+  float vidFitX = 1, vidFitY = 1;  // output UV -> video UV (fill)
 
   // Emitters to draw "shape" effects from: live ones, or the held ones while fading.
   const std::vector<Emitter>& shapeEmitters() const { return touching ? live : held; }

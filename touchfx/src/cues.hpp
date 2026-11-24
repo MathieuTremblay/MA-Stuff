@@ -18,7 +18,8 @@ struct CuePlayer {
   bool modified = false;          // live tweaks since the cue fired
   std::string snapshot;           // the fired look, to detect tweaks
   double modCheck = 0;
-  bool scrollToNext = false;      // the CUES list scrolls to the NEXT cue (after arrow keys)
+  bool scrollToNext = false;
+  int chosen = -1;  // cue the user picked (row tap / arrow keys) since the last GO: UPDATE writes into it      // the CUES list scrolls to the NEXT cue (after arrow keys)
 };
 
 // Undo history for cue / song / scene edits (Ctrl+Z, Ctrl+Y, UNDO button). Whole snapshots: simple and safe.
@@ -44,7 +45,8 @@ void cueBack(App& a);
 void cueFire(App& a, int index);  // fire a specific cue of the active list
 void cueSelectList(App& a, int list);
 void cueRecord(App& a);  // store the live look as a new cue after the current one
-void cueUpdate(App& a);  // overwrite the current cue with the live look
+void cueUpdate(App& a, int index);  // overwrite a cue with the live look
+int cueUpdateTarget(App& a);        // the cue UPDATE writes into: the chosen one, else the playing one
 void cueTick(App& a, float dt);
 bool cueCanGo(App& a);                     // GO does something (next cue, loop or next song)
 std::string cueGoText(App& a, bool full);  // what GO will do, e.g. "3  Chorus" / "LOOP > 1  Intro"
