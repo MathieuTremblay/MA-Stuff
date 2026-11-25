@@ -20,6 +20,9 @@ struct RawFrame {
   int stride = 0;  // bytes per row (NV12: luma row; chroma rows follow the luma plane with the same stride)
   std::vector<uint8_t> data;
   std::string info;  // e.g. "1920x1080 50p" (filled by the backend when it changes)
+  // YUV formats: colour matrix (0 = from the size: BT.709 for HD, BT.601 for SD; 601; 709) and range
+  int matrix = 0;
+  bool fullRange = false;  // 0-255 (cameras / JPEG-style) instead of 16-235 (video)
 };
 
 // One kind of source. Everything runs on the video thread.

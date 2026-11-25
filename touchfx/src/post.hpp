@@ -16,7 +16,8 @@ class Post {
   bool init();
   void resize(int W, int H);
   void run(const Target& scene, const Target& out, const PostSettings& p, bool alpha, bool premultiplied,
-           float master = 1.f, const VideoTint* tint = nullptr);
+           float master = 1.f, const VideoTint* tint = nullptr, bool original = false);
+  // original: the layer is the video input - it goes out exactly as it came in (the LOOK is not applied)
 
  private:
   static constexpr int kLevels = 6;

@@ -1313,12 +1313,15 @@ int main(int argc, char** argv) {
     }
     // ---- background layer ----
     bool bgActive = renderBackground(a, c, dt);
+    // a layer playing VIDEO goes out exactly like the source (the LOOK is for the effects only)
+    bool frontOriginal = a.curFx == FX_VIDEO;
+    bool backOriginal = a.bgCurFx == FX_VIDEO;
     if (!bgActive) {
       a.post.run(a.scene, a.out, post, a.st.output.alpha, a.st.output.premultiplied, master * a.releaseLevel,
-                 &frontTint);
+                 &frontTint, frontOriginal);
     } else {
       const BgLayer& bg = look.bg;
-      a.post.run(a.scene, a.layerFront, post, true, true, a.releaseLevel, &frontTint);
+      a.post.run(a.scene, a.layerFront, post, true, true, a.releaseLevel, &frontTint, frontOriginal);
       VideoTint backTint;
       int bgColorMode = bg.ownColors ? bg.colorMode : look.colorMode;
       if (bgColorMode == COLOR_VIDEO_MASK && a.video.texture() && a.video.state() != VS_OFF) {
@@ -1326,7 +1329,7 @@ int main(int argc, char** argv) {
         backTint.amount = a.video.level();
         videoFillFit(a, backTint.fitX, backTint.fitY);
       }
-      a.postBg.run(a.bgScene, a.layerBack, post, true, true, a.bgShown * bg.level, &backTint);
+      a.postBg.run(a.bgScene, a.layerBack, post, true, true, a.bgShown * bg.level, &backTint, backOriginal);
       compositeLayers(a.layerFront, a.layerBack, a.out, bg.blend, a.st.output.alpha, a.st.output.premultiplied,
                       master);
     }

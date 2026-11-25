@@ -47,7 +47,7 @@ in vec2 vUv; out vec4 o;
 uniform sampler2D uVideo; uniform sampler2D uField;
 uniform int uHasVideo, uMode, uCount, uSegs;
 uniform vec2 uFit, uTexel, uRes, uPts[8];
-uniform float uAspect, uLevel, uGain, uStrength, uSize, uGlow, uRot, uBase;
+uniform float uAspect, uLevel, uGain, uStrength, uSize, uGlow, uRot, uBase, uCover;
 uniform vec3 uLow, uMid, uHigh;
 
 vec3 vid(vec2 uv) {
@@ -126,7 +126,12 @@ void main() {
     col = vid(w);
   }
   if (uMode != 0 && uMode != 6) extra += uMid * halo(uv) * uGlow * 0.35;
-  o = vec4((col * uLevel + extra) * uGain, 1.0);
+  // alpha = where the video covers the frame (the output keeps the video opaque there)
+  vec2 fv = (vUv - 0.5) * uFit + 0.5;
+  float inside = (fv.x < 0.0 || fv.y < 0.0 || fv.x > 1.0 || fv.y > 1.0 || uHasVideo == 0) ? 0.0 : 1.0;
+  float cover = uMode == 0 ? inside * mix(uBase, 1.0, smoothstep(0.0, 1.0, clamp(texture(uField, uv).r, 0.0, 1.0)))
+                           : (uMode == 3 ? float(uHasVideo) : inside);
+  o = vec4((col * uLevel + extra) * uGain, cover * uGain * uCover);
 }
 )";
 
@@ -235,7 +240,9 @@ class Video : public Effect {
     pDraw.seti("uCount", n);
     pDraw.setf("uAspect", aspect);
     // a lost input fades to black (hold, then fade, in VideoInput); no input at all shows the palette gradient
-    pDraw.setf("uLevel", s.level * 1.25f * c.look->brightness * (c.videoTex ? c.videoLevel : 1.f));
+    // the video level does not follow the LOOK brightness: at the default (80%) the picture is exactly the source
+    pDraw.setf("uLevel", s.level * 1.25f * (c.videoTex ? c.videoLevel : 1.f));
+    pDraw.setf("uCover", c.videoTex ? c.videoLevel : 0.f);
     pDraw.setf("uGain", s.alwaysOn ? 1.f : c.gain);
     pDraw.setf("uBase", s.alwaysOn ? s.base : 0.f);
     pDraw.setf("uStrength", s.strength);

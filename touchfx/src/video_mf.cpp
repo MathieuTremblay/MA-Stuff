@@ -173,6 +173,8 @@ class MfBackend : public VideoBackend {
       }
       release(b2);
       f.info = info_;
+      f.fullRange = fullRange_;
+      f.matrix = matrix_;
     }
     release(buf);
     release(sample);
@@ -246,6 +248,11 @@ class MfBackend : public VideoBackend {
     GUID sub{};
     t->GetGUID(MF_MT_SUBTYPE, &sub);
     stride_ = LONG(MFGetAttributeUINT32(t, MF_MT_DEFAULT_STRIDE, 0));
+    // what the device says about its colours (cameras are often full range / BT.601)
+    UINT32 range = MFGetAttributeUINT32(t, MF_MT_VIDEO_NOMINAL_RANGE, MFNominalRange_Unknown);
+    UINT32 mtx = MFGetAttributeUINT32(t, MF_MT_YUV_MATRIX, MFVideoTransferMatrix_Unknown);
+    fullRange_ = range == MFNominalRange_0_255;
+    matrix_ = mtx == MFVideoTransferMatrix_BT709 ? 709 : mtx == MFVideoTransferMatrix_BT601 ? 601 : 0;
     t->Release();
     w_ = int(w);
     h_ = int(h);
@@ -262,7 +269,8 @@ class MfBackend : public VideoBackend {
   MfScope* scope_ = nullptr;
   IMFSourceReader* reader_ = nullptr;
   std::string name_, status_, info_;
-  int w_ = 0, h_ = 0, fmt_ = -1;
+  int w_ = 0, h_ = 0, fmt_ = -1, matrix_ = 0;
+  bool fullRange_ = false;
   LONG stride_ = 0;
 };
 

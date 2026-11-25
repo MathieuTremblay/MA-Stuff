@@ -41,7 +41,21 @@ uniform sampler2D uScene; uniform sampler2D uBloom;
 uniform float uBloomAmt, uSat, uMaster;
 uniform int uAlpha, uPremult;
 uniform sampler2D uVid; uniform int uTint; uniform vec2 uVFit; uniform float uTintAmt;
+uniform int uOriginal;  // video layer: pass the picture through untouched (no glow, saturation or roll-off)
 void main() {
+  if (uOriginal == 1) {
+    vec4 s = texture(uScene, vUv);
+    vec3 c = clamp(s.rgb, 0.0, 1.0) * uMaster;
+    if (uAlpha == 1) {
+      // opaque where the video is (its coverage is in the scene's alpha), brightness for anything else
+      float a = clamp(max(s.a * uMaster, max(c.r, max(c.g, c.b))), 0.0, 1.0);
+      if (uPremult == 0) c = a > 0.0005 ? c / a : vec3(0.0);
+      o = vec4(c, a);
+    } else {
+      o = vec4(c, 1.0);
+    }
+    return;
+  }
   vec3 c = max(texture(uScene, vUv).rgb, vec3(0.0)) + texture(uBloom, vUv).rgb * uBloomAmt;
   if (uTint == 1) {  // video colours: every pixel takes the colour of the video under it
     vec2 v = (vUv - 0.5) * uVFit + 0.5;
@@ -85,9 +99,9 @@ void Post::resize(int W, int H) {
 }
 
 void Post::run(const Target& scene, const Target& out, const PostSettings& p, bool alpha, bool premultiplied,
-               float master, const VideoTint* tint) {
+               float master, const VideoTint* tint, bool original) {
   glDisable(GL_BLEND);
-  bool bloom = p.bloom > 0.001f && levels > 0;
+  bool bloom = !original && p.bloom > 0.001f && levels > 0;
   if (bloom) {
     // Downsample chain.
     pDown.use();
@@ -129,6 +143,7 @@ void Post::run(const Target& scene, const Target& out, const PostSettings& p, bo
   pFinal.setf("uMaster", master);
   pFinal.seti("uAlpha", alpha ? 1 : 0);
   pFinal.seti("uPremult", premultiplied ? 1 : 0);
+  pFinal.seti("uOriginal", original ? 1 : 0);
   bool t = tint && tint->tex && tint->amount > 0.001f;
   pFinal.seti("uTint", t ? 1 : 0);
   if (t) {

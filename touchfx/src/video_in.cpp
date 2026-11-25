@@ -24,12 +24,17 @@ namespace {
 const char* kConvertFS = R"(
 in vec2 vUv; out vec4 o;
 uniform sampler2D uP0; uniform sampler2D uP1;
-uniform int uFmt; uniform vec2 uSize; uniform int uHd;
+uniform int uFmt; uniform vec2 uSize; uniform int uHd; uniform int uFull;
 vec3 yuv(float y, float u, float v) {
-  // limited range; BT.709 for HD, BT.601 for SD
-  y = (y - 16.0 / 255.0) * (255.0 / 219.0);
-  u = (u - 128.0 / 255.0) * (255.0 / 224.0);
-  v = (v - 128.0 / 255.0) * (255.0 / 224.0);
+  // limited (16-235) or full range; BT.709 or BT.601 matrix
+  if (uFull == 1) {
+    u -= 128.0 / 255.0;
+    v -= 128.0 / 255.0;
+  } else {
+    y = (y - 16.0 / 255.0) * (255.0 / 219.0);
+    u = (u - 128.0 / 255.0) * (255.0 / 224.0);
+    v = (v - 128.0 / 255.0) * (255.0 / 224.0);
+  }
   vec3 c = uHd == 1 ? vec3(y + 1.5748 * v, y - 0.1873 * u - 0.4681 * v, y + 1.8556 * u)
                     : vec3(y + 1.402 * v, y - 0.344136 * u - 0.714136 * v, y + 1.772 * u);
   return clamp(c, 0.0, 1.0);
@@ -233,7 +238,8 @@ void VideoInput::upload(const RawFrame& f) {
   convert_.seti("uP1", 1);
   convert_.seti("uFmt", fmtId);
   convert_.set2f("uSize", float(w), float(h));
-  convert_.seti("uHd", h >= 720 ? 1 : 0);
+  convert_.seti("uHd", f.matrix == 709 || (f.matrix == 0 && h >= 720) ? 1 : 0);
+  convert_.seti("uFull", f.fullRange ? 1 : 0);
   drawFullscreen();
 }
 
