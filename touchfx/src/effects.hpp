@@ -28,6 +28,7 @@ struct FxCtx {
   std::vector<Emitter> live;  // emitters from fingers currently down
   std::vector<Emitter> held;  // last emitters, kept while fading out after release
   bool touching = false;
+  bool releasing = false;  // fingers lifted, the release fade is running (no new launches / distortions)
   float gain = 1;     // 1 while touching, falls to 0 while fading out
   float fadeMul = 1;  // per-frame attenuation while fading out (1 = not fading)
   // audio reactive

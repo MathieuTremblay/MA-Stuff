@@ -83,7 +83,12 @@ bool AudioInput::open(const std::string& device) {
     received_ = 0;
   }
   f_ = AudioFeatures();
-  intervals_.clear();
+  std::fill(env_.begin(), env_.end(), 0.f);
+  envTick_ = 0;
+  envClock_ = bpmClock_ = 0;
+  bpmHold_ = 0;
+  prevMag_.clear();
+  fluxPeak_ = 1e-6f;
 
   if (device == kAudioTest) {
     rate_ = 48000;
@@ -175,7 +180,7 @@ void AudioInput::generateTest(float dt) {
   push(buf.data(), n);
 }
 
-void AudioInput::update(float dt, float sensitivity) {
+void AudioInput::update(float dt, float sensitivity, float rangeLo, float rangeHi) {
   f_.onset = false;
   if (!open_) {
     f_ = AudioFeatures();
@@ -259,28 +264,125 @@ void AudioInput::update(float dt, float sensitivity) {
     }
   }
 
-  // hits: bass jumps above its running average
-  float b = norm[1];
+  // the chosen frequency range (SETTINGS > AUDIO): hits, pulse and motion follow it
+  {
+    float raw = band(rangeLo, std::max(rangeHi, rangeLo + binHz));
+    focusPeak_ = std::max(raw, std::max(focusPeak_ * decay, gate * 0.02f));
+    float t = f_.active ? std::clamp(raw / focusPeak_, 0.f, 1.f) : 0.f;
+    smooth(f_.focus, t);
+  }
+
+  // hits: the range jumps above its running average
+  float b = f_.active ? std::clamp(band(rangeLo, std::max(rangeHi, rangeLo + binHz)) / focusPeak_, 0.f, 1.f) : 0.f;
   bassAvg_ += (b - bassAvg_) * std::min(1.f, dt * 3.f);
   if (f_.active && b > bassAvg_ * 1.3f + 0.12f && now_ - lastOnset_ > 0.22) {
-    double interval = now_ - lastOnset_;
     lastOnset_ = now_;
     f_.onset = true;
     f_.pulse = 1.f;
-    if (interval > 0.25 && interval < 2.0) {
-      float iv = float(interval);
-      while (iv < 60.f / 170.f) iv *= 2.f;  // fold into 75..170 BPM
-      while (iv > 60.f / 75.f) iv *= 0.5f;
-      intervals_.push_back(iv);
-      if (intervals_.size() > 16) intervals_.erase(intervals_.begin());
-      if (intervals_.size() >= 4) {
-        std::vector<float> s = intervals_;
-        std::nth_element(s.begin(), s.begin() + s.size() / 2, s.end());
-        f_.bpm = 60.f / s[s.size() / 2];
-      }
+  }
+
+  // Tempo: onset strength (rise of the log spectrum, lows weighted up) on a fixed 100 Hz grid. The beat
+  // period is found by autocorrelation over the last 8 seconds, which follows the whole groove instead of
+  // the gaps between single hits (those were fooled by syncopated kicks and read too fast).
+  {
+    const int nb = kFft / 2;
+    if (prevMag_.size() != size_t(nb)) prevMag_.assign(size_t(nb), 0.f);
+    int hiBin = std::min(nb - 1, int(8000.f / binHz));
+    float flux = 0;
+    for (int i = 1; i <= hiBin; ++i) {
+      float m = std::log1p(1000.f * std::sqrt(re_[i] * re_[i] + im_[i] * im_[i]) / kFft);
+      float d = m - prevMag_[size_t(i)];
+      prevMag_[size_t(i)] = m;
+      if (d > 0) flux += d * (i * binHz < 200.f ? 3.f : 1.f);
+    }
+    if (!f_.active) flux = 0;
+    envClock_ += dt;
+    long tick = long(envClock_ * 100.0);
+    const long n = long(env_.size());
+    if (tick - envTick_ > n) envTick_ = tick - n;
+    // the new 10 ms slots since the last frame all get this frame's value (frames come every 16-33 ms)
+    if (envTick_ == tick) env_[size_t(tick % n)] = std::max(env_[size_t(tick % n)], flux);
+    while (envTick_ < tick) env_[size_t(++envTick_ % n)] = flux;
+    bpmClock_ += dt;
+    if (bpmClock_ > 0.5) {
+      bpmClock_ = 0;
+      estimateTempo();
     }
   }
   f_.pulse *= std::exp(-dt * 7.f);
+}
+
+void AudioInput::estimateTempo() {
+  const int n = int(env_.size());
+  std::vector<float> e(static_cast<size_t>(n));
+  for (int i = 0; i < n; ++i) e[size_t(i)] = env_[size_t((envTick_ + 1 + i) % n)];  // oldest first
+  // high-pass: remove the local average (0.25 s) so only the hits are left
+  std::vector<float> h(static_cast<size_t>(n));
+  float energy = 0;
+  for (int i = 0; i < n; ++i) {
+    float m = 0;
+    int c = 0;
+    for (int k = std::max(0, i - 12); k <= std::min(n - 1, i + 12); ++k, ++c) m += e[size_t(k)];
+    h[size_t(i)] = std::max(0.f, e[size_t(i)] - m / float(c));
+    energy += h[size_t(i)] * h[size_t(i)];
+  }
+  if (energy < 1e-6f) return;
+  auto ac = [&](float lag) {
+    int L = int(lag);
+    float fr = lag - float(L);
+    double sum = 0;
+    for (int i = L + 1; i < n; ++i) sum += h[size_t(i)] * (h[size_t(i - L)] * (1.f - fr) + h[size_t(i - L - 1)] * fr);
+    return float(sum / double(n - L)) * float(n) / energy;
+  };
+  // candidates 60..180 BPM; a beat also repeats at 2, 3 and 4 periods, which rules out off-tempo matches
+  float bestScore = -1, bestBpm = 0;
+  std::vector<float> score;
+  std::vector<float> bpmOf;
+  for (float bpm = 60.f; bpm <= 180.f; bpm += 0.5f) {
+    float lag = 6000.f / bpm;
+    float sc = ac(lag) + 0.6f * ac(lag * 2.f) + (lag * 3.f < n - 50 ? 0.4f * ac(lag * 3.f) : 0.f) +
+               (lag * 4.f < n - 50 ? 0.3f * ac(lag * 4.f) : 0.f);
+    // a mild preference for the usual dance range; ×½ / ×2 in SETTINGS fixes songs read at the other octave
+    float oct = std::log2(bpm / 110.f);
+    sc *= std::exp(-0.5f * oct * oct / (0.75f * 0.75f));
+    score.push_back(sc);
+    bpmOf.push_back(bpm);
+    if (sc > bestScore) {
+      bestScore = sc;
+      bestBpm = bpm;
+    }
+  }
+  // parabolic refinement between the 0.5 BPM steps
+  size_t bi = size_t(std::find(bpmOf.begin(), bpmOf.end(), bestBpm) - bpmOf.begin());
+  if (bi > 0 && bi + 1 < score.size()) {
+    float a = score[bi - 1], b = score[bi], c = score[bi + 1];
+    float den = a - 2 * b + c;
+    if (den < 0) bestBpm += 0.5f * std::clamp(0.5f * (a - c) / den, -0.5f, 0.5f);
+  }
+  float mean = 0;
+  for (float v : score) mean += v;
+  mean /= float(score.size());
+  float conf = std::clamp((bestScore - mean) / std::max(1e-6f, bestScore), 0.f, 1.f);
+  f_.bpmConfidence = conf;
+  if (conf < 0.25f) return;  // no clear beat (ambient, a break): keep the last tempo
+  // once a tempo is found, stay in its octave: a reading at double or half of it is the same tempo
+  if (f_.bpm > 0) {
+    for (float m : {2.f, 0.5f})
+      if (std::fabs(bestBpm * m - f_.bpm) / f_.bpm < 0.03f) bestBpm *= m;
+  }
+  // switch only when two readings in a row agree, so a fill does not throw the tempo around
+  if (f_.bpm > 0 && std::fabs(bestBpm - f_.bpm) / f_.bpm < 0.03f) {
+    f_.bpm += (bestBpm - f_.bpm) * 0.5f;
+  } else if (bpmHold_ > 0 && std::fabs(bestBpm - bpmHold_) / bpmHold_ < 0.03f) {
+    // a new tempo: 2 readings in a row to start, 4 (2 s) to leave a tempo already found
+    if (++bpmHoldCount_ >= (f_.bpm > 0 ? 3 : 1)) {
+      f_.bpm = bestBpm;
+      bpmHold_ = 0;
+    }
+  } else {
+    bpmHold_ = bestBpm;
+    bpmHoldCount_ = 0;
+  }
 }
 
 #ifdef _WIN32

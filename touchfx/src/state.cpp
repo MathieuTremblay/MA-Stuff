@@ -35,7 +35,7 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(SpectrumSettings, mode, bars, sy
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(GridSettings, mode, tile, gap, decay, round, radius, bulb)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(StrobeSettings, shape, rate, freeHz, hz, duty, size, colorCycle,
                                                 audioHits)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(AudioSettings, enabled, device, sensitivity, autoBpm, autoPlay, points,
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(AudioSettings, enabled, device, sensitivity, autoBpm, autoPlay, points, range, rangeLo, rangeHi,
                                                 motion, reactivity)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(FxParams, fluid, particles, kaleido, lasers, strobe, sparkles, ripples,
                                                 ribbons, geometry, tunnel, video, plexus, fireworks, starfield,
@@ -195,7 +195,11 @@ void sanitize(AppState& s) {
   clampRef(s.dmx.artnetUniverse, 0, 32767);
   clampRef(s.dmx.address, 1, 512);
   clampRef(s.dmx.mode, 0, 2);
-  clampRef(s.audio.points, 1, 4);
+  clampRef(s.audio.points, 1, kMaxAutoPoints);
+  clampRef(s.audio.range, 0, RANGE_COUNT - 1);
+  clampRef(s.audio.rangeLo, 20.f, 16000.f);
+  clampRef(s.audio.rangeHi, 20.f, 16000.f);
+  if (s.audio.rangeHi < s.audio.rangeLo + 10.f) s.audio.rangeHi = std::min(16000.f, s.audio.rangeLo + 10.f);
   clampRef(s.maxTouches, 1, kMaxTouches);
   clampRef(s.external.display, 0, 15);
   clampRef(s.external.fit, 0, FIT_COUNT - 1);
@@ -456,4 +460,16 @@ bool saveStateText(const std::string& path, const std::string& text) {
   }
   std::remove(path.c_str());
   return std::rename(tmp.c_str(), path.c_str()) == 0;
+}
+
+const char* const kAudioRangeNames[RANGE_COUNT] = {"KICK", "BASS", "LOW-MIDS", "VOCALS", "HI-HATS", "FULL", "CUSTOM"};
+void audioRange(const AudioSettings& as, float& lo, float& hi) {
+  static const float r[RANGE_COUNT - 1][2] = {{40, 120}, {40, 250}, {250, 800}, {300, 3400}, {6000, 16000}, {30, 16000}};
+  if (as.range >= 0 && as.range < RANGE_CUSTOM) {
+    lo = r[as.range][0];
+    hi = r[as.range][1];
+  } else {
+    lo = as.rangeLo;
+    hi = std::max(as.rangeHi, as.rangeLo + 10.f);
+  }
 }

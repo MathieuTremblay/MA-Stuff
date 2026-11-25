@@ -2,6 +2,7 @@
 // Video input: NDI, capture cards / cameras, Spout, Blackmagic DeckLink, AJA, or a test source.
 // Capture runs on its own thread; the newest frame is uploaded and converted to RGB on the GPU each frame.
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <cstdint>
 #include <memory>
@@ -77,7 +78,7 @@ class VideoInput {
   // Source lists, refreshed in the background (NDI discovery takes a moment).
   void requestSourceList(int type);
   std::vector<std::string> sourceList(int type);
-  bool listing() const { return listBusy_.load(); }
+  bool listing() const;
 
   // Spout input lives on the GL thread (Windows only).
   void spoutUpdate();
@@ -85,20 +86,28 @@ class VideoInput {
  private:
   void startThread();
   void stopThread();
-  void threadMain(int type, std::string source);
   void upload(const RawFrame& f);
 
+ public:
+  // The capture thread shares this with VideoInput. TouchFX never waits long for it: a source that hangs
+  // (a driver stuck in a read) is left behind on its own copy, and a new one starts.
+  struct Shared {
+    std::atomic<bool> quit{false}, done{false};
+    std::mutex m;
+    RawFrame latest;
+    bool fresh = false, opened = false;
+    std::string error, backendStatus;
+  };
+
+ private:
+  std::shared_ptr<Shared> sh_ = std::make_shared<Shared>();
   std::thread thread_;
-  std::atomic<bool> quit_{false};
   std::atomic<bool> ndiPaused_{false};
   int type_ = 0;
   std::string source_;
 
-  mutable std::mutex mtx_;
-  RawFrame latest_;
-  bool fresh_ = false;
-  std::string error_, backendStatus_, info_;
-  bool opened_ = false;
+  mutable std::mutex mtx_;  // info_
+  std::string info_;
 
   // main thread
   bool frozen_ = false;
@@ -122,9 +131,13 @@ class VideoInput {
   bool ready_ = false;
 
   // source lists
-  std::thread listThread_;
-  std::atomic<bool> listBusy_{false};
-  std::mutex listMtx_;
+  struct ListJob {
+    std::atomic<bool> done{false};
+    int type = 0;
+    std::vector<std::string> result;
+    std::chrono::steady_clock::time_point started;
+  };
+  std::shared_ptr<ListJob> listJob_;
   std::vector<std::string> lists_[8];
 
   struct SpoutIn;

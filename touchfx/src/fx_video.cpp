@@ -47,7 +47,7 @@ in vec2 vUv; out vec4 o;
 uniform sampler2D uVideo; uniform sampler2D uField;
 uniform int uHasVideo, uMode, uCount, uSegs;
 uniform vec2 uFit, uTexel, uRes, uPts[8];
-uniform float uAspect, uLevel, uGain, uStrength, uSize, uGlow, uRot, uBase, uCover;
+uniform float uAspect, uLevel, uGain, uStrength, uSize, uGlow, uRot, uBase, uCover, uWarpAmt;
 uniform vec3 uLow, uMid, uHigh;
 
 vec3 vid(vec2 uv) {
@@ -67,7 +67,7 @@ float halo(vec2 uv) {
   for (int i = 0; i < uCount; ++i) {
     vec2 d = uv - uPts[i];
     d.x *= uAspect;
-    g += exp(-dot(d, d) / s);
+    g += exp(-dot(d, d) / s) * uWarpAmt;
   }
   return g;
 }
@@ -117,7 +117,7 @@ void main() {
     float s = 0.01 + uSize * uSize * 0.12;
     for (int i = 0; i < uCount; ++i) {
       vec2 d = (w - uPts[i]) * vec2(uAspect, 1.0);
-      float f = exp(-dot(d, d) / s);
+      float f = exp(-dot(d, d) / s) * uWarpAmt;
       float ang = (uStrength * 2.0 - 0.3) * 3.0 * f;  // left of centre: slight pinch, right: strong swirl
       float cs = cos(ang), sn = sin(ang);
       d = vec2(d.x * cs - d.y * sn, d.x * sn + d.y * cs) * (1.0 - 0.25 * f * uStrength);
@@ -151,7 +151,11 @@ class Video : public Effect {
     field.create(simW, simH, GL_RG16F, GL_RG, GL_HALF_FLOAT, GL_LINEAR);
   }
 
-  void clear() override { field.clear(); }
+  void clear() override {
+    field.clear();
+    warpAmt = 0;
+    lastPts.clear();
+  }
 
   void frame(const FxCtx& c, const Target& out) override {
     const VideoSettings& s = c.look->video;
@@ -160,7 +164,16 @@ class Video : public Effect {
       field.clear();
       lastMode = s.mode;
     }
-    const std::vector<Emitter>& em = c.live;
+    // after release nothing new is pushed in: the picture relaxes back to normal while it fades
+    static const std::vector<Emitter> kNone;
+    const std::vector<Emitter>& em = c.releasing ? kNone : c.live;
+    float target = em.empty() ? 0.f : 1.f;
+    warpAmt += (target - warpAmt) * std::min(1.f, dt * 4.f);
+    if (!em.empty()) {
+      lastPts.clear();
+      for (const Emitter& e : em)
+        if (lastPts.size() < 8) lastPts.push_back(e.pos);
+    }
     glDisable(GL_BLEND);
 
     // ---- fields ----
@@ -230,12 +243,13 @@ class Video : public Effect {
     pDraw.set2f("uRes", float(outW), float(outH));
     float pts[16] = {};
     int n = 0;
-    for (const Emitter& e : em) {
+    for (const Vec2& p : lastPts) {  // the last finger positions, so a warp relaxes in place
       if (n >= 8) break;
-      pts[n * 2] = e.pos.x;
-      pts[n * 2 + 1] = e.pos.y;
+      pts[n * 2] = p.x;
+      pts[n * 2 + 1] = p.y;
       ++n;
     }
+    pDraw.setf("uWarpAmt", warpAmt);
     pDraw.set2fv("uPts", pts, 8);
     pDraw.seti("uCount", n);
     pDraw.setf("uAspect", aspect);
@@ -286,7 +300,8 @@ class Video : public Effect {
   Program pDecay, pWave, pDraw;
   DoubleTarget field;
   int simW = 0, simH = 0, outW = 1, outH = 1, lastMode = -1;
-  float aspect = 1, stepAcc = 0, rot = 0;
+  float aspect = 1, stepAcc = 0, rot = 0, warpAmt = 0;
+  std::vector<Vec2> lastPts;
   double lastBeat = 0;
 };
 

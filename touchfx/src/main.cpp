@@ -457,7 +457,7 @@ bool renderBackground(App& a, const FxCtx& front, float dt) {
   c.touching = !a.bgLive.empty();
   c.gain = 1.f;
   c.fadeMul = 1.f;
-  if (a.st.audio.enabled && a.audio.isOpen()) c.speed *= 1.f + a.st.audio.reactivity * a.af.bass * 0.6f;
+  if (a.st.audio.enabled && a.audio.isOpen()) c.speed *= 1.f + a.st.audio.reactivity * a.af.focus * 0.6f;
   a.bgFx[a.bgCurFx]->frame(c, a.bgScene);
   return true;
 }
@@ -680,7 +680,7 @@ void buildBgEmitters(App& a, float dt) {
   std::vector<Mat2> mats = mirrorMatrices(bg.mirror);
   a.bgLive.clear();
   float energy = 1.f;
-  if (a.st.audio.enabled && a.af.active) energy = 0.5f + a.af.level * 1.2f + a.af.pulse * 0.5f;
+  if (a.st.audio.enabled && a.af.active) energy = 0.5f + a.af.focus * 1.2f + a.af.pulse * 0.5f;
   float speed = a.st.look.bpm / 120.f * kSpeedMults[bg.speedMult];
   for (int k = 0; k < 2; ++k) {
     App::BgPoint& v = a.bgPts[k];
@@ -704,13 +704,18 @@ void buildBgEmitters(App& a, float dt) {
 void updateVirtualPoints(App& a, float dt, float aspect, const std::vector<Mat2>& mats) {
   const AudioSettings& as = a.st.audio;
   a.vActive = as.enabled && as.autoPlay && a.af.active && a.showLoaded;
+  // A real finger takes over: the auto points step aside while someone touches, so the effect follows the
+  // hand at full speed instead of sharing its particles / slots with the music points.
+  bool touched = false;
+  for (int i = 0; i < kMaxTouches; ++i) touched = touched || a.touches[i].active;
+  if (touched) a.vActive = false;
   if (!a.vActive) return;
-  float energy = 0.35f + a.af.level * 1.1f + a.af.pulse * 0.6f * as.reactivity;
+  float energy = 0.35f + a.af.focus * 1.1f + a.af.pulse * 0.6f * as.reactivity;
   for (int k = 0; k < as.points; ++k) {
     App::VirtualPoint& v = a.vpts[k];
     v.phase += dt * (0.2f + as.motion * 1.6f) * energy;
     if (a.af.onset) v.phase += 0.25f * as.reactivity * as.motion;
-    float ph = v.phase + k * 2.1f;
+    float ph = v.phase + k * 2.1f + (k >= 4 ? k * 0.77f : 0.f);
     Vec2 p(0.5f + 0.36f * std::cos(ph * 1.0f) * (0.65f + 0.35f * std::sin(ph * 0.37f + k)),
            0.5f + 0.32f * std::sin(ph * 1.37f + k * 1.3f));
     Vec2 d = p - v.pos;
@@ -719,7 +724,7 @@ void updateVirtualPoints(App& a, float dt, float aspect, const std::vector<Mat2>
     v.vel = v.vel + (inst - v.vel) * 0.35f;
     v.pos = p;
     // louder music = faster smoke / particle bursts
-    addEmitters(a, mats, aspect, v.pos, v.vel * (0.6f + a.af.level * 1.5f), kMaxTouches + k);
+    addEmitters(a, mats, aspect, v.pos, v.vel * (0.6f + a.af.focus * 1.5f), kMaxTouches + 20 + k);
   }
 }
 
@@ -770,12 +775,19 @@ void updateAudio(App& a, float dt) {
       a.audioRetry = 3.0;
     }
   }
-  a.audio.update(dt, as.sensitivity);
+  float lo = 30, hi = 16000;
+  audioRange(as, lo, hi);
+  a.audio.update(dt, as.sensitivity, lo, hi);
   a.af = a.audio.features();
   // Follow the music's tempo and line the beat up with the hits.
   if (as.enabled && as.autoBpm && a.af.onset && !a.dmxBpm) {
     Look& l = a.st.look;
-    if (a.af.bpm > 0) l.bpm = std::round((l.bpm + (a.af.bpm - l.bpm) * 0.3f) * 10.f) / 10.f;
+    if (a.af.bpm > 0) {
+      float target = a.af.bpm;
+      // a big change (new song) moves quickly; small ones settle gently
+      float k = std::fabs(target - l.bpm) > 8.f ? 0.5f : 0.25f;
+      l.bpm = std::clamp(std::round((l.bpm + (target - l.bpm) * k) * 10.f) / 10.f, 20.f, 300.f);
+    }
     double b = a.tempo.beat, nearest = std::floor(b + 0.5);
     a.tempo.beat = b + (nearest - b) * 0.5;
   }
@@ -915,8 +927,14 @@ int main(int argc, char** argv) {
     }
     a.lastSavedMachine = serializeMachine(a.st);
     saveStateText(a.settingsPath, a.lastSavedMachine);
-    if (logPreviousRunCrashed())
+    if (logPreviousRunCrashed()) {
       a.launcherMessage = "TouchFX closed unexpectedly last time. The log and crash report are in the logs folder.";
+      if (a.st.videoIn.type != VSRC_OFF) {  // safe start: the video input could be the cause
+        a.st.videoIn.type = VSRC_OFF;
+        a.launcherMessage += " The video input was turned off as a precaution: choose it again in SETTINGS > VIDEO IN.";
+        logLine("Safe start: video input turned off after an unexpected close");
+      }
+    }
   }
   platformPreventSleep(true);
   if (a.selftest) a.showLoaded = true;  // the self-test runs without a show file
@@ -1247,6 +1265,7 @@ int main(int argc, char** argv) {
       c.held = a.held;
       c.live = a.held;
       c.touching = true;
+      c.releasing = a.fading;
     }
     c.gain = a.gain;
     c.fadeMul = fadeMul;
@@ -1262,8 +1281,12 @@ int main(int argc, char** argv) {
       c.pulse = f.pulse;
       c.onset = f.onset;
       c.spectrum = a.af.spectrum;
-      c.drive = mixf(1.f, 0.2f + 1.5f * f.level + 0.8f * f.pulse, r);
-      c.speed *= 1.f + r * f.bass * 0.6f;          // bass pushes the motion
+      c.drive = mixf(1.f, 0.2f + 1.5f * f.focus + 0.8f * f.pulse, r);
+      // touch always gets at least the normal amount: a quiet passage must not slow down the fingers
+      bool fingers = false;
+      for (int i = 0; i < kMaxTouches; ++i) fingers = fingers || a.touches[i].active;
+      if (fingers) c.drive = std::max(c.drive, 1.f);
+      c.speed *= 1.f + r * f.focus * 0.6f;         // the chosen range pushes the motion
       post.bloom = std::min(1.f, post.bloom + r * f.pulse * 0.35f);  // glow kicks on hits
     }
 

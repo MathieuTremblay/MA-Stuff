@@ -83,10 +83,13 @@ void main() {
 const char* kAdvectFS = R"(
 in vec2 vUv; out vec4 o;
 uniform sampler2D uVel; uniform sampler2D uSrc; uniform vec2 uTexel;
-uniform float uDt; uniform float uDiss;
+uniform float uDt; uniform float uDiss; uniform float uDissDt; uniform float uCap;
 void main() {
   vec2 coord = vUv - uDt * texture(uVel, vUv).xy * uTexel;
-  o = texture(uSrc, coord) / (1.0 + uDiss * uDt);
+  vec4 v = texture(uSrc, coord) / (1.0 + uDiss * uDissDt);
+  // dye: a soft ceiling, so smoke held in one place saturates instead of piling up to a white blob
+  if (uCap > 0.0) v.rgb = uCap * (vec3(1.0) - exp(-max(v.rgb, vec3(0.0)) / uCap));
+  o = v;
 }
 )";
 
@@ -215,8 +218,9 @@ class Fluid : public Effect {
     drawFullscreen();
     vel.swap();
 
-    advect(vel, vel.read().tex, dt, 0.25f, tx, ty);
-    advect(dye, vel.read().tex, dt, mixf(2.5f, 0.04f, s.trail), tx, ty);
+    // fading runs on real time (not the tempo), so slow tempos do not let the smoke build up
+    advect(vel, vel.read().tex, dt, 0.25f, tx, ty, realDt, 0.f);
+    advect(dye, vel.read().tex, dt, mixf(2.5f, 0.04f, s.trail), tx, ty, realDt, mixf(0.35f, 1.6f, s.intensity));
 
     // ---- display ----
     fxCopy(out, dye.read().tex, c.look->brightness * 1.05f);
@@ -234,7 +238,7 @@ class Fluid : public Effect {
     t.swap();
   }
 
-  void advect(DoubleTarget& t, GLuint velTex, float dt, float diss, float tx, float ty) {
+  void advect(DoubleTarget& t, GLuint velTex, float dt, float diss, float tx, float ty, float dissDt, float cap) {
     t.write().bind();
     pAdvect.use();
     bindTex(0, velTex);
@@ -244,6 +248,8 @@ class Fluid : public Effect {
     pAdvect.set2f("uTexel", tx, ty);
     pAdvect.setf("uDt", dt);
     pAdvect.setf("uDiss", diss);
+    pAdvect.setf("uDissDt", dissDt);
+    pAdvect.setf("uCap", cap);
     drawFullscreen();
     t.swap();
   }

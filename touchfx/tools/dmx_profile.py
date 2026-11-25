@@ -752,8 +752,8 @@ def doc_v2():
         L.append(f"| {name} ({a}-{b}) | {chs(mode)} | {chs(o1)} | {chs(o2)} | " + " | ".join(ps) + " |")
     L += ["", "Two ways to work: the console programs the look with these channels, or it fires TouchFX's own cues "
           "with **Song** + **Cue** (cue number x 10). *Last change wins* applies as in v1; with **DMX LOCK** the console "
-          "always wins. When the Effect channel changes, all of that effect's Mode / Options / Params are applied at "
-          "once.", ""]
+          "always wins. When the Effect channel changes, the effect keeps its own TouchFX settings; a Mode / Option / "
+          "Param only takes over when its DMX value changes.", ""]
     return L
 
 

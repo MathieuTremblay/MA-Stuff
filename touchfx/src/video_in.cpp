@@ -83,10 +83,7 @@ struct VideoInput::SpoutIn {
 
 VideoInput::VideoInput() = default;
 
-VideoInput::~VideoInput() {
-  stopThread();
-  if (listThread_.joinable()) listThread_.join();
-}
+VideoInput::~VideoInput() { stopThread(); }
 
 bool VideoInput::init() {
   ready_ = convert_.build("video.convert", kFullscreenVS, kConvertFS);
@@ -100,11 +97,7 @@ void VideoInput::configure(int type, const std::string& source) {
   source_ = source;
   {
     std::lock_guard<std::mutex> lk(mtx_);
-    error_.clear();
-    backendStatus_.clear();
     info_.clear();
-    fresh_ = false;
-    opened_ = false;
   }
   state_ = type == VSRC_OFF ? VS_OFF : VS_CONNECTING;
   sinceFrame_ = 1e9;
@@ -121,61 +114,93 @@ void VideoInput::pauseNdi(bool p) {
   else startThread();
 }
 
+namespace {
+// The capture loop. Runs on its own thread with its own copy of the shared state, so VideoInput can walk
+// away from it if a driver hangs. Nothing it does can close TouchFX: errors become a status message.
+void captureLoop(std::shared_ptr<VideoInput::Shared> sh, int type, std::string source) {
+  auto setError = [&](const std::string& e) {
+    std::lock_guard<std::mutex> lk(sh->m);
+    sh->error = e;
+    sh->opened = false;
+  };
+  try {
+    while (!sh->quit) {
+      std::unique_ptr<VideoBackend> b;
+      switch (type) {
+        case VSRC_TEST: b = makeTestBackend(); break;
+        case VSRC_NDI: b = makeNdiBackend(); break;
+        case VSRC_CAPTURE: b = makeCaptureBackend(); break;
+        case VSRC_DECKLINK: b = makeDeckLinkBackend(); break;
+        case VSRC_AJA: b = makeAjaBackend(); break;
+        default: sh->done = true; return;
+      }
+      std::string err;
+      bool ok = b && b->open(source, err);
+      {
+        std::lock_guard<std::mutex> lk(sh->m);
+        sh->error = ok ? "" : (err.empty() ? "Could not open the video source." : err);
+        sh->opened = ok;
+      }
+      if (!ok) {
+        if (b) b->close();
+        for (int i = 0; i < 20 && !sh->quit; ++i) std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        continue;  // try again
+      }
+      RawFrame f;
+      while (!sh->quit) {
+        int r = b->read(f, 100);
+        {
+          std::lock_guard<std::mutex> lk(sh->m);
+          sh->backendStatus = b->status();
+        }
+        if (r < 0) break;
+        if (r == 0) continue;
+        std::lock_guard<std::mutex> lk(sh->m);
+        std::swap(sh->latest, f);
+        sh->fresh = true;
+      }
+      b->close();
+      {
+        std::lock_guard<std::mutex> lk(sh->m);
+        sh->opened = false;
+      }
+      for (int i = 0; i < 10 && !sh->quit; ++i) std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+  } catch (const std::exception& e) {
+    setError(std::string("Video input error: ") + e.what());
+    logLine("Video input error: %s", e.what());
+  } catch (...) {
+    setError("Video input error.");
+    logLine("Video input error (unknown)");
+  }
+  sh->done = true;
+}
+}  // namespace
+
 void VideoInput::startThread() {
   stopThread();
-  quit_ = false;
-  thread_ = std::thread(&VideoInput::threadMain, this, type_, source_);
+  sh_ = std::make_shared<Shared>();
+  try {
+    thread_ = std::thread(captureLoop, sh_, type_, source_);
+  } catch (...) {
+    std::lock_guard<std::mutex> lk(sh_->m);
+    sh_->error = "Could not start the video input.";
+  }
 }
 
 void VideoInput::stopThread() {
   if (!thread_.joinable()) return;
-  quit_ = true;
-  thread_.join();
-}
-
-void VideoInput::threadMain(int type, std::string source) {
-  while (!quit_) {
-    std::unique_ptr<VideoBackend> b;
-    switch (type) {
-      case VSRC_TEST: b = makeTestBackend(); break;
-      case VSRC_NDI: b = makeNdiBackend(); break;
-      case VSRC_CAPTURE: b = makeCaptureBackend(); break;
-      case VSRC_DECKLINK: b = makeDeckLinkBackend(); break;
-      case VSRC_AJA: b = makeAjaBackend(); break;
-      default: return;
-    }
-    std::string err;
-    bool ok = b && b->open(source, err);
-    {
-      std::lock_guard<std::mutex> lk(mtx_);
-      error_ = ok ? "" : (err.empty() ? "Could not open the video source." : err);
-      opened_ = ok;
-    }
-    if (!ok) {
-      if (b) b->close();
-      for (int i = 0; i < 20 && !quit_; ++i) std::this_thread::sleep_for(std::chrono::milliseconds(100));
-      continue;  // try again
-    }
-    RawFrame f;
-    while (!quit_) {
-      int r = b->read(f, 100);
-      {
-        std::lock_guard<std::mutex> lk(mtx_);
-        backendStatus_ = b->status();
-      }
-      if (r < 0) break;
-      if (r == 0) continue;
-      std::lock_guard<std::mutex> lk(mtx_);
-      std::swap(latest_, f);
-      fresh_ = true;
-    }
-    b->close();
-    {
-      std::lock_guard<std::mutex> lk(mtx_);
-      opened_ = false;
-    }
-    for (int i = 0; i < 10 && !quit_; ++i) std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  sh_->quit = true;
+  // a source normally stops within 0.1 s; one stuck in its driver is left behind instead of freezing TouchFX
+  auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(400);
+  while (!sh_->done && std::chrono::steady_clock::now() < until) std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  if (sh_->done) {
+    thread_.join();
+  } else {
+    logLine("Video input: the source did not stop (driver busy); left it behind");
+    thread_.detach();
   }
+  sh_ = std::make_shared<Shared>();
 }
 
 void VideoInput::upload(const RawFrame& f) {
@@ -262,13 +287,13 @@ void VideoInput::spoutUpdate() {
   // one call per frame: connects, and copies the sender's frame into our texture (shared top-down: flip)
   if (!s.rx.ReceiveTexture(s.tex, GL_TEXTURE_2D, true, 0)) {
     s.connected = false;
-    std::lock_guard<std::mutex> lk(mtx_);
-    backendStatus_ = source_.empty() ? "No Spout sender running" : "Spout sender \"" + source_ + "\" is not running";
+    std::lock_guard<std::mutex> lk(sh_->m);
+    sh_->backendStatus = source_.empty() ? "No Spout sender running" : "Spout sender \"" + source_ + "\" is not running";
     return;
   }
   {
-    std::lock_guard<std::mutex> lk(mtx_);
-    backendStatus_.clear();
+    std::lock_guard<std::mutex> lk(sh_->m);
+    sh_->backendStatus.clear();
   }
   if (s.rx.IsUpdated()) {  // new sender or new size: re-allocate, the next call copies
     s.w = int(s.rx.GetSenderWidth());
@@ -297,8 +322,8 @@ void VideoInput::update(float dt) {
   }
   sinceFrame_ += dt;
   if (frozen_ && out_.tex) {  // hold the picture: nothing new is shown, nothing fades
-    std::lock_guard<std::mutex> lk(mtx_);
-    fresh_ = false;  // drop what arrives meanwhile
+    std::lock_guard<std::mutex> lk(sh_->m);
+    sh_->fresh = false;  // drop what arrives meanwhile
     level_ = std::min(1.f, level_ + dt * 2.f);
     if (wantThumb_ && thumb_.empty()) makeThumb();
     return;
@@ -308,13 +333,16 @@ void VideoInput::update(float dt) {
   } else {
     bool got = false;
     {
-      std::lock_guard<std::mutex> lk(mtx_);
-      if (fresh_) {
-        std::swap(work_, latest_);
-        fresh_ = false;
+      std::lock_guard<std::mutex> lk(sh_->m);
+      if (sh_->fresh) {
+        std::swap(work_, sh_->latest);
+        sh_->fresh = false;
         got = true;
-        if (!work_.info.empty()) info_ = work_.info;
       }
+    }
+    if (got && !work_.info.empty()) {
+      std::lock_guard<std::mutex> lk(mtx_);
+      info_ = work_.info;
     }
     if (got) {
       upload(work_);
@@ -357,20 +385,22 @@ void VideoInput::makeThumb() {
 }
 
 std::string VideoInput::statusText() const {
-  std::lock_guard<std::mutex> lk(mtx_);
   if (frozen_ && out_.tex) return "FROZEN (tap FREEZE or press F to go live)";
+  std::lock_guard<std::mutex> lk(sh_->m);
+  const std::string& err = sh_->error;
+  const std::string& bs = sh_->backendStatus;
   switch (state_) {
     case VS_OFF: return "Off";
     case VS_LIVE: return "Live";
     case VS_LOST:
-      if (!error_.empty()) return "Lost: " + error_;
-      if (!backendStatus_.empty()) return "Lost: " + backendStatus_;
+      if (!err.empty()) return "Lost: " + err;
+      if (!bs.empty()) return "Lost: " + bs;
       return "Signal lost - waiting for it to come back";
     default:
       if (type_ == VSRC_NDI && ndiPaused_) return "Restarting NDI...";
-      if (!error_.empty()) return error_;
-      if (!backendStatus_.empty()) return backendStatus_;
-      return opened_ ? "Waiting for the first frame..." : "Connecting...";
+      if (!err.empty()) return err;
+      if (!bs.empty()) return bs;
+      return sh_->opened ? "Waiting for the first frame..." : "Connecting...";
   }
 }
 
@@ -380,23 +410,34 @@ std::string VideoInput::formatText() const {
 }
 
 // ---- source lists ----
+// Source lists come from a detached thread with its own result object: a driver that hangs while listing
+// never blocks TouchFX (a new search is allowed after 10 s).
 void VideoInput::requestSourceList(int type) {
-  if (listBusy_) return;
-  if (listThread_.joinable()) listThread_.join();
-  listBusy_ = true;
-  listThread_ = std::thread([this, type] {
-    std::vector<std::string> v;
-    if (!(type == VSRC_NDI && ndiPaused_)) v = listSources(type);
-    {
-      std::lock_guard<std::mutex> lk(listMtx_);
-      if (type >= 0 && type < 8) lists_[type] = v;
-    }
-    listBusy_ = false;
-  });
+  if (listJob_ && !listJob_->done && std::chrono::steady_clock::now() - listJob_->started < std::chrono::seconds(10))
+    return;
+  if (type == VSRC_NDI && ndiPaused_) return;
+  auto job = std::make_shared<ListJob>();
+  job->type = type;
+  job->started = std::chrono::steady_clock::now();
+  listJob_ = job;
+  try {
+    std::thread([job] {
+      try {
+        job->result = listSources(job->type);
+      } catch (...) {
+        job->result.clear();
+      }
+      job->done = true;
+    }).detach();
+  } catch (...) {
+    job->done = true;
+  }
 }
 
+bool VideoInput::listing() const { return listJob_ && !listJob_->done; }
+
 std::vector<std::string> VideoInput::sourceList(int type) {
-  std::lock_guard<std::mutex> lk(listMtx_);
+  if (listJob_ && listJob_->done && listJob_->type >= 0 && listJob_->type < 8) lists_[listJob_->type] = listJob_->result;
   return (type >= 0 && type < 8) ? lists_[type] : std::vector<std::string>();
 }
 
@@ -408,12 +449,17 @@ class TestBackend : public VideoBackend {
  public:
   bool open(const std::string& source, std::string&) override {
     flaky_ = source.find("Flaky") != std::string::npos;
+    hang_ = source.find("Hang") != std::string::npos;  // (tests) behaves like a driver stuck in a read
     yuv_ = source.find("UYVY") != std::string::npos;
     start_ = Clock::now();
     next_ = start_;
     return true;
   }
   int read(RawFrame& f, int timeoutMs) override {
+    if (hang_) {
+      std::this_thread::sleep_for(std::chrono::seconds(20));
+      return 0;
+    }
     auto now = Clock::now();
     if (now < next_) {
       auto wait = std::min(next_ - now, std::chrono::duration_cast<Clock::duration>(std::chrono::milliseconds(timeoutMs)));
@@ -478,7 +524,7 @@ class TestBackend : public VideoBackend {
   std::string status() override { return status_; }
 
  private:
-  bool flaky_ = false, yuv_ = false;
+  bool flaky_ = false, yuv_ = false, hang_ = false;
   Clock::time_point start_, next_;
   std::string status_;
 };
@@ -601,6 +647,11 @@ class NdiBackend : public VideoBackend {
     if (type == 4) return -1;  // error: the connection is gone
     if (type != 1) {
       if (Clock::now() - lastFrame_ > std::chrono::seconds(1)) status_ = "No video from \"" + name_ + "\"";
+      // watchdog: a connection that stays silent for 3 s is closed and opened again (a stuck feed recovers)
+      if (Clock::now() - lastFrame_ > std::chrono::seconds(3)) {
+        logLine("NDI: no video from \"%s\" for 3 s, reconnecting", name_.c_str());
+        return -1;
+      }
       return 0;
     }
     lastFrame_ = Clock::now();

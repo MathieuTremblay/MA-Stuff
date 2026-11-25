@@ -733,6 +733,22 @@ void AudioStatus(App& a) {
   }
 }
 
+// "Detected 136 BPM  [1/2] [x2]": fixes a song read at double or half speed (the choice sticks for the song).
+void DetectedTempo(App& a) {
+  float s = S();
+  char buf[64];
+  if (a.af.bpm > 0) std::snprintf(buf, sizeof(buf), "Detected %.0f BPM", a.af.bpm);
+  else std::snprintf(buf, sizeof(buf), "Detected: listening...");
+  float bw = 70 * s, h = 40 * s;
+  ImGui::AlignTextToFramePadding();
+  ImGui::TextUnformatted(buf);
+  if (a.af.bpm <= 0) return;
+  ImGui::SameLine(ImGui::GetContentRegionAvail().x - bw * 2 - ImGui::GetStyle().ItemSpacing.x);
+  if (ImGui::Button("1/2##oct", ImVec2(bw, h))) a.audio.shiftOctave(0.5f);
+  ImGui::SameLine();
+  if (ImGui::Button("x2##oct", ImVec2(bw, h))) a.audio.shiftOctave(2.f);
+}
+
 void AudioLive(App& a) {
   AudioSettings& as = a.st.audio;
   float s = S();
@@ -743,9 +759,10 @@ void AudioLive(App& a) {
   if (Toggle(as.autoBpm ? "AUTO BPM: ON" : "AUTO BPM: OFF", as.autoBpm, ImVec2(w, 44 * s))) as.autoBpm = !as.autoBpm;
   ImGui::SameLine();
   if (Toggle(as.autoPlay ? "AUTO PLAY: ON" : "AUTO PLAY: OFF", as.autoPlay, ImVec2(w, 44 * s))) as.autoPlay = !as.autoPlay;
+  if (as.autoBpm) DetectedTempo(a);
   Pct("Reactivity", &as.reactivity);
   if (as.autoPlay) {
-    IntSlider("Auto points", &as.points, 1, 4);
+    IntSlider("Auto points", &as.points, 1, kMaxAutoPoints);
     Pct("Auto motion", &as.motion);
   }
   Hint("AUTO PLAY draws by itself with the music (no touch needed, it stops when the music stops). "
@@ -784,15 +801,40 @@ void AudioSettingsTab(App& a) {
   SectionLabel("ANALYSIS");
   Pct("Sensitivity", &as.sensitivity);
   Hint("Raise it if quiet music doesn't trigger anything; lower it if room noise triggers the effects.");
-  OnOff("AUTO BPM (follow the music)", &as.autoBpm);
-  if (as.enabled && a.af.bpm > 0) {
-    char buf[64];
-    std::snprintf(buf, sizeof(buf), "Detected tempo: %.0f BPM", a.af.bpm);
-    Hint(buf);
+  SectionLabel("FREQUENCY RANGE");
+  Choice("range", kAudioRangeNames, RANGE_COUNT, &as.range, 4, 0);
+  {
+    float lo = 0, hi = 0;
+    audioRange(as, lo, hi);
+    // log sliders 20 Hz .. 16 kHz; moving one switches to CUSTOM
+    auto hzSlider = [&](const char* label, float hz, float& out) {
+      float t = std::log(hz / 20.f) / std::log(800.f);
+      char vt[32];
+      if (hz >= 1000.f) std::snprintf(vt, sizeof(vt), "%.1f kHz", hz / 1000.f);
+      else std::snprintf(vt, sizeof(vt), "%.0f Hz", hz);
+      if (TouchSlider(label, &t, 0.f, 1.f, vt)) {
+        out = std::round(20.f * std::pow(800.f, std::clamp(t, 0.f, 1.f)));
+        return true;
+      }
+      return false;
+    };
+    float nlo = lo, nhi = hi;
+    bool ch = hzSlider("From", lo, nlo);
+    ch |= hzSlider("To", hi, nhi);
+    if (ch) {
+      as.range = RANGE_CUSTOM;
+      as.rangeLo = std::min(nlo, 15990.f);
+      as.rangeHi = std::max(nhi, as.rangeLo + 10.f);
+    }
   }
+  Hint("The hits, the pulse and the motion follow this part of the music: KICK or BASS for the beat, VOCALS "
+       "for a singer, HI-HATS for fast detail.");
+  OnOff("AUTO BPM (follow the music)", &as.autoBpm);
+  if (as.enabled && as.autoBpm) DetectedTempo(a);
+  Hint("If a song is read at double or half its tempo, tap 1/2 or x2 once: it stays that way for the song.");
   SectionLabel("AUTO PLAY");
   OnOff("AUTO PLAY (draw without touch)", &as.autoPlay);
-  IntSlider("Auto points", &as.points, 1, 4);
+  IntSlider("Auto points", &as.points, 1, kMaxAutoPoints);
   Pct("Auto motion", &as.motion);
   Pct("Reactivity", &as.reactivity);
 }

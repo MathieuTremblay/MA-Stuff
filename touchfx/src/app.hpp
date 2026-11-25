@@ -117,7 +117,7 @@ struct App {
   struct VirtualPoint {
     Vec2 pos, lastPos, vel;
     float phase = 0;
-  } vpts[4];
+  } vpts[kMaxAutoPoints];
   bool vActive = false;
   bool gesturesBlocked = false;
 

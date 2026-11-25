@@ -49,7 +49,7 @@ class Fireworks : public Effect {
     float burstColor = rng.next();
     for (const Emitter& e : c.live) {
       bool fresh = !prev.count(e.touch * 64 + e.mirror);
-      if (!(fresh || tick) || rockets.size() > 64) continue;
+      if (!(fresh || tick) || rockets.size() > 64 || c.releasing) continue;  // nothing new after release
       Rocket r;
       r.to = Vec2(e.pos.x * aspect, e.pos.y);
       r.from = s.rockets ? Vec2(r.to.x + rng.range(-0.08f, 0.08f), -0.02f) : r.to;

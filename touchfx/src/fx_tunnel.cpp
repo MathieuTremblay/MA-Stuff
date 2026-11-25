@@ -9,7 +9,7 @@ namespace {
 
 const char* kTunnelFS = R"(
 in vec2 vUv; out vec4 o;
-uniform vec2 uCenters[8]; uniform int uCount;
+uniform vec2 uCenters[8]; uniform float uAlphas[8]; uniform float uPhases[8]; uniform int uCount;
 uniform float uAspect, uZ, uDensity, uTwist, uWidth, uDepth, uSides, uGain, uPulse;
 uniform vec3 uLow, uMid, uHigh; uniform int uGradient;
 vec3 pal(float t) {
@@ -22,14 +22,14 @@ vec3 tunnel(vec2 c, float idx) {
   vec2 d = vUv - c;
   d.x *= uAspect;
   float r = length(d);
-  float a = atan(d.y, d.x);
   if (uSides >= 3.0) {  // polygon "radius": distance to a regular polygon instead of a circle
+    float a = atan(d.y, d.x);
     float seg = 6.2831853 / uSides;
     float aa = mod(a + uZ * uTwist, seg) - seg * 0.5;
     r = r * cos(aa) / cos(seg * 0.5);
   }
   float z = 1.0 / max(r, 0.002);           // depth: far away near the vanishing point
-  float rings = z * uDensity + uZ + idx * 0.37;
+  float rings = z * uDensity + uZ + idx;
   float dist = min(fract(rings), 1.0 - fract(rings));      // 0 on a ring line
   float aaw = max(fwidth(rings), 1e-5);
   float distPx = dist / aaw;                                // distance to the ring line in pixels
@@ -43,7 +43,7 @@ vec3 tunnel(vec2 c, float idx) {
 }
 void main() {
   vec3 c = vec3(0.0);
-  for (int i = 0; i < uCount; ++i) c = max(c, tunnel(uCenters[i], float(i)));  // overlapping tunnels: brightest wins
+  for (int i = 0; i < uCount; ++i) c = max(c, tunnel(uCenters[i], uPhases[i]) * uAlphas[i]);  // brightest wins
   o = vec4(c * uGain * (1.0 + uPulse * 0.6), 1.0);
 }
 )";
@@ -52,7 +52,7 @@ class Tunnel : public Effect {
  public:
   bool init() override { return prog.build("tunnel", kFullscreenVS, kTunnelFS); }
   void resize(int W, int H) override { aspect = float(W) / H; }
-  void clear() override { centers.clear(); }
+  void clear() override { tcs.clear(); }
 
   void frame(const FxCtx& c, const Target& out) override {
     const TunnelSettings& s = c.look->tunnel;
@@ -60,8 +60,14 @@ class Tunnel : public Effect {
     out.clear(0, 0, 0, 1);
     const std::vector<Emitter>& em = c.shapeEmitters();
     if (em.empty() || c.gain < 0.001f) return;
-    // vanishing points: one tunnel per finger (mirror copies included), or one for all when merged
-    std::vector<Vec2> targets;
+    // vanishing points: one tunnel per finger (mirror copies included), or one for all when merged.
+    // Each tunnel follows its own finger and fades in / out, so adding or lifting a finger never makes the
+    // others jump.
+    struct Target {
+      int key;
+      Vec2 pos;
+    };
+    std::vector<Target> targets;
     if (s.merge) {
       Vec2 sum(0, 0);
       int n = 0;
@@ -70,25 +76,48 @@ class Tunnel : public Effect {
           sum += e.pos;
           ++n;
         }
-      targets.push_back(n ? sum * (1.f / n) : Vec2(0.5f, 0.5f));
+      targets.push_back({-1, n ? sum * (1.f / n) : Vec2(0.5f, 0.5f)});
     } else {
-      for (const Emitter& e : em)
-        if (targets.size() < 8) targets.push_back(e.pos);
+      for (const Emitter& e : em) targets.push_back({e.touch * 64 + e.mirror, e.pos});
     }
-    if (centers.size() != targets.size()) centers = targets;  // finger added / removed: jump, don't slide
-    for (size_t i = 0; i < centers.size(); ++i) centers[i] = centers[i] + (targets[i] - centers[i]) * std::min(1.f, dt * 6.f);
+    for (TC& t : tcs) t.seen = false;
+    for (const Target& tg : targets) {
+      TC* t = nullptr;
+      for (TC& x : tcs)
+        if (x.key == tg.key) t = &x;
+      if (!t) {
+        tcs.push_back({tg.key, tg.pos, 0.f, hash01(uint32_t(tg.key + 1000) * 2654435761u), true});
+        t = &tcs.back();
+      }
+      t->seen = true;
+      t->pos = t->pos + (tg.pos - t->pos) * std::min(1.f, dt * 12.f);
+    }
+    for (TC& t : tcs) t.alpha = t.seen ? std::min(1.f, t.alpha + dt * 6.f) : t.alpha - dt * 4.f;
+    tcs.erase(std::remove_if(tcs.begin(), tcs.end(), [](const TC& t) { return t.alpha <= 0.f; }), tcs.end());
+    // draw at most 8: the most visible
+    std::vector<const TC*> draw;
+    for (const TC& t : tcs) draw.push_back(&t);
+    std::sort(draw.begin(), draw.end(), [](const TC* a, const TC* b) { return a->alpha > b->alpha; });
+    if (draw.size() > 8) draw.resize(8);
     z += dt * c.speed * mixf(0.2f, 4.f, s.speed) * (0.7f + 0.6f * std::min(c.drive, 1.5f));
     z = std::fmod(z, 1000.f);
 
     out.bind();
     prog.use();
-    float pts[16];
-    for (size_t i = 0; i < centers.size(); ++i) {
-      pts[i * 2] = centers[i].x;
-      pts[i * 2 + 1] = centers[i].y;
+    float pts[16], alphas[8], phases[8];
+    for (size_t i = 0; i < draw.size(); ++i) {
+      pts[i * 2] = draw[i]->pos.x;
+      pts[i * 2 + 1] = draw[i]->pos.y;
+      alphas[i] = draw[i]->alpha;
+      phases[i] = draw[i]->phase;
     }
-    prog.set2fv("uCenters", pts, int(centers.size()));
-    prog.seti("uCount", int(centers.size()));
+    int cnt = int(draw.size());
+    if (cnt > 0) {
+      prog.set2fv("uCenters", pts, cnt);
+      glUniform1fv(prog.loc("uAlphas"), cnt, alphas);
+      glUniform1fv(prog.loc("uPhases"), cnt, phases);
+    }
+    prog.seti("uCount", cnt);
     prog.setf("uAspect", aspect);
     prog.setf("uZ", z);
     prog.setf("uDensity", mixf(0.08f, 0.6f, s.density));
@@ -109,7 +138,13 @@ class Tunnel : public Effect {
  private:
   Program prog;
   float aspect = 1, z = 0;
-  std::vector<Vec2> centers;
+  struct TC {
+    int key;
+    Vec2 pos;
+    float alpha, phase;
+    bool seen;
+  };
+  std::vector<TC> tcs;
 };
 
 }  // namespace

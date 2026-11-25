@@ -526,11 +526,13 @@ void stressTick(App& a, float dt, float frameSeconds) {
         g.nextVideo = g.elapsed + rnd(40.f, 120.f);
       }
     } else {
-      static const char* srcs[] = {"Colour bars", "Colour bars UYVY", "Flaky (drops out)"};
-      int k = irnd(0, 4);
-      v.type = k < 3 ? VSRC_TEST : VSRC_OFF;
-      v.source = k < 3 ? srcs[k] : "";
-      g.nextVideo = g.elapsed + rnd(10.f, 40.f);
+      // test pictures, a source that hangs like a stuck driver, NDI, a capture card (none here: an error)
+      static const char* srcs[] = {"Colour bars", "Colour bars UYVY", "Flaky (drops out)", "Hang (test)"};
+      int k = irnd(0, 6);
+      v.type = k < 4 ? VSRC_TEST : k == 4 ? VSRC_NDI : k == 5 ? VSRC_CAPTURE : VSRC_OFF;
+      v.source = k < 4 ? srcs[k] : "";
+      if (chance(0.5f)) a.video.requestSourceList(v.type);
+      g.nextVideo = g.elapsed + rnd(4.f, 20.f);
     }
     count("video source");
   }

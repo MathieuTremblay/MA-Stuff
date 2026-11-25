@@ -275,7 +275,13 @@ struct AudioSettings {
   int points = 2;            // number of virtual fingers 1..4
   float motion = 0.5f;       // how fast they move
   float reactivity = 0.7f;   // how strongly the audio drives the effects
+  // Frequency range the hits, pulse and motion listen to
+  int range = 1;             // AudioRange; RANGE_CUSTOM uses rangeLo / rangeHi
+  float rangeLo = 40.f, rangeHi = 250.f;  // Hz
 };
+enum AudioRange { RANGE_KICK, RANGE_BASS, RANGE_LOWMID, RANGE_VOCALS, RANGE_HATS, RANGE_FULL, RANGE_CUSTOM, RANGE_COUNT };
+extern const char* const kAudioRangeNames[RANGE_COUNT];
+void audioRange(const AudioSettings& as, float& lo, float& hi);
 
 struct DmxSettings {
   int protocol = 1;          // 0 off, 1 sACN, 2 Art-Net
@@ -303,6 +309,7 @@ constexpr int kNumPalettes = 10;
 constexpr int kNumScenes = 12;
 constexpr int kMaxOutW = 1920, kMaxOutH = 1080;
 constexpr int kMaxTouches = 10;
+constexpr int kMaxAutoPoints = 10;  // audio auto-play points
 
 struct AppState {
   Look look;

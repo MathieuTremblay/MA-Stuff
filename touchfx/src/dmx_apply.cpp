@@ -175,20 +175,18 @@ void applyV2(App& a, float dt) {
   if (changed(D2_M_BRIGHT)) l.brightness = vals[D2_M_BRIGHT] / 255.f * 2.f;
 
   // ---- front layer ----
-  bool fxChanged = false;
   if (changed(D2_F_EFFECT) && (s = slot(D2_F_EFFECT, kDmx2FxCount)) >= 0 && kDmx2Effects[s] != l.effect) {
     l.effect = kDmx2Effects[s];
-    fxChanged = true;
   }
   const DmxFn2 fch[3] = {D2_F_MODE, D2_F_OPT1, D2_F_OPT2};
   for (int w = 0; w < 3; ++w)
-    if (changed(fch[w]) || (fxChanged && present[fch[w]]))
+    if (changed(fch[w]))  // a new effect keeps its own settings until a value changes
       dmx2SetChoice(l, l.effect, w, slot(fch[w], dmx2ChoiceCount(l.effect, w)));
   const DmxFn2 fp[10] = {D2_F_P1, D2_F_P2, D2_F_P3, D2_F_P4, D2_F_P5, D2_F_P6, D2_F_P7, D2_F_P8, D2_F_P9, D2_F_P10};
   for (int i = 0; i < 10; ++i)
-    if (changed(fp[i]) || (fxChanged && present[fp[i]])) dmx2SetParam(l, l.effect, i, vals[fp[i]]);
-  if ((changed(D2_F_RELEASE) || fxChanged) && (s = slot(D2_F_RELEASE, 3)) >= 0) l.releaseFx[l.effect] = s;
-  if ((changed(D2_F_FADETIME) || fxChanged) && present[D2_F_FADETIME])
+    if (changed(fp[i])) dmx2SetParam(l, l.effect, i, vals[fp[i]]);
+  if (changed(D2_F_RELEASE) && (s = slot(D2_F_RELEASE, 3)) >= 0) l.releaseFx[l.effect] = s;
+  if (changed(D2_F_FADETIME))
     l.fadeFx[l.effect] = std::max(0.05f, vals[D2_F_FADETIME] / 255.f * 10.f);
   if (changed(D2_F_SPEED) && (s = slot(D2_F_SPEED, kNumSpeedMults)) >= 0) l.speedMult = s;
   if (changed(D2_F_MIRROR) && (s = slot(D2_F_MIRROR, MIRROR_COUNT)) >= 0) l.mirror = s;
@@ -214,18 +212,16 @@ void applyV2(App& a, float dt) {
     Look t;
     paramsToLook(bg.fx, t);
     t.effect = bg.effect;
-    bool bfx = false;
     if (changed(D2_B_EFFECT) && (s = slot(D2_B_EFFECT, kDmx2FxCount)) >= 0 && kDmx2Effects[s] != t.effect) {
       t.effect = kDmx2Effects[s];
-      bfx = true;
     }
     const DmxFn2 bch[3] = {D2_B_MODE, D2_B_OPT1, D2_B_OPT2};
     for (int w = 0; w < 3; ++w)
-      if (changed(bch[w]) || (bfx && present[bch[w]]))
+      if (changed(bch[w]))
         dmx2SetChoice(t, t.effect, w, slot(bch[w], dmx2ChoiceCount(t.effect, w)));
     const DmxFn2 bp[10] = {D2_B_P1, D2_B_P2, D2_B_P3, D2_B_P4, D2_B_P5, D2_B_P6, D2_B_P7, D2_B_P8, D2_B_P9, D2_B_P10};
     for (int i = 0; i < 10; ++i)
-      if (changed(bp[i]) || (bfx && present[bp[i]])) dmx2SetParam(t, t.effect, i, vals[bp[i]]);
+      if (changed(bp[i])) dmx2SetParam(t, t.effect, i, vals[bp[i]]);
     lookToParams(t, bg.fx);
     bg.effect = t.effect;
   }
@@ -345,13 +341,9 @@ void applyDmx(App& a, float dt) {
   }
 
   // ---- discrete: last change wins (the panel keeps control until the console changes the value) ----
-  bool effectChanged = false;
-  if (changed(DMX_EFFECT)) {
+  if (changed(DMX_EFFECT)) {  // the new effect keeps its own settings until a param value changes
     int s = slotOf(vals[DMX_EFFECT], kDmxEffects);
-    if (s >= 0 && s != l.effect) {
-      l.effect = s;
-      effectChanged = true;
-    }
+    if (s >= 0 && s != l.effect) l.effect = s;
   }
   if (changed(DMX_SCENE)) {
     int s = slotOf(vals[DMX_SCENE], kNumScenes);
@@ -370,7 +362,7 @@ void applyDmx(App& a, float dt) {
       a.dmxColors = false;
     }
   }
-  if (changed(DMX_FXMODE) || (effectChanged && present[DMX_FXMODE])) {
+  if (changed(DMX_FXMODE)) {
     int s = slotOf(vals[DMX_FXMODE], 8);
     if (s >= 0) setMode(l, s);
   }
@@ -387,7 +379,7 @@ void applyDmx(App& a, float dt) {
   }
   const DmxFn params[4] = {DMX_PARAM1, DMX_PARAM2, DMX_PARAM3, DMX_PARAM4};
   for (int i = 0; i < 4; ++i)
-    if (changed(params[i]) || (effectChanged && present[params[i]])) setParam(l, i, vals[params[i]]);
+    if (changed(params[i])) setParam(l, i, vals[params[i]]);
   if (changed(DMX_GLOW)) l.post.bloom = vals[DMX_GLOW] / 255.f;
   if (changed(DMX_SATURATION)) l.post.saturation = vals[DMX_SATURATION] / 255.f;
   if (changed(DMX_CONTROL) && a.dmxPrimed) {  // commands fire when the value enters their range

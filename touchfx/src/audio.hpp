@@ -1,6 +1,7 @@
 #pragma once
 #include <SDL.h>
 
+#include <algorithm>
 #include <atomic>
 #include <mutex>
 #include <string>
@@ -11,9 +12,11 @@
 struct AudioFeatures {
   bool active = false;  // signal above the noise gate
   float level = 0, bass = 0, mid = 0, high = 0;
+  float focus = 0;      // energy in the chosen frequency range (SETTINGS > AUDIO)
   float pulse = 0;      // 1 on a detected hit, then decays
   bool onset = false;   // a hit was detected this frame
   float bpm = 0;        // estimated tempo (0 = not sure yet)
+  float bpmConfidence = 0;  // 0..1
   float spectrum[32] = {};  // log-spaced bands 40 Hz..16 kHz, 0..1
 };
 
@@ -35,9 +38,15 @@ class AudioInput {
   int sampleRate() const { return rate_.load(); }
 
   // Analyse the newest audio. sensitivity 0..1 (higher = reacts to quieter sound).
-  void update(float dt, float sensitivity);
+  // rangeLo / rangeHi: the frequency range (Hz) the hits and the focus level follow
+  void update(float dt, float sensitivity, float rangeLo = 40.f, float rangeHi = 250.f);
   const AudioFeatures& features() const { return f_; }
 
+  // the detected tempo is at the wrong octave (a song read at double / half speed): move it; it stays there
+  void shiftOctave(float m) {
+    if (f_.bpm > 0) f_.bpm = std::clamp(f_.bpm * m, 30.f, 300.f);
+    bpmHold_ = 0;
+  }
   void push(const float* mono, int n);  // called from the audio thread
 
  private:
@@ -67,8 +76,15 @@ class AudioInput {
   AudioFeatures f_;
   float peak_[4] = {0.05f, 0.05f, 0.05f, 0.05f};
   float specPeak_ = 0.01f;
-  float bassAvg_ = 0;
+  float bassAvg_ = 0, focusPeak_ = 0.05f, fluxPeak_ = 1e-6f;
+  std::vector<float> prevMag_;
+  // onset strength on a fixed 100 Hz grid, last 8 s, for the tempo (autocorrelation)
+  std::vector<float> env_ = std::vector<float>(800, 0.f);
+  long envTick_ = 0;
+  double envClock_ = 0, bpmClock_ = 0;
+  float bpmHold_ = 0;
+  int bpmHoldCount_ = 0;
+  void estimateTempo();
   double now_ = 0, lastOnset_ = -10, gateHold_ = 0;
-  std::vector<float> intervals_;
   std::vector<float> window_, re_, im_;
 };
