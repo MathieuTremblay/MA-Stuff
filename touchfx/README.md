@@ -17,6 +17,9 @@ Requirements: Windows 10/11 64-bit, a GPU with OpenGL 3.3 (any dedicated card), 
 
 TouchFX starts on a **launcher**: pick a show and tap **OPEN**, or **NEW SHOW** (named with the on-screen keyboard).
 **DUPLICATE**, **RENAME**, **DELETE** (moved to a *Deleted* folder) and **SHOW FOLDER** manage them.
+**EXPORT** copies the selected show (and its picture) to a USB stick or another drive, into a *TouchFX Shows*
+folder; **IMPORT** lists the shows on a drive and brings one in. Everything is done on the touch screen (drives
+are listed with USB sticks first); if the name is already used you choose **REPLACE** or **KEEP BOTH**.
 A show holds the looks, scenes, cue lists, palettes and DMX patch, and saves itself automatically to
 `Documents\TouchFX Shows\<name>.tfxshow`: copy these files to back up or move shows between PCs.
 What belongs to the PC (outputs, screens, audio and video inputs, layout, touch) stays in `settings.json`.
@@ -76,7 +79,9 @@ Swipe up/down anywhere in the panel to scroll (sliders: swipe sideways to change
 | **New in 0.5** | **Ripples** (water surface, drops on the beat), **Ribbons** (glowing strands following the fingers), **Shapes** (neon polygons / stars popping on the beat), **Tunnel** (full-screen tunnel, vanishing point under the finger), **Plexus** (connected points), **Fireworks** (rockets bursting at the finger), **Starfield** (hyperspace streaks), **Spectrum** (audio equaliser: circle, bars or wave), **LED grid** (LED-wall tiles: trail, rings, sparkle). Strobe gains **Shockwave**, **Wipe**, **Blinder** and **Blocks**. |
 | **FRONT / BACK** | Which layer the LIVE controls edit. **FRONT** (orange) is the effect you play with your fingers. **BACK** (blue) is the background layer: the effect bar, sliders, mirror and speed then edit the background (see *Background layer*). |
 | **Video** | The video input played with the fingers (choose the input in *SETTINGS → VIDEO IN*): **REVEAL** (paint the video into view, it fades back over the trail time), **LIQUID** (push the picture like a liquid), **RIPPLE** (water ripples bend it), **KALEIDO** (kaleidoscope around your first finger), **PIXEL** (big pixels where your fingers go), **WARP** (swirl / pinch around each finger), **CLEAN** (just the video, nothing added). **ALWAYS ON** keeps the picture up without fingers and it never fades on release (with REVEAL, the unpainted video shows at the *base level*). **FREEZE** (or the **F** key) holds the current frame for both layers, even through a lost signal, until you tap it again (header: *VIDEO FROZEN*; not stored in scenes or cues). The video always goes out exactly like the source: the LOOK (glow, saturation, brightness) only applies to the effects, and with the alpha channel on the video stays opaque. At the default *Video level* (80 %) the picture is 1:1; above it is boosted. Capture cards / cameras: TouchFX uses the colour range and matrix the device reports (full range or video range, BT.601 or BT.709). Fit: fill, fit or stretch. The palette only colours the glow / highlights the effect adds (Glow at 0 = pure video) and the gradient that stands in when there is no input. |
-| **LED grid** | LED-wall tiles: **TRAIL**, **RINGS**, **SPARKLE**, **SCROLL** (colour bands sweeping on the beat, direction from your finger), **EQUALIZER** (VU columns from the audio), **PLASMA**, **RAIN**, **CHECKER** (checker / stripes / quarters flipping on the beat), **RADAR** (sweep around each finger), **VIDEO MAP** (the video input on the tiles). Square or round tiles, gap, size, and **Bulb**: incandescent lamps (amber when dim, warm white at full, slow to heat up and cool down, a glowing round bulb). |
+| **Ribbons** | Each finger paints a wide flat stroke of parallel colour bands (**Bands** 2–6, colours from the palette: low, mid, high, repeating), a retro striped look. The tail waves gently (**Wave**, **Flow**) and fades after the **Length** time. Matte: the glow is off unless you raise **Glow**. |
+| **Spectrum** | **CIRCLE** (bars around the finger), **BARS** (an equaliser across the screen laid out by MIRROR: L-R puts the lows in the centre, U-D grows the bars up and down from the middle), **WAVE**, **WATERFALL** (the spectrum's history flowing away from the finger), **SCOPE** (the sound wave itself), **RINGS** (lows inside, highs outside, each ring pumping), **BURST** (every hit throws out a ring of spikes). |
+| **LED grid** | LED-wall tiles: **TRAIL**, **RINGS**, **SPARKLE**, **SCROLL** (colour bands sweeping on the beat, direction from your finger), **EQUALIZER** (VU columns from the audio), **PLASMA**, **RAIN**, **CHECKER** (checker / stripes / quarters flipping on the beat), **RADAR** (sweep around each finger), **VIDEO MAP** (the video input on the tiles), **VU METERS** (big level meters with peak hold), **SPECTRO** (scrolling spectrogram). EQUALIZER, VU METERS and SPECTRO follow MIRROR (L-R: from the centre out, U-D: from the middle row). Square or round tiles, gap, size, and **Bulb**: incandescent lamps (amber when dim, warm white at full, slow to heat up and cool down, a glowing round bulb). |
 | **Lasers** | Laser-show modes: **FAN** (fan of beams from the finger), **AIM** (projectors along the bottom converge on your finger), **TUNNEL** (rings on the beat), **WAVE**, **SCAN**, **WEB**. *Swing* sweeps on the beat and *Rotation* turns the beams, both following the **swing pattern** (**TOGETHER**, **MIRROR** each side opposite, **WAVE** one after the other / the fan opens and closes, **RANDOM** each beam its own direction, speed and start, re-picked at every touch); *Scatter* gives each beam a random angle offset; *Chase* makes beams blink in sequence / alternate / random. |
 | **Quick colours** | Tap LOW / MID / HIGH under the palettes to override the colours live without touching the palette. **SAVE TO …** stores them in the palette, **BACK TO PALETTE** drops the override. Scenes remember overrides. |
 | **Palette / colour mode** | Pick one of the 10 palettes. Colour mode: Gradient (over the effect's life), Speed (finger speed), Position (left to right), Beat (steps each beat), Random, **Video** (picks up the video's colour where your fingers are and the effect carries it: smoke swirls it, particles keep it), **Video mask** (every pixel takes the colour of the video under it). |
@@ -90,7 +95,7 @@ Swipe up/down anywhere in the panel to scroll (sliders: swipe sideways to change
 | **LOOK** | Glow (bloom), glow size, saturation and brightness for every effect (saved in scenes), and the effect-change crossfade time. |
 | **AUDIO** | Input level meter (works while the tab is open, even with audio reactive off), audio source (default input, any input device, system audio, test beat), sensitivity, auto BPM, auto play. |
 | **OUTPUT** | Resolution (1920x1080, 1280x720, 960x540 or custom, max 1920x1080), 30 / 60 fps, NDI on/off, source name and **network card**, **Spout** output (GPU sharing with Resolume / TouchDesigner / OBS on the same PC), **alpha channel** (straight or premultiplied). |
-| **SCREEN** | **External display**: show the output fullscreen on another screen (fit / fill / stretch, or windowed). Layout: panel left or right, panel width, effects / scenes under the canvas, UI size, fullscreen. |
+| **SCREEN** | **External display**: show the output fullscreen on another screen (fit / fill / stretch, or windowed). A screen bigger than the output resolution (e.g. a 4K screen with a 1080p output) gets a sharp bicubic upscale; rendering stays at the output resolution, so NDI and the frame rate are not affected. Layout: panel left or right, panel width, effects / scenes under the canvas, UI size, fullscreen. |
 | **DMX** | Control from a lighting console: sACN or Art-Net, universe, start address, Basic / Advanced profile, DMX lock, live channel monitor. |
 | **VIDEO IN** | The video input (a PC setting): **NDI**, **CAPTURE** (USB capture devices such as AV Matrix, cameras, cards that appear as a camera), **SPOUT** (another program on this PC), **BLACKMAGIC** (DeckLink / UltraStudio, needs Blackmagic Desktop Video; format detected automatically), **AJA** (KONA / Io / Corvid, needs the AJA driver; each SDI / HDMI input is listed), **TEST** (built-in picture). Pick the source from the list (or *first one found*); status, format, frame rate and a preview are shown. |
 | **SYSTEM** | Current show, switch show, show and logs folders; block Windows 3/4-finger gestures, number of touch points (1–10), touch markers on the preview, reset everything. |
@@ -99,8 +104,8 @@ Swipe up/down anywhere in the panel to scroll (sliders: swipe sideways to change
 
 A second effect running behind the one you play, on the same output. Select **BACK** at the top of LIVE:
 - **ON / OFF** and **Level**, then the effect (the effect bar turns blue), its sliders, its own mirror and speed.
-- **FOLLOW TOUCH**: your fingers drive it too. Otherwise it moves by itself (slow wandering points, faster with the
-  music when audio reactive is on). **Motion** sets how fast.
+- **MOVED BY**: **AUTO** (it moves by itself: slow wandering points, faster with the music when audio reactive is
+  on; **Motion** sets how fast), **TOUCH** (only your fingers move it, like the front effect) or **BOTH**.
 - **Blend**: **ADD** (both layers glow together), **BEHIND** (the front effect covers the background where it is
   bright), **REVEAL** (the background only shows where the front effect draws: paint it into view, e.g. a video).
 - **Own colours**: its own palette and colour mode, otherwise the front layer's.
@@ -159,8 +164,17 @@ Turn on **AUDIO** and pick a source in *SETTINGS → AUDIO*:
 With **AUTO PLAY** on, virtual fingers (blue circles on the preview) draw the current effect by themselves, moved
 by the music; they disappear when the music stops, so the effect fades/snaps like a released finger.
 Real fingers still work on top. **Reactivity** sets how much the music drives the effect (amount, speed, glow kicks
-on hits). **AUTO BPM** follows the detected tempo and lines the beat up with the hits. The strobe can also
-**flash on audio hits**.
+on hits). Up to **10 auto points**. As soon as a real finger touches, the auto points step aside so the effect
+follows your hand at full speed; they come back when you let go.
+
+**FREQUENCY RANGE** (*SETTINGS → AUDIO*) picks the part of the music the hits, the pulse and the motion listen to:
+**KICK**, **BASS**, **LOW-MIDS**, **VOCALS**, **HI-HATS**, **FULL**, or your own **From / To** in Hz (moving a slider
+switches to CUSTOM).
+
+**AUTO BPM** follows the detected tempo and lines the beat up with the hits. The tempo is measured over the last
+8 seconds of the whole groove, so syncopated kicks no longer push it too high. If a song is read at double or half
+its tempo (a 68 BPM ballad read as 136), tap **1/2** or **x2** next to *Detected … BPM* once: it stays in that
+octave for the song. The strobe can also **flash on audio hits**.
 
 ### Windows touch gestures
 

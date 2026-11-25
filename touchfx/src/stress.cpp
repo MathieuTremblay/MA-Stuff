@@ -292,6 +292,9 @@ void action(App& a) {
   } else if (r < 36) {
     l.mirror = irnd(0, MIRROR_COUNT - 1);
     l.grid.mode = irnd(0, GRID_COUNT - 1);
+    l.spectrum.mode = irnd(0, SPEC_COUNT - 1);
+    l.ribbons.bands = irnd(2, 6);
+    if (chance(0.3f)) l.effect = chance(0.5f) ? FX_SPECTRUM : (chance(0.5f) ? FX_RIBBONS : FX_GRID);
     l.grid.bulb = chance(0.5f) ? rnd() : 0.f;
     l.lasers.swingMode = irnd(0, SWING_COUNT - 1);
     if (chance(0.3f)) l.colorMode = COLOR_VIDEO;
@@ -388,6 +391,11 @@ void action(App& a) {
     a.st.audio.enabled = chance(0.5f);
     a.st.audio.device = "@test";
     a.st.audio.autoPlay = chance(0.5f);
+    a.st.audio.points = irnd(1, kMaxAutoPoints);
+    a.st.audio.range = irnd(0, RANGE_COUNT - 1);
+    a.st.audio.rangeLo = float(irnd(20, 8000));
+    a.st.audio.rangeHi = a.st.audio.rangeLo + float(irnd(10, 8000));
+    if (chance(0.2f)) a.audio.shiftOctave(chance(0.5f) ? 0.5f : 2.f);
     count("audio");
   } else {
     a.st.maxTouches = irnd(1, kMaxTouches);

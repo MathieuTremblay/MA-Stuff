@@ -1428,7 +1428,7 @@ void LivePanel(App& a) {
          "Scenes and cues store it.");
     {
       static const char* srcs[] = {"AUTO", "TOUCH", "BOTH"};
-      int src = bg.source < 0 ? (bg.followTouch ? BGSRC_BOTH : BGSRC_AUTO) : bg.source;
+      int src = std::clamp(bg.source, 0, BGSRC_COUNT - 1);
       ImGui::TextUnformatted("MOVED BY");
       if (Choice("bgsrc", srcs, BGSRC_COUNT, &src, 0, 44 * s)) {
         bg.source = src;

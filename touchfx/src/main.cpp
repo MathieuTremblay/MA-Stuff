@@ -685,7 +685,7 @@ void buildBgEmitters(App& a, float dt) {
   float energy = 1.f;
   if (a.st.audio.enabled && a.af.active) energy = 0.5f + a.af.focus * 1.2f + a.af.pulse * 0.5f;
   float speed = a.st.look.bpm / 120.f * kSpeedMults[bg.speedMult];
-  int src = bg.source < 0 ? (bg.followTouch ? BGSRC_BOTH : BGSRC_AUTO) : bg.source;
+  int src = bg.source;
   for (int k = 0; k < 2 && src != BGSRC_TOUCH; ++k) {
     App::BgPoint& v = a.bgPts[k];
     v.phase += dt * (0.05f + bg.motion * 0.9f) * energy * std::clamp(speed, 0.25f, 3.f);

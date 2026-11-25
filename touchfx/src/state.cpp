@@ -111,7 +111,7 @@ static void sanitizeLook(Look& l) {
   clampRef(b.colorMode, 0, COLOR_COUNT - 1);
   clampRef(b.speedMult, 0, kNumSpeedMults - 1);
   clampRef(b.motion, 0.f, 1.f);
-  if (b.source < 0) b.source = b.followTouch ? BGSRC_BOTH : BGSRC_AUTO;  // files from 0.9.1 and before
+  if (b.followTouch && b.source == BGSRC_AUTO) b.source = BGSRC_BOTH;  // files from 0.9.1 and before (FOLLOW TOUCH)
   clampRef(b.source, 0, BGSRC_COUNT - 1);
   b.followTouch = b.source != BGSRC_AUTO;
   {

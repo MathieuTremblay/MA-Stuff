@@ -178,7 +178,7 @@ struct BgLayer {
   int effect = FX_STARFIELD;
   float level = 0.6f;
   bool followTouch = false;  // old files (0.9.1 and before); source replaces it
-  int source = -1;           // BgSource (-1 = not set: taken from followTouch)
+  int source = BGSRC_AUTO;   // BgSource; followTouch is kept in step (on for TOUCH / BOTH)
   int blend = BLEND_ADD;
   int mirror = MIRROR_OFF;
   bool ownColors = false;    // own palette / colour mode instead of the front layer's
