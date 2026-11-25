@@ -133,7 +133,7 @@ Sub-fixtures: **Main** (master), **Front** (the effect you play), **Back** (back
 | 41 | Back | Option 2 | named per effect (see below) |
 | 42 | Back | Blend | 0-9 keep, 10-89 Add, 90-169 Behind, 170-249 Reveal, 250-255 keep |
 | 43 | Back | Motion | 0-255 = 0-100 % |
-| 44 | Back | Follow touch | 0-9 keep, 10-129 Off, 130-249 On, 250-255 keep |
+| 44 | Back | Motion source | 0-9 keep, 10-89 Auto, 90-169 Touch, 170-249 Both, 250-255 keep |
 | 45 | Back | Speed | 0-9 keep, 10-57 x1/4, 58-105 x1/2, 106-153 x1, 154-201 x2, 202-249 x4, 250-255 keep |
 | 46 | Back | Mirror | 0-9 keep, 10-49 Off, 50-89 Left-Right, 90-129 Up-Down, 130-169 Quad, 170-209 Radial 6, 210-249 Radial 8, 250-255 keep |
 | 47 | Back | Palette | 0-9 keep, 10-30 Same as front, 31-51 Palette 1, 52-72 Palette 2, 73-93 Palette 3, 94-114 Palette 4, 115-135 Palette 5, 136-156 Palette 6, 157-177 Palette 7, 178-198 Palette 8, 199-219 Palette 9, 220-249 Palette 10, 250-255 DMX colours |
@@ -179,7 +179,7 @@ Choices use 0-9 keep, then equal slots from 10 to 249 in the order listed. Param
 | Fluid (10-24) | - | - | - | Size | Force | Swirl | Trail | Intensity | - | - | - | - | - |
 | Particles (25-39) | Strobe: Strobe off, Strobe sync, Strobe sparkle | Strobe rate: 1/4 per beat, 1/2 per beat, 1 per beat, 2 per beat, 4 per beat, 8 per beat | - | Amount | Size | Life | Speed | Spread | Gravity, 50% = none | Trail | - | - | - |
 | Sparkles (40-54) | - | - | - | Amount | Size | Spread | Twinkle | Life | Drift | Rays | Trail | - | - |
-| Ribbons (55-69) | - | - | - | Strands (1-6) | Length | Width | Wind | Flutter | Stiffness | Sheen | - | - | - |
+| Ribbons (55-69) | - | - | - | Bands (2-6) | Length | Width | Wave | Flow | Glow | - | - | - | - |
 | Fireworks (70-84) | - | Launch rate: 1/4 per beat, 1/2 per beat, 1 per beat, 2 per beat, 4 per beat, 8 per beat | Rockets: Off, On | Size | Amount | Gravity | Trail | Sparkle | - | - | - | - | - |
 | Starfield (85-99) | - | - | - | Amount | Speed | Streak | Size | Twinkle | Brightness | - | - | - | - |
 | Plexus (100-114) | - | - | - | Points | Link distance | Dot size | Drift | Spread | Trail | - | - | - | - |
@@ -189,8 +189,8 @@ Choices use 0-9 keep, then equal slots from 10 to 249 in the order listed. Param
 | Tunnel (160-174) | Sides: Round, 3 sides, 4 sides, 5 sides, 6 sides, 7 sides, 8 sides | Merge fingers: Off, On | - | Speed | Ring density | Spin, 50% = stop | Line width | Edge fade | - | - | - | - | - |
 | Shapes (175-189) | Shape: Triangle, Square, Pentagon, Hexagon, Circle, Star, Mix | Rate: 1/4 per beat, 1/2 per beat, 1 per beat, 2 per beat, 4 per beat, 8 per beat | - | Size | Spin, 50% = stop | Line width | Life | Glow | - | - | - | - | - |
 | Ripples (190-204) | - | Beat drops: Off, On | - | Size | Strength | Decay | Shine | - | - | - | - | - | - |
-| Spectrum (205-219) | Spectrum mode: Circle, Bars, Wave | Symmetric: Off, On | - | Bars (8-128) | Size | Gain | Width | Glow | - | - | - | - | - |
-| LED grid (220-234) | Grid mode: Trail, Rings, Sparkle, Scroll, Equalizer, Plasma, Rain, Checker, Radar, Video map | Tile shape: Square, Round | - | Tile size | Gap | Bulb | Brush, pattern size in whole-wall modes | Trail | - | - | - | - | - |
+| Spectrum (205-219) | Spectrum mode: Circle, Bars, Wave, Waterfall, Scope, Rings, Burst | Symmetric: Off, On | - | Bars (8-128) | Size | Gain | Width | Glow | - | - | - | - | - |
+| LED grid (220-234) | Grid mode: Trail, Rings, Sparkle, Scroll, Equalizer, Plasma, Rain, Checker, Radar, Video map, VU meters, Spectro | Tile shape: Square, Round | - | Tile size | Gap | Bulb | Brush, pattern size in whole-wall modes | Trail | - | - | - | - | - |
 | Strobe (235-249) | Strobe shape: Full, Spot, H-bar, V-bar, Sparkle, Shockwave, Wipe, Blinder, Blocks | Flash rate: 1/4 per beat, 1/2 per beat, 1 per beat, 2 per beat, 4 per beat, 8 per beat, Free (Param 3), Audio hits | Colour cycle: Off, On | Flash length | Size | Free rate (1-25), Hz, with Flash rate = Free | - | - | - | - | - | - | - |
 
-Two ways to work: the console programs the look with these channels, or it fires TouchFX's own cues with **Song** + **Cue** (cue number x 10). *Last change wins* applies as in v1; with **DMX LOCK** the console always wins. When the Effect channel changes, all of that effect's Mode / Options / Params are applied at once.
+Two ways to work: the console programs the look with these channels, or it fires TouchFX's own cues with **Song** + **Cue** (cue number x 10). *Last change wins* applies as in v1; with **DMX LOCK** the console always wins. When the Effect channel changes, the effect keeps its own TouchFX settings; a Mode / Option / Param only takes over when its DMX value changes.

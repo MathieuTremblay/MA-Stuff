@@ -227,7 +227,10 @@ void applyV2(App& a, float dt) {
   }
   if (changed(D2_B_BLEND) && (s = slot(D2_B_BLEND, BLEND_COUNT)) >= 0) bg.blend = s;
   if (changed(D2_B_MOTION)) bg.motion = vals[D2_B_MOTION] / 255.f;
-  if (changed(D2_B_FOLLOW) && (s = slot(D2_B_FOLLOW, 2)) >= 0) bg.followTouch = s == 1;
+  if (changed(D2_B_FOLLOW) && (s = slot(D2_B_FOLLOW, BGSRC_COUNT)) >= 0) {
+    bg.source = s;
+    bg.followTouch = s != BGSRC_AUTO;
+  }
   if (changed(D2_B_SPEED) && (s = slot(D2_B_SPEED, kNumSpeedMults)) >= 0) bg.speedMult = s;
   if (changed(D2_B_MIRROR) && (s = slot(D2_B_MIRROR, MIRROR_COUNT)) >= 0) bg.mirror = s;
   if (changed(D2_B_PALETTE) || changed(D2_B_CMODE)) {

@@ -7,6 +7,9 @@
 //   CHECKER    - checker / stripes / blocks flipping on the beat
 //   RADAR      - a sweep turning around each finger
 //   VIDEO MAP  - the video input on the tiles
+//   VU METERS  - a row of big level meters with peak hold
+//   SPECTRO    - a scrolling spectrogram (time across, pitch up)
+// EQUALIZER, VU METERS and SPECTRO follow the Mirror setting (L-R: from the centre out, U-D: from the middle row).
 // Bulb: incandescent lamps (warm when dim, slow to heat up and cool down, a round glowing bulb).
 #include <algorithm>
 #include <cmath>
@@ -76,6 +79,7 @@ class Grid : public Effect {
 
   void frame(const FxCtx& c, const Target& out) override {
     const GridSettings& s = c.look->grid;
+    mirror = c.look->mirror;
     float dt = std::min(c.dt, 0.05f);
     rows = int(mixf(48.f, 6.f, s.tile));
     cols = std::max(1, int(std::lround(rows * aspect)));
@@ -91,6 +95,8 @@ class Grid : public Effect {
       lastMode = s.mode;
       drops.clear();
       rings.clear();
+      std::fill(peaks.begin(), peaks.end(), 0.f);
+      spectro.clear();
     }
 
     // ---- decay ----
@@ -189,18 +195,70 @@ class Grid : public Effect {
         }
         case GRID_EQ: {
           for (int x = 0; x < cols; ++x) {
-            // symmetric: low frequencies in the middle
-            float u = std::fabs((x + 0.5f) / cols - 0.5f) * 2.f;
-            float val;
-            if (c.spectrum) val = c.spectrum[std::min(31, int(u * 31.f))];
-            else val = (0.35f + 0.3f * std::sin(beat * kPi * 2.f + x * 0.7f)) * (1.f - u * 0.5f) *
-                       (0.6f + 0.4f * std::pow(1.f - fractf(beat), 2.f));
-            val = std::clamp(val * mixf(0.6f, 1.6f, pattern), 0.f, 1.f);
-            int h = int(val * rows + 0.5f);
-            for (int y = 0; y < h; ++y) setTile(x, y, 1.f, float(y) / std::max(1, rows - 1));
+            float u = acrossU(x);
+            float val = bandAt(c, u, beat, x) * mixf(0.6f, 1.6f, pattern);
+            int h = int(std::clamp(val, 0.f, 1.f) * barRows() + 0.5f);
             float& pk = peaks[size_t(x)];
-            pk = std::max(pk - dt * 0.6f * rows, float(h));
-            setTile(x, std::min(rows - 1, int(pk)), 1.f, 1.f);  // falling peak
+            pk = std::max(pk - dt * 0.6f * barRows(), float(h));
+            drawBar(x, h, int(pk), setTile);
+          }
+          break;
+        }
+        case GRID_VU: {
+          // a few wide meters (low to high), one column of gap between them
+          int meters = std::clamp(int(mixf(10.f, 3.f, pattern)), 2, std::max(2, cols / 2));
+          float mw = float(cols) / meters;
+          for (int x = 0; x < cols; ++x) {
+            int m = std::min(meters - 1, int(x / mw));
+            if (mw >= 2.5f && int((x + 1) / mw) != m && x + 1 < cols) continue;  // the gap
+            float u = acrossU(int((m + 0.5f) * mw));
+            float val = 0;
+            if (c.spectrum) {  // the meter's slice of the spectrum, at its loudest band
+              int lo = std::min(28, int(u * 31.f));
+              for (int b = 0; b < 4; ++b) val = std::max(val, c.spectrum[lo + b]);
+            } else {
+              val = bandAt(c, u, beat, m);
+            }
+            val = std::clamp(val * mixf(0.7f, 1.3f, pattern), 0.f, 1.f);
+            float& sm = vu[size_t(m) % 16];
+            sm += (val - sm) * (val > sm ? 0.6f : std::min(1.f, dt * 5.f));
+            int h = int(sm * barRows() + 0.5f);
+            float& pk = peaks[size_t(x)];
+            float& hold = peakHold[size_t(x) % peakHold.size()];
+            if (h >= int(pk)) {
+              pk = float(h);
+              hold = 0.6f;  // the peak waits a moment, then falls
+            } else if ((hold -= dt) < 0) {
+              pk = std::max(0.f, pk - dt * 0.8f * barRows());
+            }
+            drawBar(x, h, int(pk), setTile);
+          }
+          break;
+        }
+        case GRID_SPECTRO: {
+          // time runs across (newest at the right, or at the centre with L-R mirror), pitch goes up
+          scrollAcc += dt * 14.f * std::clamp(c.speed, 0.25f, 3.f);
+          int steps = std::min(cols, int(scrollAcc));
+          scrollAcc -= float(int(scrollAcc));
+          if (spectro.size() != size_t(rows) * cols) spectro.assign(size_t(rows) * cols, 0.f);
+          for (int k = 0; k < steps; ++k) {
+            std::rotate(spectro.begin(), spectro.begin() + rows, spectro.end());  // drop the oldest column
+            float* col = &spectro[size_t(cols - 1) * rows];
+            for (int y = 0; y < rows; ++y) {
+              float u = upU(y);
+              col[y] = std::clamp(bandAt(c, u, beat, y) * mixf(0.7f, 1.6f, pattern), 0.f, 1.f);
+            }
+          }
+          bool lr = mirrorLR(c.look->mirror);
+          for (int x = 0; x < cols; ++x) {
+            // age 0 = newest
+            int age = lr ? int(std::fabs((x + 0.5f) - cols * 0.5f)) * 2 : cols - 1 - x;
+            if (age >= cols) continue;
+            const float* col = &spectro[size_t(cols - 1 - age) * rows];
+            for (int y = 0; y < rows; ++y) {
+              float v = col[y];
+              if (v > 0.04f) setTile(x, y, v * 1.2f, v);
+            }
           }
           break;
         }
@@ -327,7 +385,57 @@ class Grid : public Effect {
   Rng rng;
   Vec2 scrollDir{1, 0};
   int rows = 0, cols = 0, lastMode = -1, flips = 0;
-  float aspect = 1, dropAcc = 0;
+  float aspect = 1, dropAcc = 0, scrollAcc = 0;
+  std::vector<float> spectro;
+  float vu[16] = {};
+  std::vector<float> peakHold = std::vector<float>(256, 0.f);
+  int mirror = 0;
+
+  static bool mirrorLR(int m) { return m == MIRROR_LR || m == MIRROR_QUAD || m >= MIRROR_RADIAL6; }
+  static bool mirrorUD(int m) { return m == MIRROR_UD || m == MIRROR_QUAD || m >= MIRROR_RADIAL6; }
+  // column -> 0..1 across the spectrum (lows on the left; from the centre out with L-R mirror)
+  float acrossU(int x) const {
+    float u = (x + 0.5f) / cols;
+    return mirrorLR(mirror) ? std::fabs(u - 0.5f) * 2.f : u;
+  }
+  // row -> 0..1 up the spectrum (lows at the bottom; from the middle out with U-D mirror)
+  float upU(int y) const {
+    float u = (y + 0.5f) / rows;
+    return mirrorUD(mirror) ? std::fabs(u - 0.5f) * 2.f : u;
+  }
+  int barRows() const { return mirrorUD(mirror) ? (rows + 1) / 2 : rows; }
+  static float bandAt(const FxCtx& c, float u, float beat, int i) {
+    if (c.spectrum) {
+      float f = std::clamp(u, 0.f, 1.f) * 31.f;
+      int a = int(f);
+      float k = f - a;
+      return c.spectrum[a] * (1 - k) + c.spectrum[std::min(31, a + 1)] * k;
+    }
+    return (0.35f + 0.3f * std::sin(beat * kPi * 2.f + i * 0.7f)) * (1.f - u * 0.5f) *
+           (0.6f + 0.4f * std::pow(1.f - fractf(beat), 2.f));
+  }
+  // a bar h tiles high plus its peak tile: from the bottom, or from the middle row up and down (U-D mirror)
+  template <class F>
+  void drawBar(int x, int h, int pk, F& setTile) const {
+    int R = barRows();
+    pk = std::min(pk, R - 1);
+    if (!mirrorUD(mirror)) {
+      for (int y = 0; y < h; ++y) setTile(x, y, 1.f, float(y) / std::max(1, R - 1));
+      if (pk > 0 || h > 0) setTile(x, pk, 1.f, 1.f);
+      return;
+    }
+    int mid = rows / 2;  // the bar grows up from row mid and down from row mid-1 (or mid for odd rows)
+    int down = (rows & 1) ? mid : mid - 1;
+    for (int y = 0; y < h; ++y) {
+      float t = float(y) / std::max(1, R - 1);
+      setTile(x, mid + y, 1.f, t);
+      setTile(x, down - y, 1.f, t);
+    }
+    if (pk > 0 || h > 0) {
+      setTile(x, mid + pk, 1.f, 1.f);
+      setTile(x, down - pk, 1.f, 1.f);
+    }
+  }
   double lastCycles = 0;
 };
 

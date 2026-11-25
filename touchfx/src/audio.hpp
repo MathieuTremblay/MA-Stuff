@@ -18,6 +18,7 @@ struct AudioFeatures {
   float bpm = 0;        // estimated tempo (0 = not sure yet)
   float bpmConfidence = 0;  // 0..1
   float spectrum[32] = {};  // log-spaced bands 40 Hz..16 kHz, 0..1
+  float wave[256] = {};      // the newest ~20 ms of sound, -1..1 (auto-gained), starting on a rising zero crossing
 };
 
 // Special device names
@@ -86,5 +87,6 @@ class AudioInput {
   int bpmHoldCount_ = 0;
   void estimateTempo();
   double now_ = 0, lastOnset_ = -10, gateHold_ = 0;
-  std::vector<float> window_, re_, im_;
+  std::vector<float> window_, re_, im_, raw_;
+  float wavePeak_ = 0.01f;
 };

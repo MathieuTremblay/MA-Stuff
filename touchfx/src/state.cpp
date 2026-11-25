@@ -23,7 +23,7 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(LaserSettings, mode, beams, rota
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(SparkleSettings, amount, size, spread, twinkle, life, drift, rays, trail)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(PostSettings, bloom, bloomSize, saturation)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(RippleSettings, size, strength, decay, shine, beatDrops)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(RibbonSettings, strands, length, width, wind, flutter, stiffness, sheen)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(RibbonSettings, bands, length, width, wave, flow, glow)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(GeometrySettings, shape, rate, size, spin, width, life, glow)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(TunnelSettings, sides, merge, speed, density, twist, width, depth)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(VideoSettings, mode, fit, segments, size, strength, trail, level, glow,
@@ -40,7 +40,7 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(AudioSettings, enabled, device, 
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(FxParams, fluid, particles, kaleido, lasers, strobe, sparkles, ripples,
                                                 ribbons, geometry, tunnel, video, plexus, fireworks, starfield,
                                                 spectrum, grid)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(BgLayer, on, effect, level, followTouch, blend, mirror, ownColors,
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(BgLayer, on, effect, level, followTouch, source, blend, mirror, ownColors,
                                                 palette, colorMode, speedMult, motion, fx)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Look, effect, fluid, particles, kaleido, lasers, strobe, sparkles, ripples,
                                                 ribbons, geometry, tunnel, video, plexus, fireworks, starfield,
@@ -111,6 +111,9 @@ static void sanitizeLook(Look& l) {
   clampRef(b.colorMode, 0, COLOR_COUNT - 1);
   clampRef(b.speedMult, 0, kNumSpeedMults - 1);
   clampRef(b.motion, 0.f, 1.f);
+  if (b.source < 0) b.source = b.followTouch ? BGSRC_BOTH : BGSRC_AUTO;  // files from 0.9.1 and before
+  clampRef(b.source, 0, BGSRC_COUNT - 1);
+  b.followTouch = b.source != BGSRC_AUTO;
   {
     Look tmp;
     paramsToLook(b.fx, tmp);
@@ -145,7 +148,7 @@ static void sanitizeParams(Look& l) {
   clampRef(l.lasers.swingMode, 0, SWING_COUNT - 1);
   clampRef(l.strobe.shape, 0, STROBE_COUNT - 1);
   clampRef(l.strobe.rate, 0, kNumDivisions - 1);
-  clampRef(l.ribbons.strands, 1, 6);
+  clampRef(l.ribbons.bands, 2, 6);
   clampRef(l.geometry.shape, 0, SHAPE_COUNT - 1);
   clampRef(l.geometry.rate, 0, kNumDivisions - 1);
   clampRef(l.tunnel.sides, 0, 8);

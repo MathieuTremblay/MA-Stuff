@@ -277,7 +277,10 @@ void action(App& a) {
       case 1: bg.effect = irnd(0, FX_COUNT - 1); break;
       case 2: bg.blend = irnd(0, BLEND_COUNT - 1); break;
       case 3: bg.level = rnd(); break;
-      case 4: bg.followTouch = !bg.followTouch; break;
+      case 4:
+        bg.source = irnd(0, BGSRC_COUNT - 1);
+        bg.followTouch = bg.source != BGSRC_AUTO;
+        break;
       case 5: bg.ownColors = !bg.ownColors; bg.colorMode = irnd(0, COLOR_COUNT - 1); break;
       case 6: bg.mirror = irnd(0, MIRROR_COUNT - 1); break;
       default: bg.fx.video.mode = irnd(0, VID_COUNT - 1); bg.effect = FX_VIDEO; bg.on = true; break;

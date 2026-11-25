@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <ctime>
 #include <map>
 
@@ -252,6 +253,137 @@ struct LauncherState {
   double deleteArmed = -10;
 } g_l;
 
+// EXPORT / IMPORT to a USB stick: pick a drive, (import) pick a show, and if the name is taken: replace or keep both
+struct Transfer {
+  enum Stage { NONE, DRIVE, SHOW, CONFLICT };
+  int stage = NONE;
+  bool exporting = true;
+  bool openRequest = false;
+  std::vector<DriveInfo> drives;
+  DriveInfo drive;
+  std::vector<ShowInfo> driveShows;
+  std::string item;  // export: the show name; import: the file path
+} g_x;
+
+void startTransfer(bool exporting, const std::string& item) {
+  g_x = Transfer();
+  g_x.exporting = exporting;
+  g_x.item = item;
+  g_x.drives = listDrives();
+  g_x.stage = Transfer::DRIVE;
+  g_x.openRequest = true;
+}
+
+// Runs the copy; returns false when the name is taken and the user has to choose.
+bool doTransfer(App& a, TransferMode mode) {
+  std::string got;
+  TransferResult r = g_x.exporting ? exportShow(g_x.item, g_x.drive.root, mode, got) : importShow(g_x.item, mode, got);
+  if (r == XFER_EXISTS) return false;
+  if (r == XFER_FAILED) {
+    a.launcherMessage = g_x.exporting ? "Could not copy the show to " + g_x.drive.label + " (full, or write-protected?)."
+                                      : "Could not import the show (is the stick still in?).";
+  } else if (g_x.exporting) {
+    a.launcherMessage = "Exported \"" + got + "\" to " + g_x.drive.label + ", folder \"TouchFX Shows\".";
+    logLine("Exported show \"%s\" to %s", got.c_str(), driveShowsDir(g_x.drive.root).c_str());
+  } else {
+    a.launcherMessage = "Imported \"" + got + "\".";
+    logLine("Imported show \"%s\" from %s", got.c_str(), g_x.item.c_str());
+    a.st.lastShow = got;
+    g_l.dirty = true;
+  }
+  g_x.stage = Transfer::NONE;
+  return true;
+}
+
+void TransferPopup(App& a) {
+  float s = S();
+  ImGuiIO& io = ImGui::GetIO();
+  if (g_x.openRequest) {
+    ImGui::OpenPopup("##transfer");
+    g_x.openRequest = false;
+  }
+  ImGui::SetNextWindowSize(ImVec2(std::min(io.DisplaySize.x - 40 * s, 760 * s), 0));
+  ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+  if (!ImGui::BeginPopupModal("##transfer", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove)) return;
+  float w = ImGui::GetContentRegionAvail().x, h = 64 * s;
+  float sp = ImGui::GetStyle().ItemSpacing.x;
+  bool close = false;
+  ImGui::PushFont(a.fontBig);
+  switch (g_x.stage) {
+    case Transfer::DRIVE:
+      ImGui::TextColored(kAccent, g_x.exporting ? "EXPORT \"%s\" TO" : "IMPORT FROM", g_x.item.c_str());
+      break;
+    case Transfer::SHOW: ImGui::TextColored(kAccent, "IMPORT FROM %s", g_x.drive.label.c_str()); break;
+    case Transfer::CONFLICT: ImGui::TextColored(kAccent, "NAME ALREADY USED"); break;
+    default: close = true;
+  }
+  ImGui::PopFont();
+
+  if (g_x.stage == Transfer::DRIVE) {
+    if (g_x.drives.empty()) {
+      ImGui::Dummy(ImVec2(0, 10 * s));
+      ImGui::TextWrapped("No USB stick or other drive found. Plug one in and tap REFRESH.");
+      ImGui::Dummy(ImVec2(0, 10 * s));
+    }
+    for (size_t i = 0; i < g_x.drives.size(); ++i) {
+      ImGui::PushID(int(i));
+      const DriveInfo& d = g_x.drives[i];
+      if (Toggle(d.label.c_str(), d.removable, ImVec2(w, h))) {
+        g_x.drive = d;
+        if (g_x.exporting) {
+          if (!doTransfer(a, XFER_ASK)) g_x.stage = Transfer::CONFLICT;
+        } else {
+          g_x.driveShows = listShowsIn(driveShowsDir(d.root));
+          if (g_x.driveShows.empty()) g_x.driveShows = listShowsIn(d.root);  // shows copied to the top of the stick
+          g_x.stage = Transfer::SHOW;
+        }
+      }
+      ImGui::PopID();
+    }
+    if (ImGui::Button("REFRESH", ImVec2((w - sp) / 2, h * 0.8f))) g_x.drives = listDrives();
+    ImGui::SameLine();
+    if (ImGui::Button("CANCEL", ImVec2((w - sp) / 2, h * 0.8f))) close = true;
+  } else if (g_x.stage == Transfer::SHOW) {
+    if (g_x.driveShows.empty())
+      ImGui::TextWrapped("No shows on this drive. TouchFX looks in its \"TouchFX Shows\" folder (and at the top of the drive).");
+    ImGui::BeginChild("##driveshows", ImVec2(w, std::min(io.DisplaySize.y * 0.55f, (h + sp) * 6.f)));
+    for (size_t i = 0; i < g_x.driveShows.size(); ++i) {
+      ImGui::PushID(int(i));
+      const ShowInfo& sh = g_x.driveShows[i];
+      char when[48];
+      std::strftime(when, sizeof(when), "%d %b %Y", std::localtime(&sh.modified));
+      std::string lbl = sh.name + "   (" + when + ")";
+      if (ImGui::Button(lbl.c_str(), ImVec2(ImGui::GetContentRegionAvail().x, h))) {
+        g_x.item = sh.path;
+        if (!doTransfer(a, XFER_ASK)) g_x.stage = Transfer::CONFLICT;
+      }
+      ImGui::PopID();
+    }
+    TouchScroll();
+    ImGui::EndChild();
+    if (ImGui::Button("BACK", ImVec2((w - sp) / 2, h * 0.8f))) g_x.stage = Transfer::DRIVE;
+    ImGui::SameLine();
+    if (ImGui::Button("CANCEL", ImVec2((w - sp) / 2, h * 0.8f))) close = true;
+  } else if (g_x.stage == Transfer::CONFLICT) {
+    std::string name = g_x.exporting ? g_x.item : std::filesystem::u8path(g_x.item).stem().u8string();
+    ImGui::TextWrapped(g_x.exporting ? "A show called \"%s\" is already on %s." : "A show called \"%s\" is already on this computer.",
+                       name.c_str(), g_x.drive.label.c_str());
+    ImGui::Dummy(ImVec2(0, 8 * s));
+    float bw = (w - sp * 2) / 3;
+    if (Toggle("REPLACE", true, ImVec2(bw, h), kDanger)) doTransfer(a, XFER_REPLACE);
+    ImGui::SameLine();
+    if (Toggle("KEEP BOTH", true, ImVec2(bw, h), kGo)) doTransfer(a, XFER_KEEP_BOTH);
+    ImGui::SameLine();
+    if (ImGui::Button("CANCEL", ImVec2(bw, h))) close = true;
+    Hint("KEEP BOTH adds a number to the new copy's name.");
+  }
+  if (close || g_x.stage == Transfer::NONE) {
+    g_x.stage = Transfer::NONE;
+    ImGui::CloseCurrentPopup();
+  }
+  ImGui::EndPopup();
+}
+
 GLuint thumbTexture(const std::string& name) {
   auto it = g_l.thumbs.find(name);
   if (it != g_l.thumbs.end()) return it->second;
@@ -362,7 +494,7 @@ void Launcher(App& a) {
   if (Toggle(has ? "OPEN" : "OPEN", has, ImVec2(bw * 2 + sp, btnH), kGo) && has) openShow(a, selName);
   ImGui::EndDisabled();
 
-  float bw4 = (colW - sp * 4) / 5;
+  float bw4 = (colW - sp * 6) / 7;
   ImGui::BeginDisabled(!has);
   if (ImGui::Button("DUPLICATE", ImVec2(bw4, btnH * 0.75f)))
     OpenKeyboard("dupshow", selName + " copy", "Name of the copy");
@@ -380,16 +512,21 @@ void Launcher(App& a) {
       g_l.deleteArmed = ImGui::GetTime();
     }
   }
+  ImGui::SameLine();
+  if (ImGui::Button("EXPORT", ImVec2(bw4, btnH * 0.75f))) startTransfer(true, selName);
   ImGui::EndDisabled();
+  ImGui::SameLine();
+  if (ImGui::Button("IMPORT", ImVec2(bw4, btnH * 0.75f))) startTransfer(false, "");
   ImGui::SameLine();
   if (ImGui::Button("SHOW FOLDER", ImVec2(bw4, btnH * 0.75f))) platformOpenFolder(showsDir());
   ImGui::SameLine();
   if (ImGui::Button("QUIT", ImVec2(bw4, btnH * 0.75f))) a.quitNow = true;
   ImGui::PushStyleColor(ImGuiCol_Text, kTextDim);
-  ImGui::TextWrapped("Shows are saved in %s. Copy .tfxshow files there to import them, or out of it to back them up.",
-                     showsDir().c_str());
+  ImGui::TextWrapped("Shows are saved in %s. EXPORT copies the selected show to a USB stick (folder \"TouchFX Shows\"); "
+                     "IMPORT brings one back.", showsDir().c_str());
   ImGui::PopStyleColor();
   ImGui::EndGroup();
+  TransferPopup(a);
   ImGui::End();
 
   // keyboard results

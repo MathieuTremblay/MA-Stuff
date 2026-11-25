@@ -28,9 +28,9 @@ enum StrobeShape {
   STROBE_SHOCKWAVE, STROBE_WIPE, STROBE_BLINDER, STROBE_BLOCKS, STROBE_COUNT
 };
 enum ShapeType { SHAPE_TRI, SHAPE_SQUARE, SHAPE_PENT, SHAPE_HEX, SHAPE_CIRCLE, SHAPE_STAR, SHAPE_MIX, SHAPE_COUNT };
-enum SpectrumMode { SPEC_CIRCLE, SPEC_BARS, SPEC_WAVE, SPEC_COUNT };
+enum SpectrumMode { SPEC_CIRCLE, SPEC_BARS, SPEC_WAVE, SPEC_WATERFALL, SPEC_SCOPE, SPEC_RINGS, SPEC_BURST, SPEC_COUNT };
 enum GridMode { GRID_TRAIL, GRID_RINGS, GRID_SPARKLE, GRID_SCROLL, GRID_EQ, GRID_PLASMA, GRID_RAIN, GRID_CHECKER,
-                GRID_RADAR, GRID_VIDEO, GRID_COUNT };
+                GRID_RADAR, GRID_VIDEO, GRID_VU, GRID_SPECTRO, GRID_COUNT };
 enum ParticleStrobe { PSTROBE_OFF, PSTROBE_SYNC, PSTROBE_SPARKLE, PSTROBE_COUNT };
 enum VideoMode { VID_REVEAL, VID_LIQUID, VID_RIPPLE, VID_KALEIDO, VID_PIXEL, VID_WARP, VID_CLEAN, VID_COUNT };
 enum VideoFit { VFIT_FILL, VFIT_FIT, VFIT_STRETCH, VFIT_COUNT };
@@ -84,8 +84,8 @@ struct RippleSettings {
   bool beatDrops = true;
 };
 struct RibbonSettings {
-  int strands = 2;
-  float length = 0.5f, width = 0.5f, wind = 0.45f, flutter = 0.5f, stiffness = 0.5f, sheen = 0.5f;
+  int bands = 4;  // parallel colour bands in each stroke, 2..6
+  float length = 0.5f, width = 0.5f, wave = 0.4f, flow = 0.4f, glow = 0.f;
 };
 struct GeometrySettings {
   int shape = SHAPE_MIX, rate = 3;
@@ -170,11 +170,15 @@ struct FxParams {
 
 // Background layer: a second effect behind the one played with the fingers. It moves by itself (and with
 // the music); it never fades on release.
+// What moves the background layer
+enum BgSource { BGSRC_AUTO, BGSRC_TOUCH, BGSRC_BOTH, BGSRC_COUNT };
+
 struct BgLayer {
   bool on = false;
   int effect = FX_STARFIELD;
   float level = 0.6f;
-  bool followTouch = false;  // the fingers drive it too
+  bool followTouch = false;  // old files (0.9.1 and before); source replaces it
+  int source = -1;           // BgSource (-1 = not set: taken from followTouch)
   int blend = BLEND_ADD;
   int mirror = MIRROR_OFF;
   bool ownColors = false;    // own palette / colour mode instead of the front layer's

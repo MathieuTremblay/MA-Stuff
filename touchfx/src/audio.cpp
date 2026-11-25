@@ -200,6 +200,7 @@ void AudioInput::update(float dt, float sensitivity, float rangeLo, float rangeH
     window_.resize(kFft);
     for (int i = 0; i < kFft; ++i) window_[i] = 0.5f - 0.5f * std::cos(2.f * kPiF * i / (kFft - 1));
     re_.resize(kFft);
+    raw_.resize(kFft);
     im_.resize(kFft);
   }
   float rms = 0;
@@ -209,12 +210,29 @@ void AudioInput::update(float dt, float sensitivity, float rangeLo, float rangeH
     size_t start = (write_ + sz - kFft) % sz;
     for (int i = 0; i < kFft; ++i) {
       float v = ring_[(start + i) % sz];
+      raw_[size_t(i)] = v;
       rms += v * v;
       re_[i] = v * window_[i];
       im_[i] = 0;
     }
   }
   rms = std::sqrt(rms / kFft);
+  // oscilloscope: 512 samples from the newest part of the window, starting at a rising zero crossing so it stands still
+  {
+    int start = kFft - 1024;
+    for (int i = kFft - 1024; i < kFft - 512; ++i)
+      if (raw_[size_t(i)] <= 0.f && raw_[size_t(i + 1)] > 0.f) {
+        start = i;
+        break;
+      }
+    float pk = 1e-4f;
+    for (int i = 0; i < 512; ++i) pk = std::max(pk, std::fabs(raw_[size_t(start + i)]));
+    wavePeak_ = std::max(pk, wavePeak_ * std::exp(-dt / 3.f));
+    for (int i = 0; i < 256; ++i) {
+      float v = 0.5f * (raw_[size_t(start + i * 2)] + raw_[size_t(start + i * 2 + 1)]) / wavePeak_;
+      f_.wave[i] = rms > 0.0005f ? std::clamp(v, -1.f, 1.f) : 0.f;
+    }
+  }
   fft(re_, im_);
 
   // band energies

@@ -202,9 +202,34 @@ namespace {
 Program g_present;
 const char* kPresentFS = R"(
 in vec2 vUv; out vec4 o;
-uniform sampler2D uSrc; uniform vec4 uRect; uniform int uMulAlpha;
+uniform sampler2D uSrc; uniform vec4 uRect; uniform int uMulAlpha; uniform int uSharp; uniform vec2 uSrcSize;
+// Catmull-Rom bicubic (16 texels) for a sharp upscale, e.g. 1080p to a 4K screen. Clamped to the 4 nearest
+// texels so edges do not ring (no halos around lasers / LED tiles).
+vec4 bicubic(vec2 uv) {
+  vec2 p = uv * uSrcSize - 0.5;
+  vec2 f = fract(p);
+  vec2 i0 = floor(p) - 1.0;
+  vec2 f2 = f * f, f3 = f2 * f;
+  vec2 w0 = -0.5 * f3 + f2 - 0.5 * f;
+  vec2 w1 = 1.5 * f3 - 2.5 * f2 + 1.0;
+  vec2 w2 = -1.5 * f3 + 2.0 * f2 + 0.5 * f;
+  vec2 w3 = 0.5 * f3 - 0.5 * f2;
+  float wxs[4] = float[4](w0.x, w1.x, w2.x, w3.x);
+  float wys[4] = float[4](w0.y, w1.y, w2.y, w3.y);
+  vec4 sum = vec4(0.0), lo = vec4(1e9), hi = vec4(-1e9);
+  ivec2 maxc = ivec2(uSrcSize) - 1;
+  for (int y = 0; y < 4; ++y)
+    for (int x = 0; x < 4; ++x) {
+      ivec2 c = clamp(ivec2(i0) + ivec2(x, y), ivec2(0), maxc);
+      vec4 t = texelFetch(uSrc, c, 0);
+      sum += t * (wxs[x] * wys[y]);
+      if ((x == 1 || x == 2) && (y == 1 || y == 2)) { lo = min(lo, t); hi = max(hi, t); }
+    }
+  return clamp(sum, lo, hi);
+}
 void main() {
-  vec4 c = texture(uSrc, mix(uRect.xy, uRect.zw, vUv));
+  vec2 uv = mix(uRect.xy, uRect.zw, vUv);
+  vec4 c = uSharp == 1 ? bicubic(uv) : texture(uSrc, uv);
   o = vec4(uMulAlpha == 1 ? c.rgb * c.a : c.rgb, 1.0);
 }
 )";
@@ -212,12 +237,14 @@ void main() {
 
 bool presentInit() { return g_present.build("present", kFullscreenVS, kPresentFS); }
 
-void presentTexture(GLuint tex, float u0, float v0, float u1, float v1, bool multiplyAlpha) {
+void presentTexture(GLuint tex, float u0, float v0, float u1, float v1, bool multiplyAlpha, int sharpW, int sharpH) {
   glDisable(GL_BLEND);
   g_present.use();
   bindTex(0, tex);
   g_present.seti("uSrc", 0);
   glUniform4f(g_present.loc("uRect"), u0, v0, u1, v1);
   g_present.seti("uMulAlpha", multiplyAlpha ? 1 : 0);
+  g_present.seti("uSharp", sharpW > 0 && sharpH > 0 ? 1 : 0);
+  g_present.set2f("uSrcSize", float(std::max(1, sharpW)), float(std::max(1, sharpH)));
   drawFullscreen();
 }

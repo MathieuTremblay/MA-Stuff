@@ -340,13 +340,14 @@ void EffectParams(App& a) {
     case FX_RIBBONS: {
       RibbonSettings& p = l.ribbons;
       SectionLabel("RIBBONS");
-      IntSlider("Ribbons per finger", &p.strands, 1, 6);
+      Hint("Each finger paints a wide stroke of parallel colour bands (palette low, mid, high). The tail waves "
+           "gently and fades after the Length time.");
+      IntSlider("Bands", &p.bands, 2, 6);
       Pct("Length", &p.length);
       Pct("Width", &p.width);
-      Pct("Wind", &p.wind);
-      Pct("Flutter", &p.flutter);
-      Pct("Stiffness", &p.stiffness);
-      Pct("Sheen", &p.sheen);
+      Pct("Wave", &p.wave);
+      Pct("Flow", &p.flow);
+      Pct("Glow", &p.glow);
       if (ImGui::Button("RESET RIBBONS", ImVec2(-1, 40 * s))) p = RibbonSettings();
       break;
     }
@@ -465,8 +466,17 @@ void EffectParams(App& a) {
       SpectrumSettings& p = l.spectrum;
       SectionLabel("SPECTRUM");
       if (!a.st.audio.enabled) Hint("Turn AUDIO on to follow the music (a demo spectrum plays meanwhile).");
-      static const char* modes[] = {"CIRCLE", "BARS", "WAVE"};
-      Choice("smode", modes, SPEC_COUNT, &p.mode);
+      static const char* modes[] = {"CIRCLE", "BARS", "WAVE", "WATERFALL", "SCOPE", "RINGS", "BURST"};
+      Choice("smode", modes, SPEC_COUNT, &p.mode, 4);
+      static const char* shelp[] = {
+          "A circle of bars around each finger.",
+          "An equaliser across the screen. MIRROR sets the layout: L-R puts the lows in the centre, U-D grows "
+          "the bars up and down from the middle.",
+          "A line across the screen moved by the music.", "The spectrum's history flows away from each finger.",
+          "The sound wave itself (oscilloscope) through each finger.",
+          "Rings around each finger: lows inside, highs outside, each pumping with its band.",
+          "Every hit throws out a ring of spikes shaped by the spectrum."};
+      Hint(shelp[std::clamp(p.mode, 0, SPEC_COUNT - 1)]);
       IntSlider("Bars", &p.bars, 8, 128);
       OnOff("SYMMETRIC", &p.symmetric, 44 * s);
       Pct("Size", &p.size);
@@ -480,17 +490,20 @@ void EffectParams(App& a) {
       GridSettings& p = l.grid;
       SectionLabel("LED GRID");
       static const char* modes[] = {"TRAIL", "RINGS", "SPARKLE", "SCROLL", "EQUALIZER", "PLASMA", "RAIN", "CHECKER",
-                                    "RADAR", "VIDEO MAP"};
+                                    "RADAR", "VIDEO MAP", "VU METERS", "SPECTRO"};
       Choice("gmode", modes, GRID_COUNT, &p.mode, 4);
       static const char* help[] = {
           "Tiles light under your fingers and fade.", "Rings go out from your fingers on the beat.",
           "Random tiles sparkle around your fingers.", "Bands of colour sweep across the wall on the beat; your finger "
           "movement sets the direction.",
-          "Each column is a VU bar (with audio reactive on; otherwise it bounces on the beat).",
+          "Each column is a VU bar (with audio reactive on; otherwise it bounces on the beat). MIRROR L-R: lows in "
+          "the centre; U-D: from the middle row.",
           "Smooth flowing colour over the whole wall, swirling around your first finger.",
           "Drops fall down the columns, more where you touch.", "Checker, stripes and blocks flipping on the beat.",
           "A sweep turns around each finger and leaves fading tiles.",
-          "The video input on the LED tiles (SETTINGS > VIDEO IN); your fingers brighten it."};
+          "The video input on the LED tiles (SETTINGS > VIDEO IN); your fingers brighten it.",
+          "Big level meters with peak hold, lows on the left (Pattern size sets how many). Follows MIRROR.",
+          "A scrolling spectrogram: time runs across, pitch goes up. Follows MIRROR."};
       Hint(help[std::clamp(p.mode, 0, GRID_COUNT - 1)]);
       Pct("Tile size", &p.tile);
       Pct("Gap", &p.gap);
@@ -1413,7 +1426,18 @@ void LivePanel(App& a) {
     SectionLabel("BACKGROUND LAYER");
     Hint("Runs by itself behind the effect you play (it never fades when you lift your fingers). "
          "Scenes and cues store it.");
-    OnOff("FOLLOW TOUCH (your fingers drive it too)", &bg.followTouch, 44 * s);
+    {
+      static const char* srcs[] = {"AUTO", "TOUCH", "BOTH"};
+      int src = bg.source < 0 ? (bg.followTouch ? BGSRC_BOTH : BGSRC_AUTO) : bg.source;
+      ImGui::TextUnformatted("MOVED BY");
+      if (Choice("bgsrc", srcs, BGSRC_COUNT, &src, 0, 44 * s)) {
+        bg.source = src;
+        bg.followTouch = src != BGSRC_AUTO;
+      }
+      static const char* shelp[] = {"Moves by itself (faster with the music).", "Only your fingers move it, like the front effect.",
+                                    "Moves by itself, and your fingers drive it too."};
+      Hint(shelp[std::clamp(src, 0, BGSRC_COUNT - 1)]);
+    }
     SectionLabel("BLEND");
     static const char* blends[] = {"ADD", "BEHIND", "REVEAL"};
     Choice("bgblend", blends, BLEND_COUNT, &bg.blend);

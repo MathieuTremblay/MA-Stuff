@@ -528,7 +528,10 @@ void renderExternal(App& a) {
     default: break;
   }
   glViewport(int(x), int(y), int(w), int(h));
-  presentTexture(a.out.tex, u0, v0, u1, v1, a.st.output.alpha && !a.st.output.premultiplied);
+  // a screen bigger than the render (e.g. 4K from 1080p): sharp bicubic upscale instead of a soft bilinear one
+  bool upscale = w > (u1 - u0) * a.out.w * 1.05f || h > (v1 - v0) * a.out.h * 1.05f;
+  presentTexture(a.out.tex, u0, v0, u1, v1, a.st.output.alpha && !a.st.output.premultiplied, upscale ? a.out.w : 0,
+                 upscale ? a.out.h : 0);
   if (!g_captureExternal.empty()) {
     writePpm(g_captureExternal, dw, dh);
     g_captureExternal.clear();
@@ -682,7 +685,8 @@ void buildBgEmitters(App& a, float dt) {
   float energy = 1.f;
   if (a.st.audio.enabled && a.af.active) energy = 0.5f + a.af.focus * 1.2f + a.af.pulse * 0.5f;
   float speed = a.st.look.bpm / 120.f * kSpeedMults[bg.speedMult];
-  for (int k = 0; k < 2; ++k) {
+  int src = bg.source < 0 ? (bg.followTouch ? BGSRC_BOTH : BGSRC_AUTO) : bg.source;
+  for (int k = 0; k < 2 && src != BGSRC_TOUCH; ++k) {
     App::BgPoint& v = a.bgPts[k];
     v.phase += dt * (0.05f + bg.motion * 0.9f) * energy * std::clamp(speed, 0.25f, 3.f);
     float ph = v.phase + k * 2.7f;
@@ -695,7 +699,7 @@ void buildBgEmitters(App& a, float dt) {
     v.pos = p;
     addEmittersTo(a.bgLive, mats, aspect, v.pos, v.vel, kMaxTouches + 8 + k);
   }
-  if (bg.followTouch)
+  if (src != BGSRC_AUTO)
     for (int i = 0; i < kMaxTouches; ++i)
       if (a.touches[i].active) addEmittersTo(a.bgLive, mats, aspect, a.touches[i].pos, a.touches[i].vel, i);
 }
@@ -833,6 +837,13 @@ const SelftestStep kSteps[] = {
     {FX_GRID, GRID_CHECKER, MIRROR_OFF, 2, 1}, {FX_GRID, GRID_RADAR, MIRROR_OFF, 7, 2},
     {FX_GRID, GRID_VIDEO, MIRROR_OFF, 0, 1},   {FX_GRID, GRID_TRAIL, MIRROR_OFF, 2, 3, false, 0, -1, 0, 0, 1},
     {FX_LASERS, LASER_FAN, MIRROR_OFF, 6, 2, false, 0, -1, 0, 0, 1},
+    // 0.9.2: striped ribbons, the new audio visuals, mirror-aware equalisers
+    {FX_RIBBONS, 0, MIRROR_OFF, 0, 3, false, 0, -1, 0, 0, 1}, {FX_RIBBONS, 0, MIRROR_LR, 3, 2, false, 0, -1, 0, 0, 1},
+    {FX_SPECTRUM, SPEC_WATERFALL, MIRROR_OFF, 1, 2, true}, {FX_SPECTRUM, SPEC_SCOPE, MIRROR_OFF, 4, 2, true},
+    {FX_SPECTRUM, SPEC_RINGS, MIRROR_LR, 6, 2, true},      {FX_SPECTRUM, SPEC_BURST, MIRROR_OFF, 2, 2, true},
+    {FX_SPECTRUM, SPEC_BARS, MIRROR_QUAD, 1, 1, true},     {FX_SPECTRUM, SPEC_BARS, MIRROR_OFF, 7, 1, true},
+    {FX_GRID, GRID_VU, MIRROR_OFF, 1, 1, true},            {FX_GRID, GRID_SPECTRO, MIRROR_LR, 6, 1, true},
+    {FX_GRID, GRID_EQ, MIRROR_QUAD, 1, 1, true},
 };
 constexpr int kStepFrames = 120;
 constexpr int kNumSteps = int(sizeof(kSteps) / sizeof(kSteps[0]));
@@ -1056,6 +1067,8 @@ int main(int argc, char** argv) {
         }
         if (sp.effect == FX_STROBE) a.st.look.strobe.shape = sp.laserMode ? sp.laserMode : STROBE_SPARKLE;
         if (sp.effect == FX_VIDEO) a.st.look.video.mode = sp.laserMode;
+        if (sp.effect == FX_SPECTRUM) a.st.look.spectrum.mode = sp.laserMode;
+        if (sp.effect == FX_RIBBONS && sp.extra) a.st.look.ribbons.length = 0.6f;
         if (sp.effect == FX_GRID) {
           a.st.look.grid.mode = sp.laserMode;
           a.st.look.grid.bulb = sp.extra ? 1.f : 0.f;
@@ -1083,7 +1096,7 @@ int main(int argc, char** argv) {
         a.st.output.alpha = frame >= kStepFrames * 7;  // test the alpha path on the last steps
         a.st.tab = 0;
         selftestTouches(a, frame, sp.fingers);
-        if (sp.effect == FX_RIBBONS) {  // change the length while a released ribbon is still drifting
+        if (sp.effect == FX_RIBBONS && !sp.extra) {  // change the length while a released ribbon is still drifting
           int local = frame % kStepFrames;
           a.st.look.ribbons.length = local < 75 ? 0.5f : (local < 100 ? 0.9f : 0.15f);
         }
@@ -1281,6 +1294,7 @@ int main(int argc, char** argv) {
       c.pulse = f.pulse;
       c.onset = f.onset;
       c.spectrum = a.af.spectrum;
+      c.wave = a.af.wave;
       c.drive = mixf(1.f, 0.2f + 1.5f * f.focus + 0.8f * f.pulse, r);
       // touch always gets at least the normal amount: a quiet passage must not slow down the fingers
       bool fingers = false;
@@ -1339,6 +1353,10 @@ int main(int argc, char** argv) {
     // a layer playing VIDEO goes out exactly like the source (the LOOK is for the effects only)
     bool frontOriginal = a.curFx == FX_VIDEO;
     bool backOriginal = a.bgCurFx == FX_VIDEO;
+    // RIBBONS are flat and matte: the glow only comes in with their own Glow setting
+    PostSettings postBack = post;
+    if (a.curFx == FX_RIBBONS) post.bloom *= look.ribbons.glow;
+    if (a.bgCurFx == FX_RIBBONS) postBack.bloom *= a.bgLook.ribbons.glow;
     if (!bgActive) {
       a.post.run(a.scene, a.out, post, a.st.output.alpha, a.st.output.premultiplied, master * a.releaseLevel,
                  &frontTint, frontOriginal);
@@ -1352,7 +1370,7 @@ int main(int argc, char** argv) {
         backTint.amount = a.video.level();
         videoFillFit(a, backTint.fitX, backTint.fitY);
       }
-      a.postBg.run(a.bgScene, a.layerBack, post, true, true, a.bgShown * bg.level, &backTint, backOriginal);
+      a.postBg.run(a.bgScene, a.layerBack, postBack, true, true, a.bgShown * bg.level, &backTint, backOriginal);
       compositeLayers(a.layerFront, a.layerBack, a.out, bg.blend, a.st.output.alpha, a.st.output.premultiplied,
                       master);
     }

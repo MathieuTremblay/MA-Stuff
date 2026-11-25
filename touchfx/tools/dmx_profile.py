@@ -127,9 +127,8 @@ FX2 = [
       P("Twinkle", "sparkles.twinkle", .5), P("Life", "sparkles.life", .5), P("Drift", "sparkles.drift", .25),
       P("Rays", "sparkles.rays", .6), P("Trail", "sparkles.trail", .1)]),
     ("FX_RIBBONS", "Ribbons", None, None, None,
-     [P("Strands", "ribbons.strands", 2, 1, 6), P("Length", "ribbons.length", .5), P("Width", "ribbons.width", .5),
-      P("Wind", "ribbons.wind", .45), P("Flutter", "ribbons.flutter", .5), P("Stiffness", "ribbons.stiffness", .5),
-      P("Sheen", "ribbons.sheen", .5)]),
+     [P("Bands", "ribbons.bands", 4, 2, 6), P("Length", "ribbons.length", .5), P("Width", "ribbons.width", .5),
+      P("Wave", "ribbons.wave", .4), P("Flow", "ribbons.flow", .4), P("Glow", "ribbons.glow", 0)]),
     ("FX_FIREWORKS", "Fireworks", None, CH("Launch rate", "fireworks.rate", RATES, default=2),
      CH("Rockets", "fireworks.rockets", ONOFF, default=1),
      [P("Size", "fireworks.size", .5), P("Amount", "fireworks.amount", .5), P("Gravity", "fireworks.gravity", .5),
@@ -171,12 +170,12 @@ FX2 = [
     ("FX_RIPPLES", "Ripples", None, CH("Beat drops", "ripples.beatDrops", ONOFF, default=1), None,
      [P("Size", "ripples.size", .4), P("Strength", "ripples.strength", .55), P("Decay", "ripples.decay", .5),
       P("Shine", "ripples.shine", .6)]),
-    ("FX_SPECTRUM", "Spectrum", CH("Spectrum mode", "spectrum.mode", ["Circle", "Bars", "Wave"]),
+    ("FX_SPECTRUM", "Spectrum", CH("Spectrum mode", "spectrum.mode", ["Circle", "Bars", "Wave", "Waterfall", "Scope", "Rings", "Burst"]),
      CH("Symmetric", "spectrum.symmetric", ONOFF, default=1), None,
      [P("Bars", "spectrum.bars", 48, 8, 128), P("Size", "spectrum.size", .5), P("Gain", "spectrum.gain", .5),
       P("Width", "spectrum.width", .4), P("Glow", "spectrum.glow", .5)]),
     ("FX_GRID", "LED grid", CH("Grid mode", "grid.mode", ["Trail", "Rings", "Sparkle", "Scroll", "Equalizer", "Plasma",
-                                                          "Rain", "Checker", "Radar", "Video map"]),
+                                                          "Rain", "Checker", "Radar", "Video map", "VU meters", "Spectro"]),
      CH("Tile shape", "grid.round", ["Square", "Round"], values=[0.0, 1.0]), None,
      [P("Tile size", "grid.tile", .4), P("Gap", "grid.gap", .3), P("Bulb", "grid.bulb", 0),
       P("Brush", "grid.radius", .4, note="pattern size in whole-wall modes"), P("Trail", "grid.decay", .5)]),
@@ -241,7 +240,7 @@ def layer(pfx, geo, back):
     if back:
         c2(f"{pfx}_BLEND", geo, "Effects5", 1, "Blend", "choice", items=["Add", "Behind", "Reveal"], default=0)
         c2(f"{pfx}_MOTION", geo, "Effects2Rate", 1, "Motion", "dim", default=102)
-        c2(f"{pfx}_FOLLOW", geo, "Effects6", 1, "Follow touch", "choice", items=ONOFF, default=0)
+        c2(f"{pfx}_FOLLOW", geo, "Effects6", 1, "Motion source", "choice", items=["Auto", "Touch", "Both"], default=0)
     else:
         c2(f"{pfx}_RELEASE", geo, "Effects5", 1, "Release", "choice", items=["Fade", "Snap", "Hold"], default=0)
         c2(f"{pfx}_FADETIME", geo, "Effects1Fade", 1, "Fade time", "fadetime", default=38)

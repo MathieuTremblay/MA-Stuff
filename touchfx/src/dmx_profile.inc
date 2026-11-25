@@ -229,7 +229,7 @@ static const DmxChannelDef2 kDmxFull[] = {
     {D2_B_OPT2, 40, 1},  // 41: Back Option 2
     {D2_B_BLEND, 41, 1},  // 42: Back Blend
     {D2_B_MOTION, 42, 1},  // 43: Back Motion
-    {D2_B_FOLLOW, 43, 1},  // 44: Back Follow touch
+    {D2_B_FOLLOW, 43, 1},  // 44: Back Motion source
     {D2_B_SPEED, 44, 1},  // 45: Back Speed
     {D2_B_MIRROR, 45, 1},  // 46: Back Mirror
     {D2_B_PALETTE, 46, 1},  // 47: Back Palette
@@ -282,7 +282,7 @@ inline int dmx2Slot(int v, int n) {
 // number of named choices of Mode (0), Option 1 (1), Option 2 (2) for an effect
 inline int dmx2ChoiceCount(int fx, int which) {
   static const int n[3][kDmx2FxCount] = {
-      {0, 3, 0, 0, 0, 0, 0, 0, 6, 7, 7, 7, 0, 3, 10, 9},
+      {0, 3, 0, 0, 0, 0, 0, 0, 6, 7, 7, 7, 0, 7, 12, 9},
       {0, 6, 0, 0, 6, 0, 0, 0, 4, 3, 2, 6, 2, 2, 2, 8},
       {0, 0, 0, 0, 2, 0, 0, 0, 4, 2, 0, 0, 0, 0, 0, 2}};
   for (int i = 0; i < kDmx2FxCount; ++i)
@@ -320,13 +320,13 @@ inline void dmx2SetChoice(Look& l, int fx, int which, int slot) {
       break;
     }
     case FX_SPECTRUM: {
-      static const int v[] = {0, 1, 2};
-      if (slot < 3) l.spectrum.mode = decltype(l.spectrum.mode)(v[slot]);
+      static const int v[] = {0, 1, 2, 3, 4, 5, 6};
+      if (slot < 7) l.spectrum.mode = decltype(l.spectrum.mode)(v[slot]);
       break;
     }
     case FX_GRID: {
-      static const int v[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
-      if (slot < 10) l.grid.mode = decltype(l.grid.mode)(v[slot]);
+      static const int v[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+      if (slot < 12) l.grid.mode = decltype(l.grid.mode)(v[slot]);
       break;
     }
     case FX_STROBE: {
@@ -456,13 +456,12 @@ inline void dmx2SetParam(Look& l, int fx, int index, int v) {
       break;
     case FX_RIBBONS:
       switch (index) {
-        case 0: l.ribbons.strands = 1 + int(t * 5 + 0.5f); break;
+        case 0: l.ribbons.bands = 2 + int(t * 4 + 0.5f); break;
         case 1: l.ribbons.length = t; break;
         case 2: l.ribbons.width = t; break;
-        case 3: l.ribbons.wind = t; break;
-        case 4: l.ribbons.flutter = t; break;
-        case 5: l.ribbons.stiffness = t; break;
-        case 6: l.ribbons.sheen = t; break;
+        case 3: l.ribbons.wave = t; break;
+        case 4: l.ribbons.flow = t; break;
+        case 5: l.ribbons.glow = t; break;
         default: break;
       }
       break;

@@ -25,3 +25,19 @@ bool deleteShow(const std::string& name);
 constexpr int kThumbW = 192, kThumbH = 108;
 bool saveThumb(const std::string& name, const std::vector<uint8_t>& rgb);  // kThumbW*kThumbH*3, top row first
 bool loadThumb(const std::string& name, std::vector<uint8_t>& rgb);
+
+// ---- import / export (USB sticks and other drives) ----
+struct DriveInfo {
+  std::string root;   // e.g. "E:\\" (Linux: a mount folder)
+  std::string label;  // e.g. "USB (E:) SANDISK"
+  bool removable = false;
+};
+std::vector<DriveInfo> listDrives();  // removable drives first; the drive with the shows folder is left out
+std::string driveShowsDir(const std::string& root);  // <root>/TouchFX Shows
+std::vector<ShowInfo> listShowsIn(const std::string& dir);  // newest first
+enum TransferResult { XFER_OK, XFER_EXISTS, XFER_FAILED };
+enum TransferMode { XFER_ASK, XFER_REPLACE, XFER_KEEP_BOTH };
+// Copies the show (and its thumbnail) to <root>/TouchFX Shows. outName: the name it got there.
+TransferResult exportShow(const std::string& name, const std::string& root, TransferMode mode, std::string& outName);
+// Copies a show file (and its thumbnail next to it) into the shows folder.
+TransferResult importShow(const std::string& path, TransferMode mode, std::string& outName);

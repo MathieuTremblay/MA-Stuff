@@ -29,7 +29,8 @@ class Post {
 // Draws a texture region into the current viewport (used for the external display).
 // multiplyAlpha shows straight-alpha output correctly on a black screen.
 bool presentInit();
-void presentTexture(GLuint tex, float u0, float v0, float u1, float v1, bool multiplyAlpha);
+// sharpW / sharpH: the texture size, for a sharp bicubic upscale (0 = plain bilinear)
+void presentTexture(GLuint tex, float u0, float v0, float u1, float v1, bool multiplyAlpha, int sharpW = 0, int sharpH = 0);
 
 // Background layer: combines the front and background layers (outputs of Post, premultiplied) into out.
 bool compositeInit();

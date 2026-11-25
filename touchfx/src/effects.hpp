@@ -37,6 +37,7 @@ struct FxCtx {
   bool onset = false;
   float drive = 1;    // multiplies how much each effect emits (1 = no audio influence)
   const float* spectrum = nullptr;  // 32 log bands 0..1 when audio is on, else nullptr
+  const float* wave = nullptr;      // 256 samples -1..1 when audio is on (oscilloscope)
   // video input (VIDEO effect, video colours): texture 0 = no input configured / no frame yet
   GLuint videoTex = 0;
   int videoW = 0, videoH = 0;
