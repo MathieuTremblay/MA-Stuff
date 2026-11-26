@@ -90,9 +90,9 @@ class Spectrum : public Effect {
             break;
           }
           case SPEC_WATERFALL: {
-            if (count > 4) break;
+            if (count > 2) break;  // two waterfalls at most: each is a few thousand cells
             // rows flow away from the finger (down, or up for a mirrored copy)
-            int cols = std::min(nb, 64);
+            int cols = std::min(nb, 40);
             float total = std::min(float(c.W) * 0.9f, size * 4.f);
             float rowH = size * 1.6f / kRows;
             Vec2 down = e.m * Vec2(0, -1);

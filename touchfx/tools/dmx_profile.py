@@ -126,7 +126,7 @@ FX2 = [
      [P("Amount", "sparkles.amount", .5), P("Size", "sparkles.size", .5), P("Spread", "sparkles.spread", .35),
       P("Twinkle", "sparkles.twinkle", .5), P("Life", "sparkles.life", .5), P("Drift", "sparkles.drift", .25),
       P("Rays", "sparkles.rays", .6), P("Trail", "sparkles.trail", .1)]),
-    ("FX_RIBBONS", "Ribbons", None, None, None,
+    ("FX_RIBBONS", "Ribbons", CH("Ribbon motion", "ribbons.motion", ["Stay", "Float"]), None, None,
      [P("Bands", "ribbons.bands", 4, 2, 6), P("Length", "ribbons.length", .5), P("Width", "ribbons.width", .5),
       P("Wave", "ribbons.wave", .4), P("Flow", "ribbons.flow", .4), P("Glow", "ribbons.glow", 0)]),
     ("FX_FIREWORKS", "Fireworks", None, CH("Launch rate", "fireworks.rate", RATES, default=2),
@@ -765,7 +765,9 @@ def write_doc():
          f"**0-9 = keep** (no change, the panel stays in charge), then equal slots from {SLOT_START} to {SLOT_END}, "
          "**250-255 = keep** (on the Advanced palette channel: **use the DMX colours** from the Low/Mid/High instances).",
          "", "TouchFX follows *last change wins*: a channel only takes over when its DMX value changes, so the touch "
-         "panel and the console can both be used. With **DMX LOCK** on, DMX always wins.", ""]
+         "panel and the console can both be used. With **DMX LOCK** on, DMX always wins.", "",
+         "**FLASH scenes** (stored as FLASH on the panel) stay on while the Scene channel stays on them; moving the "
+         "channel away (to Keep / 0 or another scene) snaps everything back to what was running before.", ""]
     for name, mode, desc in MODES_DEF:
         lay, foot = layout(mode)
         L += [f"## {name} ({foot} channels)", "", desc, "", "| Ch | Instance | Function | Values |", "|---|---|---|---|"]

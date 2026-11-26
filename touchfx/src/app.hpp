@@ -170,6 +170,17 @@ struct App {
   ImFont* fontSmall = nullptr;
   bool fontsBuilt = false;
   bool storeArmed = false, deleteArmed = false, customRes = false;
+  bool storeFlash = false;  // STORE makes a FLASH scene
+  // FLASH scene held: what was running before, put back exactly on release
+  struct FlashSave {
+    Look look;
+    int lastScene = -1, curFx = 0;
+    bool fading = false, holding = false, wasTouching = false;
+    float fadeElapsed = 0, gain = 1;
+    std::vector<Emitter> held;
+  } flashSave;
+  int flashScene = -1;      // the FLASH scene being held (-1 = none)
+  bool flashFromDmx = false;
   int lastScene = -1;
   float uiScaleEdit = 1;
   char ndiNameEdit[64] = {};
@@ -197,6 +208,8 @@ struct App {
   void clearEffect();
   bool touching() const { return !live.empty(); }
   void recallScene(int i);
+  void startFlash(int i);  // FLASH scene pressed
+  void endFlash();         // ... and released
 };
 
 enum SettingsTab { ST_COLOURS, ST_LOOK, ST_OUTPUT, ST_SCREEN, ST_AUDIO, ST_DMX, ST_SYSTEM, ST_VIDEO, ST_COUNT };

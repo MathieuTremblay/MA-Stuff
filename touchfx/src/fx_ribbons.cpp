@@ -1,7 +1,8 @@
 // Ribbons: each finger paints a wide, flat brush stroke made of parallel colour bands (2 to 6, colours from
 // the palette: low, mid, high, repeating) - a retro striped look. The stroke follows the finger in smooth
-// curves; its tail flows gently in a wave, then fades out after the Length time. Matte by default, Glow adds
-// a soft halo.
+// curves; turns too tight for its width are rounded off so the bands never fold. STAY: the paint stays where
+// it was drawn and only ripples in place. FLOAT: the tail also sways and drifts away as it fades.
+// It fades out after the Length time. Matte by default, Glow adds a soft halo.
 #include <algorithm>
 #include <cmath>
 #include <map>
@@ -153,7 +154,7 @@ class Ribbons : public Effect {
     float flow = mixf(0.4f, 3.f, s.flow) * std::clamp(c.speed, 0.3f, 3.f) * std::clamp(c.drive, 0.5f, 1.8f);
     for (const Stroke* st : order) {
       if (st->pts.size() < 2) continue;
-      if (!build(*st, width, waveAmp, flow, life, c.gain)) continue;
+      if (!build(*st, width, waveAmp, flow, life, c.gain, s.motion == RIBBON_FLOAT)) continue;
       float cols[18];
       for (int b = 0; b < 6; ++b) {
         Vec3 v = st->cols[std::min(b, bands - 1)];
@@ -181,57 +182,104 @@ class Ribbons : public Effect {
 
  private:
   // Makes the band's triangles (and the halo's) for one stroke into verts / halo.
-  bool build(const Stroke& st, float width, float waveAmp, float flow, float life, float gain) {
-    // 1. the path with the tail waving: sideways offset grows with age, so the head stays on the finger.
-    // The head is left out while it sits on the last point (no direction yet: it would fold the end).
+  bool build(const Stroke& st, float width, float waveAmp, float flow, float life, float gain, bool floating) {
+    // 1. the painted path, evenly spaced (oldest first, the finger last). The head is left out while it sits
+    // on the last point (no direction yet).
     size_t n = st.pts.size();
     if (n > 2 && length(st.pts[n - 1].p - st.pts[n - 2].p) < 1.f) --n;
-    path.resize(n);
-    alphas.resize(n);
-    for (size_t i = 0; i < n; ++i) {
-      Vec2 tan = st.pts[std::min(n - 1, i + 1)].p - st.pts[i ? i - 1 : 0].p;
-      float tl = length(tan);
-      Vec2 nrm = tl > 1e-3f ? Vec2(-tan.y / tl, tan.x / tl) : Vec2(0, 1);
-      float age = std::clamp((clock - st.pts[i].born) / life, 0.f, 1.f);
-      float sway = std::sin(st.phase + clock * flow - age * 5.f) * waveAmp * std::sqrt(age);
-      path[i] = st.pts[i].p + nrm * sway;
-      // fade: the oldest third melts away
-      alphas[i] = gain * std::clamp((1.f - age) * 3.f, 0.f, 1.f);
-    }
-    // 2. smooth curves (Chaikin, twice), keeping both ends
-    for (int it = 0; it < 2 && path.size() >= 3; ++it) {
-      tmpP.clear();
-      tmpA.clear();
-      tmpP.push_back(path.front());
-      tmpA.push_back(alphas.front());
-      for (size_t i = 0; i + 1 < path.size(); ++i) {
-        tmpP.push_back(path[i] * 0.75f + path[i + 1] * 0.25f);
-        tmpP.push_back(path[i] * 0.25f + path[i + 1] * 0.75f);
-        tmpA.push_back(alphas[i] * 0.75f + alphas[i + 1] * 0.25f);
-        tmpA.push_back(alphas[i] * 0.25f + alphas[i + 1] * 0.75f);
+    if (n < 2) return false;
+    const float ds = std::max(4.f, width * 0.25f);  // coarse first: rounding the turns settles fast
+    path.clear();
+    ages.clear();
+    path.push_back(st.pts[0].p);
+    ages.push_back(clock - st.pts[0].born);
+    float carry = 0;
+    for (size_t i = 0; i + 1 < n; ++i) {
+      Vec2 a = st.pts[i].p, b = st.pts[i + 1].p;
+      float segL = length(b - a);
+      float ageA = clock - st.pts[i].born, ageB = clock - st.pts[i + 1].born;
+      float t = ds - carry;
+      while (t < segL && path.size() < 4000) {
+        float k = t / segL;
+        path.push_back(a + (b - a) * k);
+        ages.push_back(ageA + (ageB - ageA) * k);
+        t += ds;
       }
-      tmpP.push_back(path.back());
-      tmpA.push_back(alphas.back());
-      path.swap(tmpP);
-      alphas.swap(tmpA);
+      carry = segL - (t - ds);
     }
-    // 3. a strip of quads, constant width (miter-free: the normal is averaged along the curve)
-    verts.clear();
-    halo.clear();
+    if (length(st.pts[n - 1].p - path.back()) > 0.5f) {
+      path.push_back(st.pts[n - 1].p);
+      ages.push_back(clock - st.pts[n - 1].born);
+    }
     const size_t m = path.size();
     if (m < 2) return false;
-    float hw = width * 0.5f, hh = width * 0.5f * 1.9f;
+    float hw = width * 0.5f;
+    // 2. round off turns tighter than the stroke can follow (the inner edge would fold over itself)
+    limitCurvature(hw * 1.15f, ds);
+
+    // 3. motion. STAY: the paint stays where it was drawn and only ripples in place (a small wave running down
+    // the tail; the head stays on the finger). FLOAT: the tail also sways wider with age and drifts away softly.
+    base = path;
+    float distFromHead = 0;
+    Vec2 drift = Vec2(std::sin((st.phase - kPi) * 0.45f), std::cos((st.phase - kPi) * 0.45f));  // mostly up
+    for (size_t j = m; j-- > 0;) {
+      if (j + 1 < m) distFromHead += length(base[j + 1] - base[j]);
+      Vec2 tan = base[std::min(m - 1, j + 1)] - base[j ? j - 1 : 0];
+      float tl = length(tan);
+      Vec2 nrm = tl > 1e-3f ? Vec2(-tan.y / tl, tan.x / tl) : Vec2(0, 1);
+      float age = std::clamp(ages[j] / life, 0.f, 1.f);
+      float ramp = std::clamp(distFromHead / (width * 1.5f), 0.f, 1.f);
+      ramp = ramp * ramp * (3.f - 2.f * ramp);
+      float ripple = std::sin(st.phase + clock * flow * 2.f - distFromHead / (width * 2.2f)) * waveAmp * 0.3f * ramp;
+      Vec2 off = nrm * ripple;
+      if (floating) {
+        off += nrm * (std::sin(st.phase + clock * flow - age * 5.f) * waveAmp * std::sqrt(age));
+        off += drift * (std::pow(age, 1.5f) * width * 1.2f);
+      }
+      path[j] = base[j] + off;
+    }
+    if (waveAmp > 0.f || floating) limitCurvature(hw * 1.15f, ds);  // the motion can bend it again
+    // then smooth and fine (Chaikin, twice: the corners are cut, never sharpened), keeping both ends
+    for (int it = 0; it < 2; ++it) {
+      base.clear();
+      tmpA.clear();
+      base.push_back(path.front());
+      tmpA.push_back(ages.front());
+      for (size_t i = 0; i + 1 < path.size(); ++i) {
+        base.push_back(path[i] * 0.75f + path[i + 1] * 0.25f);
+        base.push_back(path[i] * 0.25f + path[i + 1] * 0.75f);
+        tmpA.push_back(ages[i] * 0.75f + ages[i + 1] * 0.25f);
+        tmpA.push_back(ages[i] * 0.25f + ages[i + 1] * 0.75f);
+      }
+      base.push_back(path.back());
+      tmpA.push_back(ages.back());
+      path.swap(base);
+      ages.swap(tmpA);
+    }
+    const size_t m2 = path.size();
+    alphas.resize(m2);
+    for (size_t j = 0; j < m2; ++j) alphas[j] = gain * std::clamp((1.f - ages[j] / life) * 3.f, 0.f, 1.f);
+
+    // 4. a strip of quads plus round ends
+    verts.clear();
+    halo.clear();
+    float hh = hw * 1.9f;
     Vec2 lastL, lastR, lastHL, lastHR;
     float lastA = 0;
     bool any = false;
-    for (size_t i = 0; i < m; ++i) {
-      Vec2 tan = path[std::min(m - 1, i + 1)] - path[i ? i - 1 : 0];
+    Vec2 firstT, lastT, firstN, lastN;
+    for (size_t i = 0; i < m2; ++i) {
+      Vec2 tan = path[std::min(m2 - 1, i + 1)] - path[i ? i - 1 : 0];
       float tl = length(tan);
       if (tl < 1e-4f) {
         tan = Vec2(1, 0);
         tl = 1;
       }
-      Vec2 nrm(-tan.y / tl, tan.x / tl);
+      tan = tan * (1.f / tl);
+      Vec2 nrm(-tan.y, tan.x);
+      if (i == 0) firstT = tan, firstN = nrm;
+      lastT = tan;
+      lastN = nrm;
       Vec2 L = path[i] + nrm * hw, R = path[i] - nrm * hw;
       Vec2 HL = path[i] + nrm * hh, HR = path[i] - nrm * hh;
       float a = alphas[i];
@@ -250,15 +298,59 @@ class Ribbons : public Effect {
       lastHR = HR;
       lastA = a;
     }
+    // round ends: the bands carry on straight across a half disc, like the end of a wide brush
+    if (alphas.back() > 0.002f) {
+      cap(verts, path.back(), lastT, lastN, hw, alphas.back());
+      cap(halo, path.back(), lastT, lastN, hh, alphas.back());
+    }
+    if (alphas.front() > 0.002f) {
+      cap(verts, path.front(), firstT * -1.f, firstN, hw, alphas.front());
+      cap(halo, path.front(), firstT * -1.f, firstN, hh, alphas.front());
+    }
     return any;
+  }
+
+  // Half disc at an end: out = the direction away from the stroke. across = position across the stroke (-1..1).
+  static void cap(std::vector<float>& v, Vec2 c, Vec2 out, Vec2 nrm, float r, float a) {
+    const int seg = 12;
+    for (int k = 0; k < seg; ++k) {
+      float p0 = kPi * k / seg, p1 = kPi * (k + 1) / seg;
+      Vec2 d0 = nrm * std::cos(p0) + out * std::sin(p0), d1 = nrm * std::cos(p1) + out * std::sin(p1);
+      Vec2 q0 = c + d0 * r, q1 = c + d1 * r;
+      float t[3][4] = {{c.x, c.y, 0, a}, {q0.x, q0.y, std::cos(p0), a}, {q1.x, q1.y, std::cos(p1), a}};
+      for (auto& x : t) v.insert(v.end(), x, x + 4);
+    }
+  }
+
+  // Smooths `path` where it turns tighter than radius rmin (points ds apart), keeping both ends in place.
+  void limitCurvature(float rmin, float ds) {
+    const size_t m = path.size();
+    if (m < 3) return;
+    for (int it = 0; it < 60; ++it) {
+      bool changed = false;
+      for (size_t i = 1; i + 1 < m; ++i) {
+        Vec2 a = path[i] - path[i - 1], b = path[i + 1] - path[i];
+        float la = length(a), lb = length(b);
+        if (la < 1e-4f || lb < 1e-4f) continue;
+        float cosT = std::clamp((a.x * b.x + a.y * b.y) / (la * lb), -1.f, 1.f);
+        float turn = std::acos(cosT);
+        float span = 0.5f * (la + lb);
+        if (turn * rmin > span * 1.02f + 1e-3f) {  // radius = span / turn is below rmin
+          path[i] = path[i] * 0.4f + (path[i - 1] + path[i + 1]) * 0.3f;
+          changed = true;
+        }
+      }
+      if (!changed) break;
+    }
+    (void)ds;
   }
 
   Program prog;
   GLuint vao = 0, vbo = 0;
   std::map<int, Stroke> strokes;
   std::vector<float> verts, halo;
-  std::vector<Vec2> path, tmpP;
-  std::vector<float> alphas, tmpA;
+  std::vector<Vec2> path, base;
+  std::vector<float> alphas, ages, tmpA;
   Target canvas;
   float clock = 0;
   int orderCounter = 0;

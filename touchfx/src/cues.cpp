@@ -173,6 +173,7 @@ void cueFire(App& a, int index) {
   CueList* cl = activeList(a);
   if (!cl || index < 0 || index >= int(cl->cues.size())) return;
   const Cue& cue = cl->cues[index];
+  a.endFlash();  // a cue during a held FLASH scene: the flash ends, the cue takes over from what was running
   CuePlayer& p = a.cue;
   float bpm = a.st.look.bpm;  // the tempo is never recalled
   Look target = cue.look;

@@ -28,6 +28,7 @@ enum StrobeShape {
   STROBE_SHOCKWAVE, STROBE_WIPE, STROBE_BLINDER, STROBE_BLOCKS, STROBE_COUNT
 };
 enum ShapeType { SHAPE_TRI, SHAPE_SQUARE, SHAPE_PENT, SHAPE_HEX, SHAPE_CIRCLE, SHAPE_STAR, SHAPE_MIX, SHAPE_COUNT };
+enum RibbonMotion { RIBBON_STAY, RIBBON_FLOAT, RIBBON_MOTION_COUNT };
 enum SpectrumMode { SPEC_CIRCLE, SPEC_BARS, SPEC_WAVE, SPEC_WATERFALL, SPEC_SCOPE, SPEC_RINGS, SPEC_BURST, SPEC_COUNT };
 enum GridMode { GRID_TRAIL, GRID_RINGS, GRID_SPARKLE, GRID_SCROLL, GRID_EQ, GRID_PLASMA, GRID_RAIN, GRID_CHECKER,
                 GRID_RADAR, GRID_VIDEO, GRID_VU, GRID_SPECTRO, GRID_COUNT };
@@ -85,6 +86,7 @@ struct RippleSettings {
 };
 struct RibbonSettings {
   int bands = 4;  // parallel colour bands in each stroke, 2..6
+  int motion = 0;  // RibbonMotion: STAY (paint stays where drawn, ripples) or FLOAT (drifts away as it fades)
   float length = 0.5f, width = 0.5f, wave = 0.4f, flow = 0.4f, glow = 0.f;
 };
 struct GeometrySettings {
@@ -230,6 +232,7 @@ void lookToParams(const Look& l, FxParams& p);
 
 struct Scene {
   bool used = false;
+  bool flash = false;  // FLASH: on only while its button is held, then everything goes back as it was
   std::string name;  // shown on the scene button ("" = effect name)
   Look look;
 };

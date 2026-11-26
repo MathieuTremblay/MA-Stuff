@@ -282,7 +282,7 @@ inline int dmx2Slot(int v, int n) {
 // number of named choices of Mode (0), Option 1 (1), Option 2 (2) for an effect
 inline int dmx2ChoiceCount(int fx, int which) {
   static const int n[3][kDmx2FxCount] = {
-      {0, 3, 0, 0, 0, 0, 0, 0, 6, 7, 7, 7, 0, 7, 12, 9},
+      {0, 3, 0, 2, 0, 0, 0, 0, 6, 7, 7, 7, 0, 7, 12, 9},
       {0, 6, 0, 0, 6, 0, 0, 0, 4, 3, 2, 6, 2, 2, 2, 8},
       {0, 0, 0, 0, 2, 0, 0, 0, 4, 2, 0, 0, 0, 0, 0, 2}};
   for (int i = 0; i < kDmx2FxCount; ++i)
@@ -297,6 +297,11 @@ inline void dmx2SetChoice(Look& l, int fx, int which, int slot) {
     case FX_PARTICLES: {
       static const int v[] = {0, 1, 2};
       if (slot < 3) l.particles.strobe = decltype(l.particles.strobe)(v[slot]);
+      break;
+    }
+    case FX_RIBBONS: {
+      static const int v[] = {0, 1};
+      if (slot < 2) l.ribbons.motion = decltype(l.ribbons.motion)(v[slot]);
       break;
     }
     case FX_LASERS: {

@@ -309,10 +309,11 @@ void action(App& a) {
       undoPush(a, "store scene");
       a.st.scenes[i].used = true;
       a.st.scenes[i].look = l;
+      a.st.scenes[i].flash = chance(0.35f);
       count("scene store");
     } else if (k == 1) {
-      a.recallScene(i);
-      count("scene recall");
+      a.recallScene(i);  // a FLASH scene starts a flash (ended below, like a released button)
+      count(a.flashScene >= 0 ? "flash scene" : "scene recall");
     } else {
       undoPush(a, "delete scene");
       a.st.scenes[i] = Scene();
@@ -508,6 +509,7 @@ void stressTick(App& a, float dt, float frameSeconds) {
   }
 
   fingersTick(a, dt);
+  if (a.flashScene >= 0 && !a.flashFromDmx && rnd() < dt * 0.8f) a.endFlash();  // the robot lets go of a FLASH
   if (g.elapsed >= g.nextAction) {
     action(a);
     g.nextAction = g.elapsed + (chance(0.1f) ? rnd(0.02f, 0.2f) : rnd(0.3f, 2.5f));  // sometimes a burst

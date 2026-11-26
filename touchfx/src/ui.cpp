@@ -342,6 +342,10 @@ void EffectParams(App& a) {
       SectionLabel("RIBBONS");
       Hint("Each finger paints a wide stroke of parallel colour bands (palette low, mid, high). The tail waves "
            "gently and fades after the Length time.");
+      static const char* motions[] = {"STAY", "FLOAT"};
+      Choice("rmotion", motions, RIBBON_MOTION_COUNT, &p.motion, 0, 40 * s);
+      Hint(p.motion == RIBBON_STAY ? "STAY: the paint stays where you drew it and ripples gently (Wave 0 = still)."
+                                   : "FLOAT: the tail sways and drifts away softly as it fades.");
       IntSlider("Bands", &p.bands, 2, 6);
       Pct("Length", &p.length);
       Pct("Width", &p.width);
@@ -634,10 +638,17 @@ void SceneButton(App& a, int i, ImVec2 size) {
   else std::snprintf(label, sizeof(label), "%d##scene%d", i + 1, i);
   if (!sc.used) ImGui::PushStyleColor(ImGuiCol_Text, kTextDim);
   ImVec2 p = ImGui::GetCursorScreenPos();
-  bool pressed = Toggle(label, sc.used && a.lastScene == i, size);
+  bool flashing = a.flashScene == i;
+  bool pressed = Toggle(label, sc.used && (a.lastScene == i || flashing), size, flashing ? kFlashCol : kAccent);
   if (!sc.used) ImGui::PopStyleColor();
-  // long press (not in show mode): rename the scene
-  if (sc.used && !ShowModeLocked(a) && ImGui::IsItemActive() && ImGui::GetIO().MouseDownDuration[0] > 0.8f) {
+  bool armed = a.storeArmed || a.deleteArmed;
+  // FLASH scene: on while held, back to what was running on release
+  if (sc.used && sc.flash && !armed) {
+    if (ImGui::IsItemActivated()) a.startFlash(i);
+    if (ImGui::IsItemDeactivated() && a.flashScene == i && !a.flashFromDmx) a.endFlash();
+  }
+  // long press (not in show mode, not a FLASH scene - holding is how it plays): rename the scene
+  if (sc.used && !sc.flash && !ShowModeLocked(a) && ImGui::IsItemActive() && ImGui::GetIO().MouseDownDuration[0] > 0.8f) {
     g_renameScene = i;
     OpenKeyboard("scenename", sc.name.empty() ? kEffectNames[sc.look.effect] : sc.name, "Scene name");
     ImGui::ClearActiveID();
@@ -650,12 +661,22 @@ void SceneButton(App& a, int i, ImVec2 size) {
     dl->AddRectFilled(ImVec2(p.x + 6 * s, y0), ImVec2(p.x + 6 * s + bw, y1), col32(pal.low));
     dl->AddRectFilled(ImVec2(p.x + 6 * s + bw, y0), ImVec2(p.x + 6 * s + 2 * bw, y1), col32(pal.mid));
     dl->AddRectFilled(ImVec2(p.x + 6 * s + 2 * bw, y0), ImVec2(p.x + 6 * s + 3 * bw, y1), col32(pal.high));
+    if (sc.flash) {  // FLASH marker: a lightning-yellow corner tag
+      ImVec2 tp(p.x + size.x - 6 * s, p.y + 5 * s);
+      ImFont* f = a.fontSmall ? a.fontSmall : ImGui::GetFont();
+      float fs = f->FontSize;
+      ImVec2 ts = f->CalcTextSizeA(fs, FLT_MAX, 0, "FLASH");
+      ImVec2 r0(tp.x - ts.x - 6 * s, tp.y), r1(tp.x, tp.y + ts.y + 2 * s);
+      dl->AddRectFilled(r0, r1, ImGui::GetColorU32(kFlashCol), 3 * s);
+      dl->AddText(f, fs, ImVec2(r0.x + 3 * s, r0.y + 1 * s), IM_COL32(20, 20, 20, 255), "FLASH");
+    }
   }
   if (pressed) {
     if (a.storeArmed) {
       undoPush(a, "store scene " + std::to_string(i + 1));
       sc.used = true;
       sc.look = a.st.look;
+      sc.flash = a.storeFlash;
       a.storeArmed = false;
       a.lastScene = i;
       g_renameScene = i;  // give it a name right away
@@ -665,7 +686,7 @@ void SceneButton(App& a, int i, ImVec2 size) {
       sc = Scene();
       a.deleteArmed = false;
       if (a.lastScene == i) a.lastScene = -1;
-    } else if (sc.used) {
+    } else if (sc.used && !sc.flash) {
       a.recallScene(i);
     }
   }
@@ -681,7 +702,9 @@ void StoreDeleteButtons(App& a, ImVec2 size, bool sameLine) {
     a.deleteArmed = false;
   }
   if (sameLine) ImGui::SameLine();
-  if (Toggle(a.deleteArmed ? "DELETE..." : "DELETE", a.deleteArmed, size, kDanger)) {
+  if (a.storeArmed) {  // while storing, this button picks how the scene plays: LATCH (stays) or FLASH (while held)
+    if (Toggle(a.storeFlash ? "AS FLASH" : "AS LATCH", a.storeFlash, size, kFlashCol)) a.storeFlash = !a.storeFlash;
+  } else if (Toggle(a.deleteArmed ? "DELETE..." : "DELETE", a.deleteArmed, size, kDanger)) {
     a.deleteArmed = !a.deleteArmed;
     a.storeArmed = false;
   }
@@ -693,6 +716,11 @@ void ScenesGrid(App& a) {
   float sp = ImGui::GetStyle().ItemSpacing.x;
   float w = (ImGui::GetContentRegionAvail().x - sp) / 2;
   StoreDeleteButtons(a, ImVec2(w, 46 * S()), true);
+  if (a.storeArmed) {
+    Hint(a.storeFlash ? "FLASH: the scene is on only while you hold its button (it draws by itself), then everything "
+                        "snaps back to what was running."
+                      : "LATCH: the scene stays on (like before).");
+  }
   float cw = (ImGui::GetContentRegionAvail().x - sp * 3) / 4;
   for (int i = 0; i < kNumScenes; ++i) {
     if (i % 4) ImGui::SameLine();

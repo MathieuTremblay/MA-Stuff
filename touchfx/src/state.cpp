@@ -23,7 +23,7 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(LaserSettings, mode, beams, rota
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(SparkleSettings, amount, size, spread, twinkle, life, drift, rays, trail)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(PostSettings, bloom, bloomSize, saturation)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(RippleSettings, size, strength, decay, shine, beatDrops)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(RibbonSettings, bands, length, width, wave, flow, glow)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(RibbonSettings, bands, motion, length, width, wave, flow, glow)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(GeometrySettings, shape, rate, size, spin, width, life, glow)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(TunnelSettings, sides, merge, speed, density, twist, width, depth)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(VideoSettings, mode, fit, segments, size, strength, trail, level, glow,
@@ -48,7 +48,7 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Look, effect, fluid, particles, 
                                                 mirror, releaseFx, fadeFx, useCustom, custom,
                                                 release, fadeTime, colorMode, palette, brightness, bpm, speedMult, bg)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(VideoInSettings, type, source)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene, used, name, look)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene, used, flash, name, look)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Cue, number, name, look, fade, follow, followValue)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(CueList, name, endAction, cues)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(OutputSettings, width, height, fps, ndiEnabled, ndiName, ndiAdapter,
@@ -149,6 +149,7 @@ static void sanitizeParams(Look& l) {
   clampRef(l.strobe.shape, 0, STROBE_COUNT - 1);
   clampRef(l.strobe.rate, 0, kNumDivisions - 1);
   clampRef(l.ribbons.bands, 2, 6);
+  clampRef(l.ribbons.motion, 0, RIBBON_MOTION_COUNT - 1);
   clampRef(l.geometry.shape, 0, SHAPE_COUNT - 1);
   clampRef(l.geometry.rate, 0, kNumDivisions - 1);
   clampRef(l.tunnel.sides, 0, 8);

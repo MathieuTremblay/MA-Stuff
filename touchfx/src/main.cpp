@@ -99,10 +99,88 @@ void requestClear(App& a) {
 
 void App::recallScene(int i) {
   if (i < 0 || i >= kNumScenes || !st.scenes[i].used) return;
+  if (st.scenes[i].flash) {  // a FLASH scene recalled without holding (DMX, robot): treat it as a held flash
+    startFlash(i);
+    return;
+  }
+  if (flashScene >= 0) {
+    // a normal scene tapped while a FLASH is held: it becomes what the flash goes back to
+    float bpm0 = flashSave.look.bpm;
+    flashSave.look = st.scenes[i].look;
+    flashSave.look.bpm = bpm0;
+    flashSave.lastScene = i;
+    return;
+  }
   float bpm = st.look.bpm;  // scenes never change the tempo
   st.look = st.scenes[i].look;
   st.look.bpm = bpm;
   lastScene = i;
+}
+
+// FLASH scenes: while held, the scene takes over at once (and draws by itself); on release everything snaps
+// back to what was running, including the previous effect's picture, which is kept as it was.
+void App::startFlash(int i) {
+  if (i < 0 || i >= kNumScenes || !st.scenes[i].used) return;
+  if (flashScene < 0) {
+    flashSave.look = st.look;
+    flashSave.lastScene = lastScene;
+    flashSave.curFx = curFx;
+    flashSave.fading = fading;
+    flashSave.holding = holding;
+    flashSave.wasTouching = wasTouching;
+    flashSave.fadeElapsed = fadeElapsed;
+    flashSave.gain = gain;
+    flashSave.held = held;
+  }
+  if (prevFx >= 0 && prevFx != flashSave.curFx) fx[prevFx]->clear();  // a crossfade still running: finish it
+  prevFx = -1;
+  xfadeOverride = -1;
+  int newFx = st.scenes[i].look.effect;
+  if (newFx != curFx) {
+    // snap to the flash effect; the previous one is not cleared, only paused
+    if (curFx != flashSave.curFx) fx[curFx]->clear();  // an earlier flash effect
+    if (newFx != flashSave.curFx) fx[newFx]->clear();
+    curFx = newFx;
+  }
+  float bpm = st.look.bpm;
+  bool bgWas = st.look.bg.on;
+  int bgFxWas = st.look.bg.effect;
+  st.look = st.scenes[i].look;
+  st.look.bpm = bpm;
+  if (st.look.bg.on != bgWas || st.look.bg.effect != bgFxWas) bgFadeOverride = 0.05f;  // background: snap too
+  fading = holding = false;
+  held.clear();
+  gain = 1;
+  lastScene = i;
+  flashScene = i;
+  logLine("Flash scene %d on", i + 1);
+}
+
+void App::endFlash() {
+  if (flashScene < 0) return;
+  int flashFx = curFx;
+  float bpm = st.look.bpm;
+  bool bgWas = st.look.bg.on;
+  int bgFxWas = st.look.bg.effect;
+  st.look = flashSave.look;
+  st.look.bpm = bpm;  // a tempo tapped during the flash stays
+  if (st.look.bg.on != bgWas || st.look.bg.effect != bgFxWas) bgFadeOverride = 0.05f;
+  if (prevFx >= 0) fx[prevFx]->clear();
+  prevFx = -1;
+  if (flashFx != flashSave.curFx) {
+    fx[flashFx]->clear();
+    curFx = flashSave.curFx;
+  }
+  fading = flashSave.fading;
+  holding = flashSave.holding;
+  wasTouching = flashSave.wasTouching;
+  fadeElapsed = flashSave.fadeElapsed;
+  gain = flashSave.gain;
+  held = flashSave.held;
+  lastScene = flashSave.lastScene;
+  logLine("Flash scene %d off", flashScene + 1);
+  flashScene = -1;
+  flashFromDmx = false;
 }
 
 // ---- show files ----
@@ -120,6 +198,8 @@ static void resetForShow(App& a) {
   a.fading = false;
   a.held.clear();
   a.lastScene = -1;
+  a.flashScene = -1;
+  a.flashFromDmx = false;
   a.dmxPrimed = false;
   a.dmxRunProtocol = -1;  // restart DMX with the show's patch
   a.cue = CuePlayer();
@@ -707,7 +787,8 @@ void buildBgEmitters(App& a, float dt) {
 // Audio auto-play: virtual fingers that wander over the canvas, pushed along by the music.
 void updateVirtualPoints(App& a, float dt, float aspect, const std::vector<Mat2>& mats) {
   const AudioSettings& as = a.st.audio;
-  a.vActive = as.enabled && as.autoPlay && a.af.active && a.showLoaded;
+  bool flash = a.flashScene >= 0;
+  a.vActive = ((as.enabled && as.autoPlay && a.af.active) || flash) && a.showLoaded;
   // A real finger takes over: the auto points step aside while someone touches, so the effect follows the
   // hand at full speed instead of sharing its particles / slots with the music points.
   bool touched = false;
@@ -715,7 +796,9 @@ void updateVirtualPoints(App& a, float dt, float aspect, const std::vector<Mat2>
   if (touched) a.vActive = false;
   if (!a.vActive) return;
   float energy = 0.35f + a.af.focus * 1.1f + a.af.pulse * 0.6f * as.reactivity;
-  for (int k = 0; k < as.points; ++k) {
+  if (flash && !(as.enabled && a.af.active)) energy = 1.f;  // a FLASH scene draws by itself, music or not
+  int count = flash ? std::max(2, as.points) : as.points;
+  for (int k = 0; k < count; ++k) {
     App::VirtualPoint& v = a.vpts[k];
     v.phase += dt * (0.2f + as.motion * 1.6f) * energy;
     if (a.af.onset) v.phase += 0.25f * as.reactivity * as.motion;
@@ -839,6 +922,7 @@ const SelftestStep kSteps[] = {
     {FX_LASERS, LASER_FAN, MIRROR_OFF, 6, 2, false, 0, -1, 0, 0, 1},
     // 0.9.2: striped ribbons, the new audio visuals, mirror-aware equalisers
     {FX_RIBBONS, 0, MIRROR_OFF, 0, 3, false, 0, -1, 0, 0, 1}, {FX_RIBBONS, 0, MIRROR_LR, 3, 2, false, 0, -1, 0, 0, 1},
+    {FX_RIBBONS, 0, MIRROR_OFF, 1, 1, false, 0, -1, 0, 0, 2},  // sharp zig-zags (no folds), FLOAT
     {FX_SPECTRUM, SPEC_WATERFALL, MIRROR_OFF, 1, 2, true}, {FX_SPECTRUM, SPEC_SCOPE, MIRROR_OFF, 4, 2, true},
     {FX_SPECTRUM, SPEC_RINGS, MIRROR_LR, 6, 2, true},      {FX_SPECTRUM, SPEC_BURST, MIRROR_OFF, 2, 2, true},
     {FX_SPECTRUM, SPEC_BARS, MIRROR_QUAD, 1, 1, true},     {FX_SPECTRUM, SPEC_BARS, MIRROR_OFF, 7, 1, true},
@@ -1068,7 +1152,11 @@ int main(int argc, char** argv) {
         if (sp.effect == FX_STROBE) a.st.look.strobe.shape = sp.laserMode ? sp.laserMode : STROBE_SPARKLE;
         if (sp.effect == FX_VIDEO) a.st.look.video.mode = sp.laserMode;
         if (sp.effect == FX_SPECTRUM) a.st.look.spectrum.mode = sp.laserMode;
-        if (sp.effect == FX_RIBBONS && sp.extra) a.st.look.ribbons.length = 0.6f;
+        if (sp.effect == FX_RIBBONS && sp.extra) {
+          a.st.look.ribbons.length = 0.6f;
+          a.st.look.ribbons.motion = sp.extra == 2 ? RIBBON_FLOAT : RIBBON_STAY;
+          a.st.look.ribbons.wave = sp.extra == 2 ? 0.6f : 0.4f;
+        }
         if (sp.effect == FX_GRID) {
           a.st.look.grid.mode = sp.laserMode;
           a.st.look.grid.bulb = sp.extra ? 1.f : 0.f;
@@ -1096,6 +1184,11 @@ int main(int argc, char** argv) {
         a.st.output.alpha = frame >= kStepFrames * 7;  // test the alpha path on the last steps
         a.st.tab = 0;
         selftestTouches(a, frame, sp.fingers);
+        if (sp.effect == FX_RIBBONS && sp.extra == 2) {  // a finger scribbling sharp zig-zags
+          float t = frame / 60.f;
+          float tri = std::fabs(fractf(t * 1.6f) * 2.f - 1.f) * 2.f - 1.f;
+          a.touches[0].pos = Vec2(0.15f + 0.7f * fractf(t * 0.25f), 0.5f + 0.22f * tri);
+        }
         if (sp.effect == FX_RIBBONS && !sp.extra) {  // change the length while a released ribbon is still drifting
           int local = frame % kStepFrames;
           a.st.look.ribbons.length = local < 75 ? 0.5f : (local < 100 ? 0.9f : 0.15f);

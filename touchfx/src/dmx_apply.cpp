@@ -141,8 +141,16 @@ void applyV2(App& a, float dt) {
     if (i >= 0) cueFire(a, i);
     else logLine("DMX: cue %.1f is not in the current song", num);
   }
-  if (changed(D2_M_SCENE) && vals[D2_M_SCENE] >= 1 && vals[D2_M_SCENE] <= kNumScenes && a.dmxPrimed)
-    a.recallScene(vals[D2_M_SCENE] - 1);
+  if (changed(D2_M_SCENE) && a.dmxPrimed) {
+    int sc = vals[D2_M_SCENE] - 1;
+    bool valid = sc >= 0 && sc < kNumScenes && a.st.scenes[sc].used;
+    // a FLASH scene stays on while the channel stays on it; leaving it puts things back
+    if (a.flashFromDmx && (!valid || sc != a.flashScene)) a.endFlash();
+    if (valid) {
+      a.recallScene(sc);
+      if (a.st.scenes[sc].flash) a.flashFromDmx = true;
+    }
+  }
   int cr = present[D2_M_CUECMD] ? trigRange(vals[D2_M_CUECMD], 5) : -1;
   if (cr != a.dmxTrig[0] && cr >= 0 && a.dmxPrimed) {
     switch (cr) {
@@ -350,7 +358,12 @@ void applyDmx(App& a, float dt) {
   }
   if (changed(DMX_SCENE)) {
     int s = slotOf(vals[DMX_SCENE], kNumScenes);
-    if (s >= 0) a.recallScene(s);
+    bool valid = s >= 0 && a.st.scenes[s].used;
+    if (a.flashFromDmx && (!valid || s != a.flashScene)) a.endFlash();
+    if (valid) {
+      a.recallScene(s);
+      if (a.st.scenes[s].flash) a.flashFromDmx = true;
+    }
   }
   for (DmxFn f : {DMX_PALETTE, DMX_PALETTE_ADV}) {
     if (!changed(f)) continue;

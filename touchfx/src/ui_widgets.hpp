@@ -10,6 +10,7 @@ struct App;
 namespace ui {
 
 inline constexpr ImVec4 kAccent{1.00f, 0.47f, 0.10f, 1.f};
+inline constexpr ImVec4 kFlashCol{1.00f, 0.85f, 0.12f, 1.f};  // FLASH scenes
 inline constexpr ImVec4 kAccentDim{0.55f, 0.25f, 0.05f, 1.f};
 inline constexpr ImVec4 kDanger{0.85f, 0.12f, 0.15f, 1.f};
 inline constexpr ImVec4 kGo{0.15f, 0.75f, 0.35f, 1.f};
