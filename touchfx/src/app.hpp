@@ -8,6 +8,8 @@
 #include <vector>
 
 #include "audio.hpp"
+#include "media_lib.hpp"
+#include "media_player.hpp"
 #include "cues.hpp"
 #include "dmx.hpp"
 #include "netif.hpp"
@@ -145,6 +147,15 @@ struct App {
 
   SysStats stats;
   VideoInput video;  // after ndi: destroyed first (its NDI receiver uses the NDI runtime)
+  // Media server: clips of the open project, converted in the background, played on the VIDEO effect's MEDIA source
+  MediaImporter importer;
+  MediaPlayer media;
+  bool mediaWanted = false;  // something shows the media picture this frame
+  bool mediaWinOpen = false;
+  SDL_Window* mediaWin = nullptr;  // the MEDIA window (own ImGui context, same GL context)
+  struct ImGuiContext* mediaCtx = nullptr;
+  bool wantMediaWin = false, wantCloseMediaWin = false;
+  std::string mediaSelected;  // the clip in the MEDIA window's preview / settings
 
   // Network cards
   std::vector<NetAdapter> adapters;
@@ -224,3 +235,6 @@ void applyDmx(App& a, float dt);
 void requestClear(App& a);  // CLEAR button / key
 int dmxFootprint(int mode);
 void rebuildFonts(App& a, float scale);
+namespace ui {
+void MediaWindowUI(App& a);
+}

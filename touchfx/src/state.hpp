@@ -35,6 +35,7 @@ enum GridMode { GRID_TRAIL, GRID_RINGS, GRID_SPARKLE, GRID_SCROLL, GRID_EQ, GRID
 enum ParticleStrobe { PSTROBE_OFF, PSTROBE_SYNC, PSTROBE_SPARKLE, PSTROBE_COUNT };
 enum VideoMode { VID_REVEAL, VID_LIQUID, VID_RIPPLE, VID_KALEIDO, VID_PIXEL, VID_WARP, VID_CLEAN, VID_COUNT };
 enum VideoFit { VFIT_FILL, VFIT_FIT, VFIT_STRETCH, VFIT_COUNT };
+enum VideoSource { VIDSRC_INPUT, VIDSRC_MEDIA, VIDSRC_COUNT };  // VIDEO effect: the video input or the media player
 enum BlendMode { BLEND_ADD, BLEND_BEHIND, BLEND_REVEAL, BLEND_COUNT };
 
 // Flashes per beat for the strobe "rate" buttons.
@@ -110,6 +111,7 @@ struct VideoSettings {
   float glow = 0.3f;      // edge glow in the effect's colours
   bool alwaysOn = false;  // the picture stays up without fingers (and does not fade on release)
   float base = 0.3f;      // REVEAL + ALWAYS ON: level of the unrevealed video
+  int source = VIDSRC_INPUT;
 };
 struct PlexusSettings {
   float amount = 0.5f, range = 0.5f, size = 0.4f, drift = 0.4f, spread = 0.5f, trail = 0.1f;
@@ -224,6 +226,7 @@ struct Look {
   float bpm = 120.0f;
   int speedMult = 2;
   BgLayer bg;
+  std::string mediaClip;  // the clip the media player plays ("" = none, "@live" = the video input)
 };
 
 // Copies the effect settings between a look and a background layer.
@@ -310,6 +313,9 @@ struct LayoutSettings {
   float panelWidth = 1.0f;  // multiplier
   bool sceneStrip = true;   // scenes bar under the canvas (otherwise in the LIVE tab)
   bool effectStrip = true;  // effect buttons under the canvas (otherwise in the LIVE tab)
+  // the MEDIA window (its own window, so TouchFX stays usable): where it was last
+  int mediaX = -1, mediaY = -1, mediaW = 1280, mediaH = 800;
+  bool mediaFull = false;
 };
 
 constexpr int kNumPalettes = 10;
@@ -318,8 +324,60 @@ constexpr int kMaxOutW = 1920, kMaxOutH = 1080;
 constexpr int kMaxTouches = 10;
 constexpr int kMaxAutoPoints = 10;  // audio auto-play points
 
+// ---- media server ----
+enum ClipPlay { PLAY_LOOP, PLAY_ONCE_HOLD, PLAY_ONCE_BLACK, PLAY_BOUNCE, PLAY_COUNT };
+enum MediaTrans { MTRANS_CUT, MTRANS_XFADE, MTRANS_BLACK, MTRANS_COUNT };
+enum ClipStatus { CLIP_READY, CLIP_CONVERTING, CLIP_FAILED };
+constexpr int kNumClipLabels = 9;  // colour tags: none, red, orange, yellow, green, cyan, blue, purple, pink
+constexpr int kBeatChoices[7] = {1, 2, 4, 8, 16, 32, 64};
+constexpr const char* kMediaLive = "@live";  // the clip slot that plays the video input
+
+// Settings stored with each clip (they follow the clip wherever it is played).
+struct ClipSettings {
+  int play = PLAY_LOOP;
+  float in = 0.f, out = 1.f;  // trim, 0..1 of the clip
+  float speed = 1.f;          // 0..4 (x normal speed)
+  bool reverse = false;
+  bool beatSync = false;      // the loop lasts `beats` beats at the current BPM (lands on the beat)
+  int beats = 16;
+  float scale = 1.f, scaleX = 1.f, scaleY = 1.f;
+  float posX = 0.f, posY = 0.f;  // -1..1 (fraction of the output, from the centre)
+  float rotation = 0.f;          // degrees
+  bool flipH = false, flipV = false;
+  float cropL = 0.f, cropR = 0.f, cropT = 0.f, cropB = 0.f;
+  float gamma = 1.f, hue = 0.f /*degrees*/, saturation = 1.f, blur = 0.f;
+  int transition = -1;           // -1 = the media layer's transition, else MediaTrans
+  float transTime = 1.f;
+};
+struct MediaClip {
+  std::string id;      // its files in the project's media folder: <id>.mov and <id>.ppm (thumbnail)
+  std::string name;
+  std::string source;  // the original file (to convert again if the import was interrupted)
+  int label = 0;
+  int width = 0, height = 0, frames = 0;
+  float fps = 0.f;
+  bool alpha = false, still = false;
+  int status = CLIP_CONVERTING;
+  std::string error;
+  ClipSettings set;
+};
+struct MediaGroup {
+  std::string name;
+  std::vector<MediaClip> clips;
+};
+struct MediaLibrary {
+  std::vector<MediaGroup> groups;
+  int transition = MTRANS_XFADE;  // when the playing clip changes
+  float transTime = 1.0f;
+  int activeGroup = 0;
+  ClipSettings liveSet;  // the LIVE slot (video input) has settings too
+};
+MediaClip* findClip(MediaLibrary& m, const std::string& id);
+const MediaClip* findClip(const MediaLibrary& m, const std::string& id);
+
 struct AppState {
   Look look;
+  MediaLibrary media;  // the project's clips (the files are in the project folder)
   std::array<Palette, kNumPalettes> palettes;
   std::array<Scene, kNumScenes> scenes;
   std::vector<CueList> cueLists;  // songs, each with its own cues

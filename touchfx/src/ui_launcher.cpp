@@ -27,10 +27,12 @@ struct KbState {
   bool shift = true;
   bool numeric = false;  // number pad (0-9, dot) instead of the full keyboard
   bool fresh = false;    // number pad: the first key replaces the shown value
+  ImGuiContext* owner = nullptr;  // the window (ImGui context) that asked: the keyboard shows there
 } g_kb;
 }  // namespace
 
 void OpenKeyboard(const char* id, const std::string& initial, const char* title, bool numeric) {
+  g_kb.owner = ImGui::GetCurrentContext();
   g_kb.numeric = numeric;
   g_kb.fresh = numeric;
   g_kb.requested = true;
@@ -97,6 +99,7 @@ static void KeypadBody(App& a, bool enter) {
 }
 
 void KeyboardFrame(App& a) {
+  if (g_kb.owner && g_kb.owner != ImGui::GetCurrentContext()) return;  // it belongs to the other window
   float s = S();
   if (g_kb.requested) {
     ImGui::OpenPopup("##keyboard");
@@ -255,14 +258,17 @@ struct LauncherState {
 
 // EXPORT / IMPORT to a USB stick: pick a drive, (import) pick a show, and if the name is taken: replace or keep both
 struct Transfer {
-  enum Stage { NONE, DRIVE, SHOW, CONFLICT };
+  enum Stage { NONE, DRIVE, SHOW, CONFLICT, COPYING };
   int stage = NONE;
   bool exporting = true;
   bool openRequest = false;
   std::vector<DriveInfo> drives;
   DriveInfo drive;
   std::vector<ShowInfo> driveShows;
-  std::string item;  // export: the show name; import: the file path
+  std::string item;  // export: the show name
+  ShowInfo src;      // import: the project (or old show file) on the drive
+  std::shared_ptr<CopyJob> job;
+  int kind = 0;      // 0 export, 1 import, 2 duplicate
 } g_x;
 
 void startTransfer(bool exporting, const std::string& item) {
@@ -274,25 +280,49 @@ void startTransfer(bool exporting, const std::string& item) {
   g_x.openRequest = true;
 }
 
-// Runs the copy; returns false when the name is taken and the user has to choose.
+// Starts the copy; returns false when the name is taken and the user has to choose.
 bool doTransfer(App& a, TransferMode mode) {
-  std::string got;
-  TransferResult r = g_x.exporting ? exportShow(g_x.item, g_x.drive.root, mode, got) : importShow(g_x.item, mode, got);
+  TransferResult r = XFER_OK;
+  g_x.job = g_x.exporting ? exportShow(g_x.item, g_x.drive.root, mode, r) : importShow(g_x.src, mode, r);
+  g_x.kind = g_x.exporting ? 0 : 1;
   if (r == XFER_EXISTS) return false;
-  if (r == XFER_FAILED) {
-    a.launcherMessage = g_x.exporting ? "Could not copy the show to " + g_x.drive.label + " (full, or write-protected?)."
-                                      : "Could not import the show (is the stick still in?).";
-  } else if (g_x.exporting) {
-    a.launcherMessage = "Exported \"" + got + "\" to " + g_x.drive.label + ", folder \"TouchFX Shows\".";
-    logLine("Exported show \"%s\" to %s", got.c_str(), driveShowsDir(g_x.drive.root).c_str());
-  } else {
-    a.launcherMessage = "Imported \"" + got + "\".";
-    logLine("Imported show \"%s\" from %s", got.c_str(), g_x.item.c_str());
-    a.st.lastShow = got;
-    g_l.dirty = true;
+  if (r == XFER_FAILED || !g_x.job) {
+    a.launcherMessage = g_x.exporting ? "Could not write to " + g_x.drive.label + " (full, or write-protected?)."
+                                      : "Could not import the project (is the drive still in?).";
+    g_x.stage = Transfer::NONE;
+    return true;
   }
-  g_x.stage = Transfer::NONE;
+  g_x.stage = Transfer::COPYING;
   return true;
+}
+
+// Duplicate: a copy of the project folder, media included, in the background.
+void startDuplicate(const std::string& from, const std::string& to) {
+  g_x = Transfer();
+  g_x.kind = 2;
+  g_x.item = from;
+  g_x.job = duplicateShow(from, to);
+  g_x.stage = Transfer::COPYING;
+  g_x.openRequest = true;
+}
+
+// The copy has finished: report it.
+void finishCopy(App& a) {
+  const CopyJob& j = *g_x.job;
+  std::string got = j.name;
+  if (!j.ok) {
+    a.launcherMessage = (g_x.kind == 0 ? "Export" : g_x.kind == 1 ? "Import" : "Duplicate") + std::string(" stopped: ") + j.error;
+  } else if (g_x.kind == 0) {
+    a.launcherMessage = "Exported \"" + got + "\" to " + g_x.drive.label + ", folder \"TouchFX Projects\".";
+    logLine("Exported project \"%s\" to %s", got.c_str(), driveProjectsDir(g_x.drive.root).c_str());
+  } else {
+    a.launcherMessage = (g_x.kind == 1 ? "Imported \"" : "Duplicated as \"") + got + "\".";
+    logLine("%s project \"%s\"", g_x.kind == 1 ? "Imported" : "Duplicated", got.c_str());
+    a.st.lastShow = got;
+  }
+  g_l.dirty = true;
+  g_x.job.reset();
+  g_x.stage = Transfer::NONE;
 }
 
 void TransferPopup(App& a) {
@@ -315,6 +345,9 @@ void TransferPopup(App& a) {
       break;
     case Transfer::SHOW: ImGui::TextColored(kAccent, "IMPORT FROM %s", g_x.drive.label.c_str()); break;
     case Transfer::CONFLICT: ImGui::TextColored(kAccent, "NAME ALREADY USED"); break;
+    case Transfer::COPYING:
+      ImGui::TextColored(kAccent, g_x.kind == 0 ? "EXPORTING..." : g_x.kind == 1 ? "IMPORTING..." : "DUPLICATING...");
+      break;
     default: close = true;
   }
   ImGui::PopFont();
@@ -333,8 +366,7 @@ void TransferPopup(App& a) {
         if (g_x.exporting) {
           if (!doTransfer(a, XFER_ASK)) g_x.stage = Transfer::CONFLICT;
         } else {
-          g_x.driveShows = listShowsIn(driveShowsDir(d.root));
-          if (g_x.driveShows.empty()) g_x.driveShows = listShowsIn(d.root);  // shows copied to the top of the stick
+          g_x.driveShows = listDriveShows(d.root);
           g_x.stage = Transfer::SHOW;
         }
       }
@@ -345,16 +377,17 @@ void TransferPopup(App& a) {
     if (ImGui::Button("CANCEL", ImVec2((w - sp) / 2, h * 0.8f))) close = true;
   } else if (g_x.stage == Transfer::SHOW) {
     if (g_x.driveShows.empty())
-      ImGui::TextWrapped("No shows on this drive. TouchFX looks in its \"TouchFX Shows\" folder (and at the top of the drive).");
+      ImGui::TextWrapped("No projects on this drive. TouchFX looks in its \"TouchFX Projects\" folder (and for older "
+                         "show files in \"TouchFX Shows\" and at the top of the drive).");
     ImGui::BeginChild("##driveshows", ImVec2(w, std::min(io.DisplaySize.y * 0.55f, (h + sp) * 6.f)));
     for (size_t i = 0; i < g_x.driveShows.size(); ++i) {
       ImGui::PushID(int(i));
       const ShowInfo& sh = g_x.driveShows[i];
       char when[48];
       std::strftime(when, sizeof(when), "%d %b %Y", std::localtime(&sh.modified));
-      std::string lbl = sh.name + "   (" + when + ")";
+      std::string lbl = sh.name + "   (" + when + (sh.folder ? ")" : ", older show file)");
       if (ImGui::Button(lbl.c_str(), ImVec2(ImGui::GetContentRegionAvail().x, h))) {
-        g_x.item = sh.path;
+        g_x.src = sh;
         if (!doTransfer(a, XFER_ASK)) g_x.stage = Transfer::CONFLICT;
       }
       ImGui::PopID();
@@ -365,7 +398,7 @@ void TransferPopup(App& a) {
     ImGui::SameLine();
     if (ImGui::Button("CANCEL", ImVec2((w - sp) / 2, h * 0.8f))) close = true;
   } else if (g_x.stage == Transfer::CONFLICT) {
-    std::string name = g_x.exporting ? g_x.item : std::filesystem::u8path(g_x.item).stem().u8string();
+    std::string name = g_x.exporting ? g_x.item : g_x.src.name;
     ImGui::TextWrapped(g_x.exporting ? "A show called \"%s\" is already on %s." : "A show called \"%s\" is already on this computer.",
                        name.c_str(), g_x.drive.label.c_str());
     ImGui::Dummy(ImVec2(0, 8 * s));
@@ -376,6 +409,16 @@ void TransferPopup(App& a) {
     ImGui::SameLine();
     if (ImGui::Button("CANCEL", ImVec2(bw, h))) close = true;
     Hint("KEEP BOTH adds a number to the new copy's name.");
+  } else if (g_x.stage == Transfer::COPYING && g_x.job) {
+    const CopyJob& j = *g_x.job;
+    char buf[96];
+    std::snprintf(buf, sizeof(buf), "%.0f MB of %.0f MB", double(j.bytesDone.load()) / 1048576.0,
+                  double(j.bytesTotal.load()) / 1048576.0);
+    ImGui::Dummy(ImVec2(0, 6 * s));
+    ImGui::ProgressBar(j.progress(), ImVec2(w, 40 * s), buf);
+    Hint("The project folder is copied with its media. Nothing is left half-copied if you cancel or a drive is pulled.");
+    if (ImGui::Button("CANCEL", ImVec2(w, h * 0.8f))) g_x.job->cancel = true;
+    if (j.done) finishCopy(a);
   }
   if (close || g_x.stage == Transfer::NONE) {
     g_x.stage = Transfer::NONE;
@@ -522,8 +565,8 @@ void Launcher(App& a) {
   ImGui::SameLine();
   if (ImGui::Button("QUIT", ImVec2(bw4, btnH * 0.75f))) a.quitNow = true;
   ImGui::PushStyleColor(ImGuiCol_Text, kTextDim);
-  ImGui::TextWrapped("Shows are saved in %s. EXPORT copies the selected show to a USB stick (folder \"TouchFX Shows\"); "
-                     "IMPORT brings one back.", showsDir().c_str());
+  ImGui::TextWrapped("Each show is a project folder (with its media) in %s. EXPORT copies the selected project to a "
+                     "USB stick or SSD (folder \"TouchFX Projects\"); IMPORT brings one back.", showsDir().c_str());
   ImGui::PopStyleColor();
   ImGui::EndGroup();
   TransferPopup(a);
@@ -535,11 +578,7 @@ void Launcher(App& a) {
     newShow(a, txt);
     g_l.dirty = true;
   }
-  if (KeyboardResult("dupshow", txt) && has) {
-    std::string n = uniqueShowName(txt);
-    if (!duplicateShow(selName, n)) a.launcherMessage = "Could not duplicate the show.";
-    g_l.dirty = true;
-  }
+  if (KeyboardResult("dupshow", txt) && has) startDuplicate(selName, txt);
   if (KeyboardResult("renshow", txt) && has) {
     std::string n = safeShowName(txt);
     if (n != selName && !renameShow(selName, n)) a.launcherMessage = "A show called \"" + n + "\" already exists.";

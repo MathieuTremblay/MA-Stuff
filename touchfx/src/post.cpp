@@ -165,12 +165,21 @@ uniform int uBlend, uAlpha, uPremult; uniform float uMaster;
 void main() {
   vec4 f = texture(uFront, vUv), b = texture(uBack, vUv);
   vec3 c;
-  if (uBlend == 0) c = vec3(1.0) - (vec3(1.0) - f.rgb) * (vec3(1.0) - b.rgb);  // both glow together
-  else if (uBlend == 1) c = f.rgb + b.rgb * (1.0 - f.a);                       // front covers the background
-  else c = b.rgb * clamp(f.a * 1.5, 0.0, 1.0);                                  // background shows through the front
+  float cov;  // how much of the pixel the layers cover (a video / clip layer is solid where its picture is)
+  if (uBlend == 0) {  // both glow together
+    c = vec3(1.0) - (vec3(1.0) - f.rgb) * (vec3(1.0) - b.rgb);
+    cov = 1.0 - (1.0 - f.a) * (1.0 - b.a);
+  } else if (uBlend == 1) {  // front covers the background
+    c = f.rgb + b.rgb * (1.0 - f.a);
+    cov = f.a + b.a * (1.0 - f.a);
+  } else {  // background shows through the front
+    float k = clamp(f.a * 1.5, 0.0, 1.0);
+    c = b.rgb * k;
+    cov = b.a * k;
+  }
   c *= uMaster;
   if (uAlpha == 1) {
-    float a = clamp(max(c.r, max(c.g, c.b)), 0.0, 1.0);
+    float a = clamp(max(cov * uMaster, max(c.r, max(c.g, c.b))), 0.0, 1.0);
     if (uPremult == 0) c = a > 0.0005 ? c / a : vec3(0.0);
     o = vec4(c, a);
   } else {

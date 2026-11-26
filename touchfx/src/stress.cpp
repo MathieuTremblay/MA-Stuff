@@ -4,6 +4,8 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
+#include <cstdlib>
 #include <cstring>
 #include <ctime>
 #include <filesystem>
@@ -262,9 +264,81 @@ void dmxSend(App& a) {
   sendto(g.udp, (const char*)p.data(), int(p.size()), 0, (const sockaddr*)&to, sizeof(to));
 }
 
+// ---- the media server: play / switch clips, change their settings, move the media between layers, the window ----
+void mediaAction(App& a) {
+  Look& l = a.st.look;
+  MediaLibrary& m = a.st.media;
+  std::vector<std::string> ids = {"", kMediaLive};
+  for (const MediaGroup& g : m.groups)
+    for (const MediaClip& c : g.clips) ids.push_back(c.id);
+  switch (irnd(0, 9)) {
+    case 0: case 1: case 2:
+      l.mediaClip = ids[size_t(irnd(0, int(ids.size()) - 1))];
+      count("media clip");
+      break;
+    case 3:
+      if (chance(0.5f)) {  // the media layer on BACK
+        l.bg.on = true;
+        l.bg.effect = FX_VIDEO;
+        l.bg.fx.video.source = VIDSRC_MEDIA;
+        l.bg.fx.video.mode = chance(0.7f) ? VID_CLEAN : irnd(0, VID_COUNT - 1);
+        l.bg.fx.video.alwaysOn = chance(0.8f);
+      } else {  // the front VIDEO effect on MEDIA
+        l.effect = FX_VIDEO;
+        l.video.source = VIDSRC_MEDIA;
+        l.video.mode = irnd(0, VID_COUNT - 1);
+      }
+      count("media layer");
+      break;
+    case 4: case 5: case 6: {  // any clip's settings, while it plays
+      ClipSettings* k = &m.liveSet;
+      if (ids.size() > 2) {
+        MediaClip* c = findClip(m, ids[size_t(irnd(2, int(ids.size()) - 1))]);
+        if (c) k = &c->set;
+      }
+      switch (irnd(0, 9)) {
+        case 0: k->play = irnd(0, PLAY_COUNT - 1); break;
+        case 1: k->in = rnd() * 0.6f; k->out = k->in + rnd() * (1.f - k->in); break;
+        case 2: k->speed = rnd() * 4.f; k->reverse = chance(0.3f); break;
+        case 3: k->beatSync = chance(0.5f); k->beats = kBeatChoices[irnd(0, 6)]; break;
+        case 4: k->scale = 0.05f + rnd() * 3.f; k->scaleX = 0.2f + rnd() * 2.f; k->scaleY = 0.2f + rnd() * 2.f; break;
+        case 5: k->posX = rnd() * 2.f - 1.f; k->posY = rnd() * 2.f - 1.f; k->rotation = rnd() * 360.f - 180.f; break;
+        case 6: k->cropL = rnd() * 0.5f; k->cropR = rnd() * 0.4f; k->cropT = rnd() * 0.4f; k->cropB = rnd() * 0.4f; break;
+        case 7: k->gamma = 0.2f + rnd() * 2.8f; k->hue = rnd() * 360.f - 180.f; k->saturation = rnd() * 2.f; break;
+        case 8: k->blur = chance(0.5f) ? rnd() : 0.f; break;
+        default: k->transition = irnd(-1, MTRANS_COUNT - 1); k->transTime = rnd() * 2.f; break;
+      }
+      count("media settings");
+      break;
+    }
+    case 7:
+      m.transition = irnd(0, MTRANS_COUNT - 1);
+      m.transTime = rnd() * 2.f;
+      if (chance(0.3f)) a.media.restart();
+      count("media transition");
+      break;
+    case 8:  // the MEDIA window opens / closes, with a clip in its preview
+      if (a.mediaWin) a.wantCloseMediaWin = true;
+      else a.wantMediaWin = true;
+      a.mediaSelected = ids[size_t(irnd(0, int(ids.size()) - 1))];
+      count("media window");
+      break;
+    default:  // a flash-style snap back
+      a.media.snapNext();
+      if (chance(0.5f)) a.media.resumeNext();
+      l.mediaClip = ids[size_t(irnd(0, int(ids.size()) - 1))];
+      count("media snap");
+      break;
+  }
+}
+
 // ---- one random action ----
 void action(App& a) {
   Look& l = a.st.look;
+  if (chance(0.12f)) {
+    mediaAction(a);
+    return;
+  }
   int r = irnd(0, 99);
   if (r < 14) {
     l.effect = irnd(0, FX_COUNT - 1);
@@ -491,6 +565,22 @@ void stressStart(App& a, double minutes, const std::string& reportDir) {
     std::fprintf(g.csv, "seconds,fps,worst_frame_ms,hitches_total,memory_mb,gpu_buffers,gpu_free_mb,video_state,"
                         "video_fps,background,effect,background_effect,resolution\n");
   logLine("Stress test started: %.1f minutes", minutes);
+  // media: clips from TOUCHFX_TEST_MEDIA (files separated by ';') are converted into a scratch folder
+  a.importer.setRoot(reportDir + "stress-media");
+  a.st.media = MediaLibrary();
+  a.st.media.groups.push_back(MediaGroup{"Stress", {}});
+  if (const char* mv = std::getenv("TOUCHFX_TEST_MEDIA")) {
+    std::vector<std::string> files;
+    std::string v = mv;
+    size_t p = 0;
+    while (p <= v.size()) {
+      size_t q = v.find(';', p);
+      if (q == std::string::npos) q = v.size();
+      if (q > p) files.push_back(v.substr(p, q - p));
+      p = q + 1;
+    }
+    a.importer.import(a.st.media, 0, files);
+  }
   fuzzFiles(a);
   logLine("Stress: %d damaged files tried, %d refused, %d loaded and cleaned up", g.fuzzFiles, g.fuzzRejected,
           g.fuzzLoaded);

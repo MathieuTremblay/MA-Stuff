@@ -17,11 +17,13 @@ Requirements: Windows 10/11 64-bit, a GPU with OpenGL 3.3 (any dedicated card), 
 
 TouchFX starts on a **launcher**: pick a show and tap **OPEN**, or **NEW SHOW** (named with the on-screen keyboard).
 **DUPLICATE**, **RENAME**, **DELETE** (moved to a *Deleted* folder) and **SHOW FOLDER** manage them.
-**EXPORT** copies the selected show (and its picture) to a USB stick or another drive, into a *TouchFX Shows*
-folder; **IMPORT** lists the shows on a drive and brings one in. Everything is done on the touch screen (drives
-are listed with USB sticks first); if the name is already used you choose **REPLACE** or **KEEP BOTH**.
-A show holds the looks, scenes, cue lists, palettes and DMX patch, and saves itself automatically to
-`Documents\TouchFX Shows\<name>.tfxshow`: copy these files to back up or move shows between PCs.
+Each show is a **project folder**, `Documents\TouchFX Projects\<name>\`, holding the show file (looks, scenes, cue
+lists, palettes, DMX patch, media library), its picture and a `media` folder with the show's clips. It saves itself
+automatically. Shows from before 0.9.4 (`Documents\TouchFX Shows`) are copied into project folders the first time.
+**EXPORT** copies the selected project, media included, to a USB stick or SSD, into a *TouchFX Projects* folder;
+**IMPORT** lists the projects on a drive (and older single show files) and brings one in. Big projects copy in the
+background with a progress bar and **CANCEL**; nothing is left half-copied. Everything is done on the touch screen
+(drives are listed with USB sticks first); if the name is already used you choose **REPLACE** or **KEEP BOTH**.
 What belongs to the PC (outputs, screens, audio and video inputs, layout, touch) stays in `settings.json`.
 Shows from before 0.8 that used **Lightning** (replaced by **Video**) open with **Plexus** in its place.
 *SETTINGS → SYSTEM → SWITCH SHOW* goes back to the launcher.
@@ -114,6 +116,45 @@ A second effect running behind the one you play, on the same output. Select **BA
   everything. The header shows what runs behind (*BG: STARFIELD 60%*).
 - Scenes and cues store it: a cue fades it in, out or to another effect over the cue's fade time (an effect change
   dips through black).
+
+### Media server (MEDIA window)
+
+**MEDIA** (top of the panel) opens the media server in its **own window**, so TouchFX stays usable: with one touch
+screen, both windows can be full screen and **< TOUCHFX** / **MEDIA** switch between them; with a second control
+screen, leave the MEDIA window there. It remembers where it was.
+
+- **FILES** (left): browse **PLACES** (your folders and drives, USB sticks included), **UP**, and **search** (typed,
+  or **KEYS** for the on-screen keyboard; it searches the folder and the folders inside it). Tick videos / pictures
+  and **IMPORT** (or **IMPORT ALL**) into the group shown.
+- Every clip is **converted once to HAP Q** (or **HAP Alpha** for transparent clips and pictures) into the
+  project's `media` folder, **without audio**, in the background with a progress bar. The graphics card decodes
+  HAP, so playback is smooth, starts instantly, plays at any speed and leaves the CPU (and NDI) alone. Files that
+  are already HAP are copied as they are. Resolume DXV files can be imported (converted to HAP). Anything bigger
+  than 4K comes down to 4K. FFmpeg (included: `ffmpeg.exe` / `ffprobe.exe` next to TouchFX.exe) does the conversion.
+- **Groups** (middle, as tabs): **+ GROUP**, **RENAME**, **DELETE GROUP** (tap twice; its clips go too). The first cell
+  is always **LIVE INPUT** (the video input from *SETTINGS → VIDEO IN*).
+- Like Resolume: **tap a clip's name** to show it in **PREVIEW** (playing, with its settings) and edit it underneath
+  without touching the output; **tap its picture** to play it. Tapping the playing clip again restarts it.
+  The playing clip has an orange frame and progress bar; colour **labels** (a tag on top of the picture) help to
+  find clips. **PLAY IT** plays the previewed clip.
+- **PLAYING** (right) shows the media layer; **RESTART**, **STOP**.
+- **Settings stored with each clip** (they follow the clip wherever it plays, and can be changed while it plays):
+  - **PLAY**: **LOOP**, **ONCE + HOLD** (last frame), **ONCE + BLACK**, **BOUNCE**; **In / Out** trim; **Speed**
+    (0–400 %), **REVERSE**; **BEAT SYNC**: the clip (In to Out) lasts 1–64 beats at the current BPM and loops
+    on the bar; **transition into this clip** (the layer's, or its own CUT / CROSSFADE / BLACK and time).
+  - **TRANSFORM**: **Scale**, **Scale X / Y**, **Position X / Y**, **Rotation**, **FLIP H / V**, **Crop** each side.
+  - **COLOUR**: **Gamma**, **Hue**, **Saturation**, **Blur**.
+  - **RENAME**, **< / >** (order), **MOVE TO GROUP**, **DELETE CLIP** (tap twice; removes its file from the project).
+- **When the clip changes** (the media layer): **CUT**, **CROSSFADE** or **FADE THROUGH BLACK**, with a time.
+
+**Where the media plays:** the media player is a source of the **VIDEO** effect (**VIDEO INPUT** / **MEDIA**). Tapping
+a clip's picture puts it on the **BACK layer** (VIDEO, CLEAN, MEDIA, always on, BEHIND) if nothing shows the media
+yet, so the effects you play go over it. On the **FRONT**, VIDEO on MEDIA lets REVEAL, LIQUID, RIPPLE, KALEIDO,
+PIXEL and WARP work on your clips. The clip goes out exactly like the file (the LOOK does not touch it);
+transparent clips stay transparent, also on the alpha output.
+
+**Scenes, cues and FLASH scenes remember the playing clip**: GO changes the clip (with the media transition), and
+a FLASH scene can blast a clip; on release the previous clip comes back where it would have been.
 
 ### Video input
 
@@ -234,7 +275,10 @@ resolution changes, the video input dropping out and coming back, DMX floods to 
 cards), and 400 damaged show files at the start. **Nothing is saved** (shows and settings stay as they were). At the
 end it writes `stress-report.txt` (result, frame rate, slowest frame, memory, GPU buffers) and `stress-data.csv`
 (measurements every 10 s) to `%APPDATA%\TouchFX\TouchFX` and opens that folder. Run it from a command prompt in the
-TouchFX folder, or make a shortcut with `--stress 120` added to the target.
+TouchFX folder, or make a shortcut with `--stress 120` added to the target. To include the media server, set
+`TOUCHFX_TEST_MEDIA` to one or more video / picture files separated by `;` (they are converted into a scratch
+folder next to the report; the robot then plays and switches clips, changes every clip setting, moves the media
+between the BACK layer and the front VIDEO effect, and opens / closes the MEDIA window).
 
 ## Code layout
 
@@ -249,7 +293,11 @@ TouchFX folder, or make a shortcut with `--stress 120` added to the target.
 - `src/dmx.cpp`, `src/dmx_apply.cpp`: sACN / Art-Net receiver and channel mapping
 - `tools/dmx_profile.py`: the DMX profiles; generates `src/dmx_profile.inc`, `gdtf/TouchFX@TouchFX.gdtf`, `docs/DMX.md`
 - `src/sysstats.cpp`: CPU / GPU / RAM sampling
-- `src/show.cpp`, `src/cues.cpp`, `src/log.cpp`: show files, cue playback, log and crash detection
+- `src/show.cpp`, `src/cues.cpp`, `src/log.cpp`: project folders (export / import / duplicate in the background),
+  cue playback, log and crash detection
+- `src/hap.cpp`: HAP video (QuickTime index, Snappy, HAP frames); `src/media_player.cpp`: clip playback, settings,
+  transitions; `src/media_lib.cpp`, `src/process.cpp`: media import (FFmpeg conversion); `src/ui_media.cpp`: the
+  MEDIA window
 - `src/ui_launcher.cpp`, `src/ui_cues.cpp`: launcher, on-screen keyboard, show mode, CUES view
 - `src/platform.cpp`: Windows touch tweaks (gestures, edge swipes, press-and-hold)
 - `res/`: app icon (`make_icon.py` regenerates it) and Windows resources

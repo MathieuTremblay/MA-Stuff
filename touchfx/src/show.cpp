@@ -1,12 +1,14 @@
 #include "show.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
-#include <chrono>
 #include <fstream>
+#include <thread>
 
+#include "log.hpp"
 #include "platform.hpp"
 
 #ifdef _WIN32
@@ -21,45 +23,90 @@ const char* kExt = ".tfxshow";
 const char* kThumbExt = ".thumb";
 
 fs::path toPath(const std::string& utf8) { return fs::u8path(utf8); }
+
+std::time_t fileTime(const fs::path& p) {
+  std::error_code ec;
+  auto t = fs::last_write_time(p, ec);
+  if (ec) return 0;
+  auto sys = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+      t - fs::file_time_type::clock::now() + std::chrono::system_clock::now());
+  return std::chrono::system_clock::to_time_t(sys);
+}
+
+// Shows from before 0.9.4 were single files in "Documents/TouchFX Shows": copy each into its project folder
+// once (the old files are left where they are, with a note).
+void migrateOldShows(const fs::path& projects) {
+  std::error_code ec;
+  fs::path old = toPath(platformDocumentsDir()) / "TouchFX Shows";
+  fs::path note = old / "MOVED - shows are now in TouchFX Projects.txt";
+  if (!fs::is_directory(old, ec) || fs::exists(note, ec)) return;
+  int moved = 0;
+  for (const auto& e : fs::directory_iterator(old, ec)) {
+    if (!e.is_regular_file() || e.path().extension() != kExt) continue;
+    std::string name = e.path().stem().u8string();
+    fs::path dir = projects / toPath(name);
+    if (fs::exists(dir, ec)) continue;
+    fs::create_directories(dir, ec);
+    fs::copy_file(e.path(), dir / toPath(name + kExt), ec);
+    fs::path th = e.path();
+    th.replace_extension(kThumbExt);
+    if (fs::exists(th, ec)) fs::copy_file(th, dir / toPath(name + kThumbExt), ec);
+    fs::last_write_time(dir / toPath(name + kExt), fs::last_write_time(e.path(), ec), ec);
+    ++moved;
+  }
+  std::ofstream(note) << "TouchFX 0.9.4 keeps each show in its own project folder (with its media):\n"
+                      << (projects.u8string()) << "\nThe shows were copied there. These old files are not used any more.\n";
+  if (moved) logLine("Moved %d show(s) into project folders", moved);
+}
 }  // namespace
 
 std::string showsDir() {
   static std::string dir;
   if (dir.empty()) {
-    fs::path p = toPath(platformDocumentsDir()) / "TouchFX Shows";
+    fs::path p = toPath(platformDocumentsDir()) / "TouchFX Projects";
     std::error_code ec;
     fs::create_directories(p, ec);
     dir = p.u8string();
+    migrateOldShows(p);
   }
   return dir;
 }
 
-std::string showPath(const std::string& name) { return (toPath(showsDir()) / toPath(name + kExt)).u8string(); }
+std::string projectDir(const std::string& name) { return (toPath(showsDir()) / toPath(name)).u8string(); }
 
-static std::string thumbPath(const std::string& name) {
-  return (toPath(showsDir()) / toPath(name + kThumbExt)).u8string();
+std::string mediaDir(const std::string& name) {
+  fs::path p = toPath(projectDir(name)) / "media";
+  std::error_code ec;
+  fs::create_directories(p, ec);
+  return p.u8string();
 }
+
+std::string showPath(const std::string& name) {
+  fs::path dir = toPath(projectDir(name));
+  std::error_code ec;
+  fs::create_directories(dir, ec);  // saving creates the folder
+  return (dir / toPath(name + kExt)).u8string();
+}
+
+static fs::path thumbFile(const std::string& name) { return toPath(projectDir(name)) / toPath(name + kThumbExt); }
 
 bool showExists(const std::string& name) {
   std::error_code ec;
-  return fs::exists(toPath(showPath(name)), ec);
+  return fs::exists(toPath(projectDir(name)), ec);
 }
 
-std::vector<ShowInfo> listShows() { return listShowsIn(showsDir()); }
-
-std::vector<ShowInfo> listShowsIn(const std::string& dir) {
+std::vector<ShowInfo> listShows() {
   std::vector<ShowInfo> out;
   std::error_code ec;
-  for (const auto& e : fs::directory_iterator(toPath(dir), ec)) {
-    if (!e.is_regular_file() || e.path().extension() != kExt) continue;
+  for (const auto& e : fs::directory_iterator(toPath(showsDir()), ec)) {
+    if (!e.is_directory()) continue;
+    std::string name = e.path().filename().u8string();
+    fs::path file = e.path() / toPath(name + kExt);
+    if (!fs::exists(file, ec)) continue;
     ShowInfo s;
-    s.name = e.path().stem().u8string();
+    s.name = name;
     s.path = e.path().u8string();
-    auto t = fs::last_write_time(e.path(), ec);
-    // file_time_type -> time_t (portable C++17 conversion)
-    auto sys = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
-        t - fs::file_time_type::clock::now() + std::chrono::system_clock::now());
-    s.modified = std::chrono::system_clock::to_time_t(sys);
+    s.modified = fileTime(file);
     out.push_back(s);
   }
   std::sort(out.begin(), out.end(), [](const ShowInfo& a, const ShowInfo& b) { return a.modified > b.modified; });
@@ -74,55 +121,56 @@ std::string safeShowName(const std::string& name) {
   }
   while (!s.empty() && (s.back() == ' ' || s.back() == '.')) s.pop_back();
   while (!s.empty() && s.front() == ' ') s.erase(s.begin());
-  if (s.empty()) s = "Show";
+  if (s.empty() || s == "Deleted") s = "Show";
   if (s.size() > 60) s.resize(60);
   return s;
 }
 
-std::string uniqueShowName(const std::string& base) {
+static std::string uniqueIn(const fs::path& dir, const std::string& base) {
+  std::error_code ec;
   std::string b = safeShowName(base);
-  if (!showExists(b)) return b;
+  if (!fs::exists(dir / toPath(b), ec)) return b;
   for (int i = 2; i < 1000; ++i) {
     std::string n = b + " " + std::to_string(i);
-    if (!showExists(n)) return n;
+    if (!fs::exists(dir / toPath(n), ec)) return n;
   }
   return b + " copy";
+}
+
+std::string uniqueShowName(const std::string& base) { return uniqueIn(toPath(showsDir()), base); }
+
+// The show / thumbnail files inside a project folder carry the project's name.
+static void renameInner(const fs::path& dir, const std::string& from, const std::string& to) {
+  if (from == to) return;
+  std::error_code ec;
+  fs::rename(dir / toPath(from + kExt), dir / toPath(to + kExt), ec);
+  fs::rename(dir / toPath(from + kThumbExt), dir / toPath(to + kThumbExt), ec);
 }
 
 bool renameShow(const std::string& from, const std::string& to) {
   std::error_code ec;
   if (showExists(to)) return false;
-  fs::rename(toPath(showPath(from)), toPath(showPath(to)), ec);
+  fs::rename(toPath(projectDir(from)), toPath(projectDir(to)), ec);
   if (ec) return false;
-  fs::rename(toPath(thumbPath(from)), toPath(thumbPath(to)), ec);
-  return true;
-}
-
-bool duplicateShow(const std::string& from, const std::string& to) {
-  std::error_code ec;
-  if (showExists(to)) return false;
-  fs::copy_file(toPath(showPath(from)), toPath(showPath(to)), ec);
-  if (ec) return false;
-  fs::copy_file(toPath(thumbPath(from)), toPath(thumbPath(to)), ec);
+  renameInner(toPath(projectDir(to)), from, to);
   return true;
 }
 
 bool deleteShow(const std::string& name) {
   std::error_code ec;
-  // Deleted shows go to a "Deleted" subfolder instead of vanishing, in case of a wrong tap.
+  // Deleted projects go to a "Deleted" folder instead of vanishing, in case of a wrong tap.
   fs::path bin = toPath(showsDir()) / "Deleted";
   fs::create_directories(bin, ec);
-  fs::path dst = bin / toPath(name + kExt);
-  fs::remove(dst, ec);
-  fs::rename(toPath(showPath(name)), dst, ec);
-  if (ec) fs::remove(toPath(showPath(name)), ec);
-  fs::remove(toPath(thumbPath(name)), ec);
+  fs::path dst = bin / toPath(name);
+  fs::remove_all(dst, ec);
+  fs::rename(toPath(projectDir(name)), dst, ec);
+  if (ec) fs::remove_all(toPath(projectDir(name)), ec);
   return !showExists(name);
 }
 
 bool saveThumb(const std::string& name, const std::vector<uint8_t>& rgb) {
   if (rgb.size() != size_t(kThumbW) * kThumbH * 3) return false;
-  std::ofstream f(toPath(thumbPath(name)), std::ios::binary | std::ios::trunc);
+  std::ofstream f(thumbFile(name), std::ios::binary | std::ios::trunc);
   if (!f) return false;
   f.write("TFXT", 4);
   f.write(reinterpret_cast<const char*>(rgb.data()), std::streamsize(rgb.size()));
@@ -130,7 +178,7 @@ bool saveThumb(const std::string& name, const std::vector<uint8_t>& rgb) {
 }
 
 bool loadThumb(const std::string& name, std::vector<uint8_t>& rgb) {
-  std::ifstream f(toPath(thumbPath(name)), std::ios::binary);
+  std::ifstream f(thumbFile(name), std::ios::binary);
   if (!f) return false;
   char magic[4];
   f.read(magic, 4);
@@ -143,7 +191,7 @@ bool loadThumb(const std::string& name, std::vector<uint8_t>& rgb) {
 // ---------------------------------------------------------------------------
 // Import / export
 
-std::vector<DriveInfo> listDrives() {
+std::vector<DriveInfo> listDrives(bool includeShowsDrive) {
   std::vector<DriveInfo> out;
 #ifdef _WIN32
   std::wstring showsRoot = toPath(showsDir()).root_name().wstring();  // "C:"
@@ -153,7 +201,7 @@ std::vector<DriveInfo> listDrives() {
     wchar_t root[4] = {wchar_t(L'A' + i), L':', L'\\', 0};
     UINT type = GetDriveTypeW(root);
     if (type != DRIVE_REMOVABLE && type != DRIVE_FIXED && type != DRIVE_REMOTE) continue;
-    if (_wcsnicmp(root, showsRoot.c_str(), 2) == 0) continue;  // the drive the shows are already on
+    if (!includeShowsDrive && _wcsnicmp(root, showsRoot.c_str(), 2) == 0) continue;  // the drive the shows are on
     wchar_t vol[MAX_PATH + 1] = {0};
     // a card reader with no card: no volume, skip it (and no "insert a disk" dialog)
     UINT old = SetErrorMode(SEM_FAILCRITICALERRORS);
@@ -170,6 +218,7 @@ std::vector<DriveInfo> listDrives() {
     out.push_back(d);
   }
 #else
+  (void)includeShowsDrive;
   // Linux / testing: mounted media, plus TOUCHFX_TEST_DRIVES (folders separated by ':')
   std::vector<std::string> roots;
   if (const char* t = std::getenv("TOUCHFX_TEST_DRIVES")) {
@@ -199,53 +248,209 @@ std::vector<DriveInfo> listDrives() {
   return out;
 }
 
-std::string driveShowsDir(const std::string& root) { return (toPath(root) / "TouchFX Shows").u8string(); }
+std::string driveProjectsDir(const std::string& root) { return (toPath(root) / "TouchFX Projects").u8string(); }
+
+std::vector<ShowInfo> listDriveShows(const std::string& root) {
+  std::vector<ShowInfo> out;
+  std::error_code ec;
+  for (const auto& e : fs::directory_iterator(toPath(driveProjectsDir(root)), ec)) {
+    if (!e.is_directory()) continue;
+    std::string name = e.path().filename().u8string();
+    fs::path file = e.path() / toPath(name + kExt);
+    if (!fs::exists(file, ec)) continue;
+    out.push_back({name, e.path().u8string(), true, fileTime(file)});
+  }
+  // single-file shows (exported by 0.9.2 / 0.9.3, or copied by hand)
+  for (fs::path dir : {toPath(root) / "TouchFX Shows", toPath(root)})
+    for (const auto& e : fs::directory_iterator(dir, ec)) {
+      if (!e.is_regular_file() || e.path().extension() != kExt) continue;
+      out.push_back({e.path().stem().u8string(), e.path().u8string(), false, fileTime(e.path())});
+    }
+  std::sort(out.begin(), out.end(), [](const ShowInfo& a, const ShowInfo& b) { return a.modified > b.modified; });
+  return out;
+}
 
 namespace {
-// Copies <src>.tfxshow (+ .thumb) to dir as name; mode decides what happens when the name is taken.
-TransferResult copyShowTo(const fs::path& srcShow, const fs::path& dir, const std::string& wanted, TransferMode mode,
-                          std::string& outName) {
+
+struct CopyItem {
+  fs::path from, to;
+  uint64_t size;
+};
+
+// Copies the list into a temporary ".part" folder, then puts it in place under `dst` (replacing what is there
+// when asked). Runs on its own thread.
+void runCopy(std::shared_ptr<CopyJob> job, std::vector<CopyItem> items, fs::path part, fs::path dst, bool replace) {
   std::error_code ec;
-  fs::create_directories(dir, ec);
-  std::string name = safeShowName(wanted);
-  auto exists = [&](const std::string& n) { return fs::exists(dir / toPath(n + kExt), ec); };
-  if (exists(name)) {
-    if (mode == XFER_ASK) return XFER_EXISTS;
-    if (mode == XFER_KEEP_BOTH) {
-      std::string b = name;
-      for (int i = 2; i < 1000 && exists(name); ++i) name = b + " " + std::to_string(i);
+  std::vector<char> buf(4 << 20);
+  bool ok = true;
+  std::string err;
+  for (const CopyItem& it : items) {
+    if (job->cancel) {
+      ok = false;
+      err = "Cancelled.";
+      break;
+    }
+    fs::create_directories(it.to.parent_path(), ec);
+    std::ifstream in(it.from, std::ios::binary);
+    std::ofstream out(it.to, std::ios::binary | std::ios::trunc);
+    if (!in || !out) {
+      ok = false;
+      err = "Could not copy " + it.from.filename().u8string() + ".";
+      break;
+    }
+    while (in && !job->cancel) {
+      in.read(buf.data(), std::streamsize(buf.size()));
+      std::streamsize n = in.gcount();
+      if (n <= 0) break;
+      out.write(buf.data(), n);
+      if (!out) {
+        ok = false;
+        err = "The drive is full or was removed.";
+        break;
+      }
+      job->bytesDone += uint64_t(n);
+    }
+    if (!ok) break;
+    out.close();
+    if (!out) {
+      ok = false;
+      err = "The drive is full or was removed.";
+      break;
     }
   }
-  fs::path dst = dir / toPath(name + kExt);
-  // write to a temporary file first, so a pulled stick never leaves half a show under the real name
-  fs::path tmp = dir / toPath(name + kExt + ".part");
-  fs::remove(tmp, ec);
-  fs::copy_file(srcShow, tmp, ec);
-  if (ec) {
-    fs::remove(tmp, ec);
-    return XFER_FAILED;
+  if (ok && job->cancel) {
+    ok = false;
+    err = "Cancelled.";
   }
-  fs::remove(dst, ec);
-  fs::rename(tmp, dst, ec);
-  if (ec) {
-    fs::remove(tmp, ec);
-    return XFER_FAILED;
+  if (ok) {
+    if (replace && fs::exists(dst, ec)) {
+      fs::path old = dst;
+      old += ".old";
+      fs::remove_all(old, ec);
+      fs::rename(dst, old, ec);
+      fs::remove_all(old, ec);
+    }
+    fs::rename(part, dst, ec);
+    if (ec) {
+      ok = false;
+      err = "Could not finish the copy (" + ec.message() + ").";
+    }
   }
-  fs::path srcThumb = srcShow;
-  srcThumb.replace_extension(kThumbExt);
-  fs::path dstThumb = dir / toPath(name + kThumbExt);
-  fs::remove(dstThumb, ec);
-  if (fs::exists(srcThumb, ec)) fs::copy_file(srcThumb, dstThumb, ec);
-  outName = name;
-  return XFER_OK;
+  if (!ok) fs::remove_all(part, ec);
+  job->ok = ok;
+  job->error = err;
+  job->done = true;
 }
+
+// Lists a project folder's files for copying, renaming the show / thumbnail to newName.
+void listFolder(const fs::path& src, const fs::path& part, const std::string& oldName, const std::string& newName,
+                std::vector<CopyItem>& items, uint64_t& total) {
+  std::error_code ec;
+  for (auto it = fs::recursive_directory_iterator(src, ec); it != fs::recursive_directory_iterator(); it.increment(ec)) {
+    if (ec) break;
+    if (!it->is_regular_file(ec)) continue;
+    fs::path rel = fs::relative(it->path(), src, ec);
+    std::string fn = rel.filename().u8string();
+    if (rel.parent_path().empty()) {  // the show and its thumbnail are named after the project
+      if (fn == oldName + kExt) rel = toPath(newName + kExt);
+      else if (fn == oldName + kThumbExt) rel = toPath(newName + kThumbExt);
+      else if (fn.size() > 5 && fn.substr(fn.size() - 5) == ".part") continue;
+    }
+    uint64_t sz = it->file_size(ec);
+    items.push_back({it->path(), part / rel, sz});
+    total += sz;
+  }
+}
+
+std::shared_ptr<CopyJob> start(std::vector<CopyItem> items, uint64_t total, const fs::path& dst, bool replace,
+                               const std::string& name) {
+  auto job = std::make_shared<CopyJob>();
+  job->bytesTotal = std::max<uint64_t>(total, 1);
+  job->name = name;
+  fs::path part = dst;
+  part += ".part";
+  std::error_code ec;
+  fs::remove_all(part, ec);  // a copy interrupted earlier
+  std::thread(runCopy, job, std::move(items), part, dst, replace).detach();
+  return job;
+}
+
+// Name in dir for `wanted`, following the mode. Empty = taken (ask).
+std::string pickName(const fs::path& dir, const std::string& wanted, TransferMode mode, bool& replace) {
+  std::error_code ec;
+  std::string name = safeShowName(wanted);
+  replace = false;
+  if (fs::exists(dir / toPath(name), ec)) {
+    if (mode == XFER_ASK) return "";
+    if (mode == XFER_KEEP_BOTH) name = uniqueIn(dir, name);
+    else replace = true;
+  }
+  return name;
+}
+
 }  // namespace
 
-TransferResult exportShow(const std::string& name, const std::string& root, TransferMode mode, std::string& outName) {
-  return copyShowTo(toPath(showPath(name)), toPath(driveShowsDir(root)), name, mode, outName);
+std::shared_ptr<CopyJob> exportShow(const std::string& name, const std::string& root, TransferMode mode,
+                                    TransferResult& result) {
+  fs::path dir = toPath(driveProjectsDir(root));
+  std::error_code ec;
+  fs::create_directories(dir, ec);
+  if (ec) {
+    result = XFER_FAILED;
+    return nullptr;
+  }
+  bool replace = false;
+  std::string n = pickName(dir, name, mode, replace);
+  if (n.empty()) {
+    result = XFER_EXISTS;
+    return nullptr;
+  }
+  fs::path dst = dir / toPath(n), part = dst;
+  part += ".part";
+  std::vector<CopyItem> items;
+  uint64_t total = 0;
+  listFolder(toPath(projectDir(name)), part, name, n, items, total);
+  result = XFER_OK;
+  return start(std::move(items), total, dst, replace, n);
 }
 
-TransferResult importShow(const std::string& path, TransferMode mode, std::string& outName) {
-  fs::path p = toPath(path);
-  return copyShowTo(p, toPath(showsDir()), p.stem().u8string(), mode, outName);
+std::shared_ptr<CopyJob> importShow(const ShowInfo& src, TransferMode mode, TransferResult& result) {
+  fs::path dir = toPath(showsDir());
+  bool replace = false;
+  std::string n = pickName(dir, src.name, mode, replace);
+  if (n.empty()) {
+    result = XFER_EXISTS;
+    return nullptr;
+  }
+  fs::path dst = dir / toPath(n), part = dst;
+  part += ".part";
+  std::vector<CopyItem> items;
+  uint64_t total = 0;
+  std::error_code ec;
+  if (src.folder) {
+    listFolder(toPath(src.path), part, src.name, n, items, total);
+  } else {  // an old single-file show: becomes a project folder
+    fs::path f = toPath(src.path), th = f;
+    th.replace_extension(kThumbExt);
+    uint64_t sz = fs::file_size(f, ec);
+    items.push_back({f, part / toPath(n + kExt), sz});
+    total += sz;
+    if (fs::exists(th, ec)) {
+      uint64_t ts = fs::file_size(th, ec);
+      items.push_back({th, part / toPath(n + kThumbExt), ts});
+      total += ts;
+    }
+  }
+  result = XFER_OK;
+  return start(std::move(items), total, dst, replace, n);
+}
+
+std::shared_ptr<CopyJob> duplicateShow(const std::string& from, const std::string& to) {
+  std::string n = uniqueShowName(to);
+  fs::path dst = toPath(projectDir(n)), part = dst;
+  part += ".part";
+  std::vector<CopyItem> items;
+  uint64_t total = 0;
+  listFolder(toPath(projectDir(from)), part, from, n, items, total);
+  return start(std::move(items), total, dst, false, n);
 }

@@ -145,6 +145,7 @@ void App::startFlash(int i) {
   float bpm = st.look.bpm;
   bool bgWas = st.look.bg.on;
   int bgFxWas = st.look.bg.effect;
+  if (st.scenes[i].look.mediaClip != st.look.mediaClip) media.snapNext();  // a flash clip cuts in
   st.look = st.scenes[i].look;
   st.look.bpm = bpm;
   if (st.look.bg.on != bgWas || st.look.bg.effect != bgFxWas) bgFadeOverride = 0.05f;  // background: snap too
@@ -162,6 +163,10 @@ void App::endFlash() {
   float bpm = st.look.bpm;
   bool bgWas = st.look.bg.on;
   int bgFxWas = st.look.bg.effect;
+  if (flashSave.look.mediaClip != st.look.mediaClip) {  // the clip from before comes back where it was
+    media.snapNext();
+    media.resumeNext();
+  }
   st.look = flashSave.look;
   st.look.bpm = bpm;  // a tempo tapped during the flash stays
   if (st.look.bg.on != bgWas || st.look.bg.effect != bgFxWas) bgFadeOverride = 0.05f;
@@ -219,6 +224,8 @@ bool openShow(App& a, const std::string& name) {
   a.lastSavedShow = serializeShow(a.st);
   a.launcherMessage.clear();
   resetForShow(a);
+  a.importer.setRoot(mediaDir(name));
+  a.importer.resume(a.st.media);
   logLine("Opened show \"%s\"", name.c_str());
   return true;
 }
@@ -232,6 +239,7 @@ bool newShow(App& a, const std::string& name) {
   s.cueLists = d.cueLists;
   s.activeList = 0;
   s.dmx = d.dmx;
+  s.media = d.media;
   std::string n = uniqueShowName(name);
   if (!saveStateText(showPath(n), serializeShow(s))) {
     a.launcherMessage = "Could not create the show (is the Documents folder writable?).";
@@ -244,6 +252,8 @@ void closeShow(App& a) {
   if (!a.showLoaded) return;
   saveShowNow(a);
   logLine("Closed show \"%s\"", a.showName.c_str());
+  a.importer.setRoot("");  // a conversion in progress carries on next time the show is opened
+  a.st.look.mediaClip.clear();
   a.showLoaded = false;
   a.st.showMode = false;
 }
@@ -311,6 +321,108 @@ void destroyExternal(App& a) {
   SDL_GL_MakeCurrent(a.window, a.gl);
 }
 
+// ---- the MEDIA window: its own SDL window and ImGui context (fonts shared), drawn with the same GL context ----
+std::string g_captureMedia;  // selftest: save the MEDIA window on its next frame
+MediaEnv mediaEnv(App& a);
+
+void openMediaWindow(App& a) {
+  if (a.mediaWin) {
+    SDL_RestoreWindow(a.mediaWin);
+    SDL_RaiseWindow(a.mediaWin);
+    return;
+  }
+  LayoutSettings& L = a.st.layout;
+  int x = L.mediaX, y = L.mediaY, w = std::max(640, L.mediaW), h = std::max(480, L.mediaH);
+  bool onScreen = false;
+  for (int d = 0; d < SDL_GetNumVideoDisplays(); ++d) {
+    SDL_Rect r;
+    if (SDL_GetDisplayBounds(d, &r) == 0 && x >= r.x - 50 && y >= r.y - 50 && x < r.x + r.w - 100 && y < r.y + r.h - 100)
+      onScreen = true;
+  }
+  if (!onScreen) {  // first time (or that screen is gone): centred on the TouchFX screen
+    int disp = std::max(0, SDL_GetWindowDisplayIndex(a.window));
+    x = int(SDL_WINDOWPOS_CENTERED_DISPLAY(disp));
+    y = int(SDL_WINDOWPOS_CENTERED_DISPLAY(disp));
+  }
+  a.mediaWin = SDL_CreateWindow("TouchFX Media", x, y, w, h, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+  if (!a.mediaWin) {
+    logLine("Could not open the MEDIA window: %s", SDL_GetError());
+    return;
+  }
+  ImGuiContext* mainCtx = ImGui::GetCurrentContext();
+  SDL_GL_MakeCurrent(a.mediaWin, a.gl);
+  a.mediaCtx = ImGui::CreateContext(ImGui::GetIO().Fonts);  // same fonts as the main window
+  ImGui::SetCurrentContext(a.mediaCtx);
+  ImGui::GetIO().IniFilename = nullptr;
+  ImGui_ImplSDL2_InitForOpenGL(a.mediaWin, a.gl);
+  ImGui_ImplOpenGL3_Init("#version 330 core");
+  ImGui::SetCurrentContext(mainCtx);
+  SDL_GL_MakeCurrent(a.window, a.gl);
+  if (L.mediaFull) platformSetFullscreen(a.mediaWin, true);
+  a.mediaWinOpen = true;
+  logLine("MEDIA window opened");
+}
+
+void closeMediaWindow(App& a) {
+  if (!a.mediaWin) return;
+  if (!a.st.layout.mediaFull) {
+    SDL_GetWindowPosition(a.mediaWin, &a.st.layout.mediaX, &a.st.layout.mediaY);
+    SDL_GetWindowSize(a.mediaWin, &a.st.layout.mediaW, &a.st.layout.mediaH);
+  }
+  ImGuiContext* mainCtx = ImGui::GetCurrentContext();
+  SDL_GL_MakeCurrent(a.mediaWin, a.gl);
+  ImGui::SetCurrentContext(a.mediaCtx);
+  ImGui_ImplOpenGL3_Shutdown();
+  ImGui_ImplSDL2_Shutdown();
+  ImGui::DestroyContext(a.mediaCtx);
+  ImGui::SetCurrentContext(mainCtx);
+  a.mediaCtx = nullptr;
+  SDL_GL_MakeCurrent(a.window, a.gl);
+  SDL_DestroyWindow(a.mediaWin);
+  a.mediaWin = nullptr;
+  a.mediaWinOpen = false;
+  a.st.layout.mediaFull = a.st.layout.mediaFull;  // kept for next time
+}
+
+void renderMediaWindow(App& a, float dt) {
+  if (!a.mediaWin || !a.mediaCtx) return;
+  // the preview monitor (GL work, in the shared context)
+  {
+    MediaEnv env = mediaEnv(a);
+    int pw = std::min(960, std::max(160, a.out.w / 2));
+    int ph = std::max(90, pw * a.out.h / std::max(1, a.out.w));
+    a.media.updatePreview(env, a.mediaSelected, dt, pw, ph);
+  }
+  ImGuiContext* mainCtx = ImGui::GetCurrentContext();
+  ImGuiStyle style = ImGui::GetStyle();
+  ImFont* defFont = ImGui::GetIO().FontDefault;
+  if (SDL_GL_MakeCurrent(a.mediaWin, a.gl) != 0) return;
+  ImGui::SetCurrentContext(a.mediaCtx);
+  ImGui::GetStyle() = style;  // same look and UI size as the main window
+  ImGui::GetIO().FontDefault = defFont;
+  ImGui_ImplOpenGL3_NewFrame();
+  ImGui_ImplSDL2_NewFrame();
+  ImGui::NewFrame();
+  ui::MediaWindowUI(a);
+  ImGui::Render();
+  int dw, dh;
+  SDL_GL_GetDrawableSize(a.mediaWin, &dw, &dh);
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  glViewport(0, 0, dw, dh);
+  glDisable(GL_SCISSOR_TEST);
+  glClearColor(0.055f, 0.055f, 0.065f, 1.f);
+  glClear(GL_COLOR_BUFFER_BIT);
+  ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+  if (!g_captureMedia.empty()) {
+    writePpm(g_captureMedia, dw, dh);
+    g_captureMedia.clear();
+  }
+  SDL_GL_SetSwapInterval(0);
+  SDL_GL_SwapWindow(a.mediaWin);
+  ImGui::SetCurrentContext(mainCtx);
+  SDL_GL_MakeCurrent(a.window, a.gl);
+}
+
 void handleEvent(App& a, const SDL_Event& ev, bool& running) {
   ImGuiIO& io = ImGui::GetIO();
   Uint32 mainId = SDL_GetWindowID(a.window);
@@ -326,10 +438,13 @@ void handleEvent(App& a, const SDL_Event& ev, bool& running) {
           else running = false;
         }
         else if (a.extWindow && ev.window.windowID == SDL_GetWindowID(a.extWindow)) a.st.external.enabled = false;
+        else if (a.mediaWin && ev.window.windowID == SDL_GetWindowID(a.mediaWin)) a.wantCloseMediaWin = true;
       }
       break;
     case SDL_FINGERDOWN:
       if (ev.tfinger.windowID && ev.tfinger.windowID != mainId) break;
+      // some systems do not say which window a finger is on: the MEDIA window in front keeps it
+      if (!ev.tfinger.windowID && a.mediaWin && SDL_GetKeyboardFocus() == a.mediaWin) break;
       touchDown(a, ev.tfinger.fingerId, ev.tfinger.x * a.winW, ev.tfinger.y * a.winH);
       break;
     case SDL_FINGERMOTION:
@@ -436,6 +551,7 @@ void ensureOutput(App& a) {
   a.out.clear(0, 0, 0, 1);
   a.flip.create(W, H, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE, GL_NEAREST);
   a.post.resize(W, H);
+  a.media.resize(W, H);
   for (int i = 0; i < 2; ++i) {
     if (!a.pbo[i]) glGenBuffers(1, &a.pbo[i]);
     glBindBuffer(GL_PIXEL_PACK_BUFFER, a.pbo[i]);
@@ -483,6 +599,37 @@ std::unique_ptr<Effect> makeEffect(int id) {
 void buildBgEmitters(App& a, float dt);
 
 // Renders the background layer into a.bgScene. Returns false when it is off (fully faded out).
+MediaEnv mediaEnv(App& a) {
+  MediaEnv e;
+  e.lib = &a.st.media;
+  e.imp = &a.importer;
+  e.beat = a.tempo.beat;
+  e.bpm = a.st.look.bpm;
+  bool vid = a.video.hasPicture() || a.video.state() != VS_OFF;
+  e.liveTex = vid ? a.video.texture() : 0;
+  e.liveW = a.video.width();
+  e.liveH = a.video.height();
+  e.liveLevel = a.video.level();
+  return e;
+}
+
+// The VIDEO effect's picture: the video input, or the media player (MEDIA).
+void applyVideoSource(App& a, FxCtx& c, const VideoSettings& v) {
+  if (v.source == VIDSRC_MEDIA) {
+    c.videoTex = a.media.output();
+    c.videoW = a.media.width();
+    c.videoH = a.media.height();
+    c.videoLevel = 1.f;
+    c.videoAlpha = true;
+  } else {
+    c.videoTex = a.video.hasPicture() || a.video.state() != VS_OFF ? a.video.texture() : 0;
+    c.videoW = a.video.width();
+    c.videoH = a.video.height();
+    c.videoLevel = a.video.level();
+    c.videoAlpha = false;
+  }
+}
+
 bool renderBackground(App& a, const FxCtx& front, float dt) {
   const Look& look = a.st.look;
   const BgLayer& bg = look.bg;
@@ -530,6 +677,7 @@ bool renderBackground(App& a, const FxCtx& front, float dt) {
   }
   FxCtx c = front;
   c.look = &bl;
+  applyVideoSource(a, c, bl.video);
   if (bg.ownColors) c.pal = (a.dmxActive && a.dmxColorsBack && a.st.dmx.mode == 2) ? &a.dmxPalette : &a.st.palettes[bg.palette];
   c.speed = look.bpm / 120.f * kSpeedMults[bg.speedMult];
   c.live = a.bgLive;
@@ -889,6 +1037,7 @@ struct SelftestStep {
   int blend = BLEND_ADD;
   int colorMode = COLOR_GRADIENT;
   int extra = 0;  // LED grid: incandescent bulbs; lasers: random swing + scatter
+  int media = 0;  // 1: clip on the BACK layer, 2: front VIDEO on MEDIA, 3: transparent clip + settings, crossfade
 };
 const SelftestStep kSteps[] = {
     {FX_FLUID, 0, MIRROR_LR, 0, 2},          {FX_PARTICLES, 0, MIRROR_LR, 2, 2},
@@ -928,10 +1077,14 @@ const SelftestStep kSteps[] = {
     {FX_SPECTRUM, SPEC_BARS, MIRROR_QUAD, 1, 1, true},     {FX_SPECTRUM, SPEC_BARS, MIRROR_OFF, 7, 1, true},
     {FX_GRID, GRID_VU, MIRROR_OFF, 1, 1, true},            {FX_GRID, GRID_SPECTRO, MIRROR_LR, 6, 1, true},
     {FX_GRID, GRID_EQ, MIRROR_QUAD, 1, 1, true},
+    // 0.9.4: media server (clips from TOUCHFX_TEST_MEDIA, converted to HAP by FFmpeg before these steps)
+    {FX_PARTICLES, 0, MIRROR_LR, 2, 2, false, 0, -1, BLEND_ADD, COLOR_GRADIENT, 0, 1},
+    {FX_VIDEO, VID_LIQUID, MIRROR_OFF, 0, 2, false, 0, -1, BLEND_ADD, COLOR_GRADIENT, 0, 2},
+    {FX_SPARKLES, 0, MIRROR_OFF, 1, 1, false, 0, -1, BLEND_ADD, COLOR_GRADIENT, 0, 3},
 };
 constexpr int kStepFrames = 120;
 constexpr int kNumSteps = int(sizeof(kSteps) / sizeof(kSteps[0]));
-constexpr int kUiShots = 10;  // live (no strip), settings x4, panel left, cues, show mode, BACK, video in
+constexpr int kUiShots = 11;  // live (no strip), settings x4, panel left, cues, show mode, BACK, video in, MEDIA
 
 void selftestTouches(App& a, int frame, int fingers) {
   float t = frame / 60.f;
@@ -1102,7 +1255,7 @@ int main(int argc, char** argv) {
   ImGui_ImplOpenGL3_Init("#version 330 core");
 
   glutilInit();
-  bool shadersOk = fxSharedInit() && a.post.init() && a.postBg.init() && presentInit() && compositeInit() &&
+  bool shadersOk = fxSharedInit() && a.post.init() && a.postBg.init() && presentInit() && compositeInit() && a.media.init() &&
                    a.video.init();
   for (int i = 0; i < FX_COUNT; ++i) a.fx[i] = makeEffect(i);
   for (auto& f : a.fx) shadersOk &= f->init();
@@ -1116,6 +1269,27 @@ int main(int argc, char** argv) {
   Uint64 last = SDL_GetPerformanceCounter();
   bool running = true;
   int frame = selftestFrom * kStepFrames;
+  double selftestWait = 0;
+  if (a.selftest) {  // media for the media steps: TOUCHFX_TEST_MEDIA=file1;file2 (converted now, in the background)
+    std::string root = (a.settingsPath.empty() ? std::string("./") : a.settingsPath.substr(0, a.settingsPath.size() - 13)) + "selftest-media";
+    std::error_code ec;
+    std::filesystem::remove_all(std::filesystem::u8path(root), ec);
+    a.importer.setRoot(root);
+    a.st.media = MediaLibrary();
+    a.st.media.groups.push_back(MediaGroup{"Test", {}});
+    std::vector<std::string> files;
+    if (const char* m = std::getenv("TOUCHFX_TEST_MEDIA")) {
+      std::string v = m;
+      size_t p = 0;
+      while (p <= v.size()) {
+        size_t q = v.find(';', p);
+        if (q == std::string::npos) q = v.size();
+        if (q > p) files.push_back(v.substr(p, q - p));
+        p = q + 1;
+      }
+    }
+    a.importer.import(a.st.media, 0, files);
+  }
   int shot = 0;
   const int fxFrames = kNumSteps * kStepFrames;
 
@@ -1124,7 +1298,21 @@ int main(int argc, char** argv) {
     SDL_Event ev;
     while (SDL_PollEvent(&ev)) {
       ImGui_ImplSDL2_ProcessEvent(&ev);
+      if (a.mediaCtx) {  // the MEDIA window's own UI (the backend keeps only its window's events)
+        ImGuiContext* mainCtx = ImGui::GetCurrentContext();
+        ImGui::SetCurrentContext(a.mediaCtx);
+        ImGui_ImplSDL2_ProcessEvent(&ev);
+        ImGui::SetCurrentContext(mainCtx);
+      }
       handleEvent(a, ev, running);
+    }
+    if (a.wantMediaWin) {
+      openMediaWindow(a);
+      a.wantMediaWin = false;
+    }
+    if (a.wantCloseMediaWin) {
+      closeMediaWindow(a);
+      a.wantCloseMediaWin = false;
     }
 
     Uint64 now = SDL_GetPerformanceCounter();
@@ -1178,6 +1366,39 @@ int main(int argc, char** argv) {
           a.st.look.bg.level = 0.8f;
           a.st.look.bg.fx.video.mode = VID_LIQUID;
         }
+        a.st.look.video.source = VIDSRC_INPUT;
+        a.st.look.mediaClip.clear();
+        if (sp.media) {
+          std::vector<std::string> ids;
+          for (const MediaGroup& g : a.st.media.groups)
+            for (const MediaClip& mc : g.clips)
+              if (mc.status == CLIP_READY) ids.push_back(mc.id);
+          BgLayer& bg = a.st.look.bg;
+          if (sp.media != 2) {  // the media layer: VIDEO, CLEAN, on MEDIA, behind the effect
+            bg.on = true;
+            bg.effect = FX_VIDEO;
+            bg.fx.video.mode = VID_CLEAN;
+            bg.fx.video.alwaysOn = true;
+            bg.fx.video.source = VIDSRC_MEDIA;
+            bg.level = 1.f;
+            bg.blend = BLEND_ADD;
+          } else {
+            a.st.look.video.source = VIDSRC_MEDIA;
+          }
+          int local = frame % kStepFrames;
+          if (!ids.empty()) a.st.look.mediaClip = ids[0];
+          if (sp.media == 3 && ids.size() > 1 && local >= 30) {
+            a.st.look.mediaClip = ids[1];
+            ClipSettings& k = findClip(a.st.media, ids[1])->set;
+            k.scale = 0.6f;
+            k.rotation = 15.f;
+            k.posX = 0.35f;
+            k.hue = 90.f;
+            k.blur = local >= 90 ? 0.3f : 0.f;
+            a.st.media.transition = MTRANS_XFADE;
+            a.st.media.transTime = 0.5f;
+          }
+        }
         a.st.audio.enabled = sp.audio;
         a.st.audio.device = kAudioTest;
         a.st.audio.points = 2;
@@ -1195,6 +1416,13 @@ int main(int argc, char** argv) {
         }
       } else {
         int k = (frame - fxFrames) / 20;
+        if (k == kUiShots - 1 && !a.mediaWin) {  // the MEDIA window, with the test clips
+          a.wantMediaWin = true;
+          for (const MediaGroup& g : a.st.media.groups)
+            for (const MediaClip& mc : g.clips)
+              if (a.mediaSelected.empty()) a.mediaSelected = mc.id;
+          if (!a.st.media.groups.empty() && a.st.media.groups[0].clips.size() > 1) a.st.look.mediaClip = a.st.media.groups[0].clips[1].id;
+        }
         a.st.audio.enabled = true;  // so the UI shots show the audio controls
         a.st.dmx.protocol = 1;
         a.st.layout.sceneStrip = k != 0;
@@ -1345,6 +1573,16 @@ int main(int argc, char** argv) {
       }
     }
 
+    // ---- media server: conversions, and the player when somebody shows its picture ----
+    a.importer.update(a.st.media);
+    {
+      bool front = look.effect == FX_VIDEO && look.video.source == VIDSRC_MEDIA;
+      bool back = (look.bg.on || a.bgShown > 0.001f) && look.bg.effect == FX_VIDEO && look.bg.fx.video.source == VIDSRC_MEDIA;
+      a.mediaWanted = front || back || a.mediaWinOpen;
+      MediaEnv env = mediaEnv(a);
+      a.media.update(env, look.mediaClip, dt, a.mediaWanted);
+    }
+
     FxCtx c;
     c.dt = dt;
     c.time = float(a.time);
@@ -1397,10 +1635,7 @@ int main(int argc, char** argv) {
       post.bloom = std::min(1.f, post.bloom + r * f.pulse * 0.35f);  // glow kicks on hits
     }
 
-    c.videoTex = a.video.hasPicture() || a.video.state() != VS_OFF ? a.video.texture() : 0;
-    c.videoW = a.video.width();
-    c.videoH = a.video.height();
-    c.videoLevel = a.video.level();
+    applyVideoSource(a, c, look.video);
     a.video.setWantThumb(look.colorMode == COLOR_VIDEO || (look.bg.on && look.bg.ownColors && look.bg.colorMode == COLOR_VIDEO));
     if (a.video.thumb() && a.video.state() != VS_OFF) {
       c.vidThumb = a.video.thumb();
@@ -1501,7 +1736,13 @@ int main(int argc, char** argv) {
     SDL_GL_SwapWindow(a.window);
     if (a.selftest && frame == kStepFrames * 5 - 1) g_captureExternal = selftestDir + "/external.ppm";
     renderExternal(a);
-    ++frame;
+    renderMediaWindow(a, dt);
+    if (a.selftest && frame == fxFrames + kUiShots * 20 - 2 && a.mediaWin) g_captureMedia = selftestDir + "/media.ppm";
+    // the self-test waits for the media conversions before the media steps
+    bool waitMedia = a.selftest && frame < fxFrames && kSteps[frame / kStepFrames].media && a.importer.pending() > 0 &&
+                     selftestWait < 120.0;
+    if (waitMedia) selftestWait += rawFrame;
+    else ++frame;
 
     // ---- autosave (once a second, only when something changed) ----
     a.saveTimer += dt;
@@ -1545,6 +1786,7 @@ int main(int argc, char** argv) {
   a.spout.stop();
   a.audio.close();
   destroyExternal(a);
+  closeMediaWindow(a);
   ImGui_ImplOpenGL3_Shutdown();
   ImGui_ImplSDL2_Shutdown();
   ImGui::DestroyContext();

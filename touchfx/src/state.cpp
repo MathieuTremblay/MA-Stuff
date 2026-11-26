@@ -27,7 +27,7 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(RibbonSettings, bands, motion, l
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(GeometrySettings, shape, rate, size, spin, width, life, glow)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(TunnelSettings, sides, merge, speed, density, twist, width, depth)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(VideoSettings, mode, fit, segments, size, strength, trail, level, glow,
-                                                alwaysOn, base)
+                                                alwaysOn, base, source)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(PlexusSettings, amount, range, size, drift, spread, trail)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(FireworkSettings, rate, rockets, size, amount, gravity, trail, sparkle)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(StarfieldSettings, amount, speed, streak, size, twinkle, brightness)
@@ -46,7 +46,15 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Look, effect, fluid, particles, 
                                                 ribbons, geometry, tunnel, video, plexus, fireworks, starfield,
                                                 spectrum, grid, post,
                                                 mirror, releaseFx, fadeFx, useCustom, custom,
-                                                release, fadeTime, colorMode, palette, brightness, bpm, speedMult, bg)
+                                                release, fadeTime, colorMode, palette, brightness, bpm, speedMult, bg,
+                                                mediaClip)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(ClipSettings, play, in, out, speed, reverse, beatSync, beats, scale,
+                                                scaleX, scaleY, posX, posY, rotation, flipH, flipV, cropL, cropR, cropT,
+                                                cropB, gamma, hue, saturation, blur, transition, transTime)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(MediaClip, id, name, source, label, width, height, frames, fps, alpha,
+                                                still, status, error, set)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(MediaGroup, name, clips)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(MediaLibrary, groups, transition, transTime, activeGroup, liveSet)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(VideoInSettings, type, source)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene, used, flash, name, look)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Cue, number, name, look, fade, follow, followValue)
@@ -56,7 +64,8 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(OutputSettings, width, height, f
                                                 premultiplied)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(DmxSettings, protocol, sacnUniverse, artnetUniverse, address, mode, lock)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(ExternalSettings, enabled, display, fit, windowed)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(LayoutSettings, panelLeft, panelWidth, sceneStrip, effectStrip)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(LayoutSettings, panelLeft, panelWidth, sceneStrip, effectStrip, mediaX, mediaY,
+                                                mediaW, mediaH, mediaFull)
 
 static Color3 hex(unsigned v) {
   return {((v >> 16) & 255) / 255.f, ((v >> 8) & 255) / 255.f, (v & 255) / 255.f};
@@ -161,6 +170,8 @@ static void sanitizeParams(Look& l) {
   clampRef(l.strobe.hz, 0.5f, 25.f);
   clampRef(l.video.mode, 0, VID_COUNT - 1);
   clampRef(l.video.fit, 0, VFIT_COUNT - 1);
+  clampRef(l.video.source, 0, VIDSRC_COUNT - 1);
+  clampRef(l.bg.fx.video.source, 0, VIDSRC_COUNT - 1);
   clampRef(l.video.segments, 2, 16);
 }
 
@@ -177,6 +188,48 @@ void sanitize(AppState& s) {
   clampRef(s.tab, 0, 2);  // 0 live, 1 settings, 2 cues
   clampRef(s.settingsTab, 0, 7);
   if (s.cueLists.empty()) s.cueLists.push_back(CueList{"Song 1", {}});
+  // media library
+  MediaLibrary& m = s.media;
+  if (m.groups.empty()) m.groups.push_back(MediaGroup{"Group 1", {}});
+  clampRef(m.activeGroup, 0, int(m.groups.size()) - 1);
+  clampRef(m.transition, 0, MTRANS_COUNT - 1);
+  clampRef(m.transTime, 0.f, 10.f);
+  std::vector<ClipSettings*> sets = {&m.liveSet};
+  for (MediaGroup& g : m.groups)
+    for (MediaClip& c : g.clips) {
+      clampRef(c.label, 0, kNumClipLabels - 1);
+      clampRef(c.status, 0, int(CLIP_FAILED));
+      sets.push_back(&c.set);
+    }
+  for (ClipSettings* kp : sets) {
+    {
+      ClipSettings& k = *kp;
+      clampRef(k.play, 0, PLAY_COUNT - 1);
+      clampRef(k.in, 0.f, 1.f);
+      clampRef(k.out, 0.f, 1.f);
+      if (k.out < k.in) k.out = k.in;
+      clampRef(k.speed, 0.f, 4.f);
+      bool okBeats = false;
+      for (int b : kBeatChoices) okBeats = okBeats || b == k.beats;
+      if (!okBeats) k.beats = 16;
+      clampRef(k.scale, 0.05f, 8.f);
+      clampRef(k.scaleX, 0.05f, 8.f);
+      clampRef(k.scaleY, 0.05f, 8.f);
+      clampRef(k.posX, -2.f, 2.f);
+      clampRef(k.posY, -2.f, 2.f);
+      clampRef(k.rotation, -180.f, 180.f);
+      clampRef(k.cropL, 0.f, 0.95f);
+      clampRef(k.cropR, 0.f, 0.95f);
+      clampRef(k.cropT, 0.f, 0.95f);
+      clampRef(k.cropB, 0.f, 0.95f);
+      clampRef(k.gamma, 0.2f, 3.f);
+      clampRef(k.hue, -180.f, 180.f);
+      clampRef(k.saturation, 0.f, 2.f);
+      clampRef(k.blur, 0.f, 1.f);
+      clampRef(k.transition, -1, MTRANS_COUNT - 1);
+      clampRef(k.transTime, 0.f, 10.f);
+    }
+  }
   for (CueList& cl : s.cueLists) {
     clampRef(cl.endAction, 0, END_COUNT - 1);
     bool numbered = true;  // shows from v0.7 have no cue numbers: number them 1, 2, 3...
@@ -220,6 +273,7 @@ std::string serializeShow(const AppState& s) {
   j["cueLists"] = s.cueLists;
   j["activeList"] = s.activeList;
   j["dmx"] = s.dmx;
+  j["media"] = s.media;
   return j.dump(1);
 }
 
@@ -289,6 +343,7 @@ static void readShowPart(const json& j, AppState& d) {
   if (j.contains("cueLists")) d.cueLists = j["cueLists"].get<std::vector<CueList>>();
   d.activeList = j.value("activeList", 0);
   if (j.contains("dmx")) d.dmx = j["dmx"].get<DmxSettings>();
+  if (j.contains("media")) d.media = j["media"].get<MediaLibrary>();
   if (j.value("touchfxShow", 1) < 2) migrateLightning(d);
 }
 
@@ -336,6 +391,7 @@ bool loadShow(const std::string& path, AppState& s) {
     d.scenes = def.scenes;
     d.cueLists.clear();
     d.dmx = def.dmx;
+    d.media = def.media;
     readShowPart(j, d);
     sanitize(d);
     s = d;
@@ -476,4 +532,14 @@ void audioRange(const AudioSettings& as, float& lo, float& hi) {
     lo = as.rangeLo;
     hi = std::max(as.rangeHi, as.rangeLo + 10.f);
   }
+}
+
+MediaClip* findClip(MediaLibrary& m, const std::string& id) {
+  for (MediaGroup& g : m.groups)
+    for (MediaClip& c : g.clips)
+      if (c.id == id) return &c;
+  return nullptr;
+}
+const MediaClip* findClip(const MediaLibrary& m, const std::string& id) {
+  return findClip(const_cast<MediaLibrary&>(m), id);
 }

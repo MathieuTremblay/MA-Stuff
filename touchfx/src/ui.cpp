@@ -391,6 +391,10 @@ void EffectParams(App& a) {
     case FX_VIDEO: {
       VideoSettings& p = l.video;
       SectionLabel("VIDEO");
+      static const char* srcs[] = {"VIDEO INPUT", "MEDIA"};
+      Choice("vsrc", srcs, VIDSRC_COUNT, &p.source, 2, 40 * s);
+      if (p.source == VIDSRC_MEDIA)
+        Hint("MEDIA: the clip playing in the MEDIA window (on the BACK layer it is the media layer).");
       static const char* modes[] = {"REVEAL", "LIQUID", "RIPPLE", "KALEIDO", "PIXEL", "WARP", "CLEAN"};
       Choice("vmode", modes, VID_COUNT, &p.mode, 4);
       static const char* help[] = {
@@ -2161,9 +2165,9 @@ void drawUI(App& a) {
   }
   ImGui::PopFont();
   {
-    // LIVE | CUES | SETTINGS | SHOW MODE   (tab values: 0 live, 2 cues, 1 settings)
+    // LIVE | CUES | SETTINGS | MEDIA | SHOW MODE   (tab values: 0 live, 2 cues, 1 settings)
     float sp4 = ImGui::GetStyle().ItemSpacing.x;
-    float w = (ImGui::GetContentRegionAvail().x - sp4 * 3) / 4, h = 46 * s;
+    float w = (ImGui::GetContentRegionAvail().x - sp4 * 4) / 5, h = 46 * s;
     bool locked = ShowModeLocked(a);
     if (locked && a.st.tab == 1) a.st.tab = 0;
     if (Toggle("LIVE", a.st.tab == 0, ImVec2(w, h))) a.st.tab = 0;
@@ -2173,6 +2177,8 @@ void drawUI(App& a) {
     ImGui::BeginDisabled(locked);
     if (Toggle(locked ? "LOCKED" : "SETTINGS", a.st.tab == 1, ImVec2(w, h))) a.st.tab = 1;
     ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (Toggle("MEDIA", a.mediaWinOpen, ImVec2(w, h), kBack)) a.wantMediaWin = true;  // opens / brings it to the front
     ImGui::SameLine();
     ShowModeButton(a, ImVec2(w, h));
   }

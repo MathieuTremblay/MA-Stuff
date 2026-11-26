@@ -27,11 +27,31 @@ jobs:
       - name: Build
         run: cmake --build build --config Release --parallel
 
+      - name: FFmpeg (media import)
+        shell: pwsh
+        run: |
+          # LGPL build from BtbN (includes Snappy, needed for the HAP encoder). Shipped as separate programs.
+          $url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n7.1-latest-win64-lgpl-7.1.zip"
+          Invoke-WebRequest -Uri $url -OutFile ffmpeg.zip
+          Expand-Archive ffmpeg.zip -DestinationPath ffmpeg-dl -Force
+          $bin = Get-ChildItem -Recurse -Filter ffmpeg.exe ffmpeg-dl | Select-Object -First 1
+          $root = $bin.Directory.Parent.FullName
+          New-Item -ItemType Directory -Force ffmpeg-pkg | Out-Null
+          Copy-Item "$($bin.Directory.FullName)/ffmpeg.exe" ffmpeg-pkg/
+          Copy-Item "$($bin.Directory.FullName)/ffprobe.exe" ffmpeg-pkg/
+          Copy-Item "$root/LICENSE.txt" ffmpeg-pkg/FFmpeg-LICENSE.txt -ErrorAction SilentlyContinue
+          # it must be able to make HAP Q, or importing would fail on the show PC
+          & ffmpeg-pkg/ffmpeg.exe -hide_banner -f lavfi -i testsrc2=size=320x180:duration=1 -c:v hap -format hap_q -f mov hapcheck.mov
+          if ($LASTEXITCODE -ne 0) { throw "FFmpeg cannot encode HAP" }
+          & ffmpeg-pkg/ffmpeg.exe -hide_banner -version | Select-Object -First 1
+
       - name: Package
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist/TouchFX | Out-Null
           Copy-Item build/Release/TouchFX.exe dist/TouchFX/
+          Copy-Item ffmpeg-pkg/ffmpeg.exe dist/TouchFX/
+          Copy-Item ffmpeg-pkg/ffprobe.exe dist/TouchFX/
           Copy-Item touchfx/README.md dist/TouchFX/README.md
           New-Item -ItemType Directory -Force dist/TouchFX/gdtf | Out-Null
           Copy-Item touchfx/gdtf/*.gdtf dist/TouchFX/gdtf/
@@ -40,6 +60,8 @@ jobs:
           Copy-Item touchfx/third_party/decklink/LICENSE.txt dist/TouchFX/licenses/Blackmagic-DeckLink-SDK.txt
           Copy-Item build/_deps/libajantv2-src/LICENSE dist/TouchFX/licenses/AJA-NTV2-SDK.txt
           Copy-Item build/_deps/spout2-src/LICENSE dist/TouchFX/licenses/Spout.txt -ErrorAction SilentlyContinue
+          Copy-Item ffmpeg-pkg/FFmpeg-LICENSE.txt dist/TouchFX/licenses/FFmpeg-LGPL.txt -ErrorAction SilentlyContinue
+          Set-Content dist/TouchFX/licenses/FFmpeg-README.txt "ffmpeg.exe and ffprobe.exe are FFmpeg (https://ffmpeg.org), LGPL build by BtbN (https://github.com/BtbN/FFmpeg-Builds), unmodified. TouchFX runs them as separate programs to convert imported media to HAP." 
           Compress-Archive -Path dist/TouchFX -DestinationPath TouchFX-windows-x64.zip -Force
 
       - name: Upload build

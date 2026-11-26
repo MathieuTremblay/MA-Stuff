@@ -45,7 +45,7 @@ void main() {
 const char* kVideoFS = R"(
 in vec2 vUv; out vec4 o;
 uniform sampler2D uVideo; uniform sampler2D uField;
-uniform int uHasVideo, uMode, uCount, uSegs;
+uniform int uHasVideo, uMode, uCount, uSegs, uVidAlpha;
 uniform vec2 uFit, uTexel, uRes, uPts[8];
 uniform float uAspect, uLevel, uGain, uStrength, uSize, uGlow, uRot, uBase, uCover, uWarpAmt;
 uniform vec3 uLow, uMid, uHigh;
@@ -129,6 +129,7 @@ void main() {
   // alpha = where the video covers the frame (the output keeps the video opaque there)
   vec2 fv = (vUv - 0.5) * uFit + 0.5;
   float inside = (fv.x < 0.0 || fv.y < 0.0 || fv.x > 1.0 || fv.y > 1.0 || uHasVideo == 0) ? 0.0 : 1.0;
+  if (uVidAlpha == 1 && inside > 0.0) inside *= texture(uVideo, fv).a;  // media clips: transparent parts stay clear
   float cover = uMode == 0 ? inside * mix(uBase, 1.0, smoothstep(0.0, 1.0, clamp(texture(uField, uv).r, 0.0, 1.0)))
                            : (uMode == 3 ? float(uHasVideo) : inside);
   o = vec4((col * uLevel + extra) * uGain, cover * uGain * uCover);
@@ -226,6 +227,7 @@ class Video : public Effect {
     pDraw.seti("uVideo", 0);
     pDraw.seti("uField", 1);
     pDraw.seti("uHasVideo", c.videoTex ? 1 : 0);
+    pDraw.seti("uVidAlpha", c.videoAlpha ? 1 : 0);
     pDraw.seti("uMode", s.mode);
     pDraw.seti("uSegs", std::max(2, s.segments));
     // fit the video to the output
