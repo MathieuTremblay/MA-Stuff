@@ -29,9 +29,16 @@ jobs:
 
       - name: FFmpeg (media import)
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           # LGPL build from BtbN (includes Snappy, needed for the HAP encoder). Shipped as separate programs.
-          $url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n7.1-latest-win64-lgpl-7.1.zip"
+          # the newest stable branch build (file names change with each FFmpeg release), else master
+          $rel = Invoke-RestMethod -Uri "https://api.github.com/repos/BtbN/FFmpeg-Builds/releases/tags/latest" -Headers @{ Authorization = "Bearer $env:GH_TOKEN" }
+          $assets = $rel.assets | Where-Object { $_.name -match '^ffmpeg-n[0-9.]+-latest-win64-lgpl-[0-9.]+\.zip$' } | Sort-Object name -Descending
+          if (-not $assets) { $assets = $rel.assets | Where-Object { $_.name -eq 'ffmpeg-master-latest-win64-lgpl.zip' } }
+          $url = ($assets | Select-Object -First 1).browser_download_url
+          Write-Host "FFmpeg: $url"
           Invoke-WebRequest -Uri $url -OutFile ffmpeg.zip
           Expand-Archive ffmpeg.zip -DestinationPath ffmpeg-dl -Force
           $bin = Get-ChildItem -Recurse -Filter ffmpeg.exe ffmpeg-dl | Select-Object -First 1
