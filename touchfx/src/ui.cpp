@@ -94,11 +94,17 @@ struct SliderDrag {
   ImVec2 start;
   float startV = 0;
   int mode = 0;  // 0 undecided, 1 sliding, 2 scrolling
+  bool reset = false;  // double tap: back to the default
 };
 SliderDrag g_slider;
 bool g_sliding = false;  // a slider is being dragged sideways this frame
 
 bool TouchSlider(const char* label, float* v, float lo, float hi, const char* valueText) {
+  return TouchSliderDef(label, v, lo, hi, valueText, nullptr);
+}
+
+// With a default: double tap resets it, and dragging sticks at it (a tick mark shows where).
+bool TouchSliderDef(const char* label, float* v, float lo, float hi, const char* valueText, const float* def) {
   ImGuiIO& io = ImGui::GetIO();
   float s = S();
   ImVec2 size(ImGui::GetContentRegionAvail().x, 44.f * s);
@@ -106,7 +112,10 @@ bool TouchSlider(const char* label, float* v, float lo, float hi, const char* va
   ImGuiID id = ImGui::GetID(label);
   ImGui::InvisibleButton(label, size);
   bool changed = false;
-  if (ImGui::IsItemActivated()) g_slider = SliderDrag{id, io.MousePos, *v, 0};
+  if (ImGui::IsItemActivated()) {
+    g_slider = SliderDrag{id, io.MousePos, *v, 0, false};
+    if (def && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) g_slider.reset = true;
+  }
   if (ImGui::IsItemActive() && g_slider.id == id) {
     ImVec2 d(io.MousePos.x - g_slider.start.x, io.MousePos.y - g_slider.start.y);
     float th = 8.f * s;
@@ -122,6 +131,7 @@ bool TouchSlider(const char* label, float* v, float lo, float hi, const char* va
     if (g_slider.mode == 1) {
       g_sliding = true;
       float nv = std::clamp(g_slider.startV + (io.MousePos.x - g_slider.start.x) / size.x * (hi - lo), lo, hi);
+      if (def && std::fabs(nv - *def) < 0.025f * (hi - lo)) nv = *def;  // snaps at the default
       if (nv != *v) {
         *v = nv;
         changed = true;
@@ -129,7 +139,10 @@ bool TouchSlider(const char* label, float* v, float lo, float hi, const char* va
     }
   }
   if (ImGui::IsItemDeactivated() && g_slider.id == id) {
-    if (g_slider.mode == 0 && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem)) {
+    if (g_slider.reset && g_slider.mode != 1) {
+      *v = *def;
+      changed = true;
+    } else if (g_slider.mode == 0 && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem)) {
       float t = std::clamp((io.MousePos.x - p.x) / size.x, 0.f, 1.f);
       *v = lo + t * (hi - lo);
       changed = true;
@@ -145,6 +158,12 @@ bool TouchSlider(const char* label, float* v, float lo, float hi, const char* va
   bool active = ImGui::IsItemActive() && g_slider.mode == 1;
   ImVec4 fill = active ? ImVec4(1.f, 0.55f, 0.2f, 0.85f) : ImVec4(1.f, 0.47f, 0.1f, 0.62f);
   if (t > 0.f) dl->AddRectFilled(p, ImVec2(p.x + size.x * t, p1.y), ImGui::GetColorU32(fill), r);
+  if (def && hi > lo) {  // the default: a small tick above and below
+    float dx = p.x + size.x * std::clamp((*def - lo) / (hi - lo), 0.f, 1.f);
+    ImU32 tc = IM_COL32(255, 255, 255, 110);
+    dl->AddTriangleFilled(ImVec2(dx - 4 * s, p.y), ImVec2(dx + 4 * s, p.y), ImVec2(dx, p.y + 6 * s), tc);
+    dl->AddTriangleFilled(ImVec2(dx - 4 * s, p1.y), ImVec2(dx + 4 * s, p1.y), ImVec2(dx, p1.y - 6 * s), tc);
+  }
   dl->AddLine(ImVec2(p.x + size.x * t, p.y + 4 * s), ImVec2(p.x + size.x * t, p1.y - 4 * s), IM_COL32(255, 255, 255, 200),
               2.f * s);
   const char* end = ImGui::FindRenderedTextEnd(label);
@@ -351,6 +370,9 @@ void EffectParams(App& a) {
       Pct("Width", &p.width);
       Pct("Wave", &p.wave);
       Pct("Flow", &p.flow);
+      Pct("Smoothing", &p.smooth);
+      Pct("Brush (thinner when fast)", &p.brush);
+      Pct("Taper", &p.taper);
       Pct("Glow", &p.glow);
       if (ImGui::Button("RESET RIBBONS", ImVec2(-1, 40 * s))) p = RibbonSettings();
       break;
@@ -2084,9 +2106,21 @@ void drawUI(App& a) {
     float bw = ImGui::CalcTextSize("EXIT FULL").x + 16 * s;
     ImGui::PopFont();
     float sp2 = ImGui::GetStyle().ItemSpacing.x;
-    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(0.f, ImGui::GetContentRegionAvail().x - tw - bw - sp2));
+    // SETTINGS lives up here (rarely needed during a show), next to FULL
+    ImGui::PushFont(a.fontSmall);
+    float setW = ImGui::CalcTextSize("SETTINGS").x + 22 * s;
+    ImGui::PopFont();
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(0.f, ImGui::GetContentRegionAvail().x - tw - bw - setW - sp2 * 2));
     ImGui::PushFont(a.fontSmall);
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4 * s, 2 * s));
+    {
+      bool locked = ShowModeLocked(a);
+      ImGui::BeginDisabled(locked);
+      if (Toggle(locked ? "LOCKED" : "SETTINGS", a.st.tab == 1, ImVec2(setW, ImGui::GetFontSize() * 1.25f + 4 * s)))
+        a.st.tab = a.st.tab == 1 ? 0 : 1;
+      ImGui::EndDisabled();
+      ImGui::SameLine();
+    }
     if (Toggle(fsLabel, a.isFullscreen, ImVec2(bw, ImGui::GetFontSize() * 1.25f + 4 * s))) setFullscreen(a, !a.isFullscreen);
     ImGui::PopStyleVar();
     ImGui::PopFont();
@@ -2165,20 +2199,31 @@ void drawUI(App& a) {
   }
   ImGui::PopFont();
   {
-    // LIVE | CUES | SETTINGS | MEDIA | SHOW MODE   (tab values: 0 live, 2 cues, 1 settings)
+    // LIVE | CUES | MEDIA | SHOW MODE   (tab values: 0 live, 2 cues, 1 settings - SETTINGS is in the header)
     float sp4 = ImGui::GetStyle().ItemSpacing.x;
-    float w = (ImGui::GetContentRegionAvail().x - sp4 * 4) / 5, h = 46 * s;
+    float w = (ImGui::GetContentRegionAvail().x - sp4 * 3) / 4, h = 46 * s;
     bool locked = ShowModeLocked(a);
     if (locked && a.st.tab == 1) a.st.tab = 0;
     if (Toggle("LIVE", a.st.tab == 0, ImVec2(w, h))) a.st.tab = 0;
     ImGui::SameLine();
     if (Toggle("CUES", a.st.tab == 2, ImVec2(w, h))) a.st.tab = 2;
     ImGui::SameLine();
-    ImGui::BeginDisabled(locked);
-    if (Toggle(locked ? "LOCKED" : "SETTINGS", a.st.tab == 1, ImVec2(w, h))) a.st.tab = 1;
-    ImGui::EndDisabled();
-    ImGui::SameLine();
-    if (Toggle("MEDIA", a.mediaWinOpen, ImVec2(w, h), kBack)) a.wantMediaWin = true;  // opens / brings it to the front
+    if (Toggle("MEDIA", a.mediaWinOpen, ImVec2(w, h), kBack)) {
+      if (a.mediaWinOpen) ImGui::OpenPopup("##mediaopen");  // already open: bring it up, or close it
+      else a.wantMediaWin = true;
+    }
+    if (ImGui::BeginPopup("##mediaopen")) {
+      ImGui::TextUnformatted("The MEDIA window is open.");
+      if (Toggle("SHOW IT", true, ImVec2(300 * s, 50 * s), kBack)) {
+        a.wantMediaWin = true;
+        ImGui::CloseCurrentPopup();
+      }
+      if (Toggle("CLOSE IT", true, ImVec2(300 * s, 50 * s), kDanger)) {
+        a.wantCloseMediaWin = true;
+        ImGui::CloseCurrentPopup();
+      }
+      ImGui::EndPopup();
+    }
     ImGui::SameLine();
     ShowModeButton(a, ImVec2(w, h));
   }

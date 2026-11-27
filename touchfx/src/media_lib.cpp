@@ -379,3 +379,180 @@ void MediaImporter::update(MediaLibrary& lib) {
     default: break;
   }
 }
+
+// ---------------------------------------------------------------------------
+// File browser thumbnails
+
+FileThumbs::~FileThumbs() { proc_.kill(); }
+
+void FileThumbs::setDir(const std::string& cacheDir) {
+  if (cacheDir == dir_) return;
+  dir_ = cacheDir;
+  std::error_code ec;
+  fs::create_directories(toPath(dir_), ec);
+}
+
+const FileThumbs::Info& FileThumbs::get(const std::string& path, uint64_t size, long long mtime) {
+  // the cache key: the file and its size / date (a changed file gets a new thumbnail)
+  uint64_t h = 1469598103934665603ull;
+  for (unsigned char ch : path) h = (h ^ ch) * 1099511628211ull;
+  h = (h ^ size) * 1099511628211ull;
+  h = (h ^ uint64_t(mtime)) * 1099511628211ull;
+  char key[24];
+  std::snprintf(key, sizeof(key), "%016llx", (unsigned long long)h);
+  auto it = items_.find(key);
+  if (it == items_.end()) {
+    Item item;
+    item.path = path;
+    item.key = key;
+    fs::path base = toPath(dir_) / key;
+    std::error_code ec;
+    // made before: read the info file next to the strip
+    std::string info = readFile(base.u8string() + ".json");
+    if (!info.empty() && fs::exists(toPath(base.u8string() + ".ppm"), ec)) {
+      try {
+        json j = json::parse(info);
+        item.info.ready = !j.value("failed", false);
+        item.info.failed = j.value("failed", false);
+        item.info.frames = j.value("frames", 1);
+        item.info.duration = j.value("duration", -1.f);
+        item.info.width = j.value("width", 0);
+        item.info.height = j.value("height", 0);
+        item.info.codec = j.value("codec", "");
+        item.info.strip = base.u8string() + ".ppm";
+        item.info.version = 1;
+      } catch (...) {
+      }
+    } else if (!info.empty() && info.find("\"failed\":true") != std::string::npos) {
+      item.info.failed = true;
+    }
+    it = items_.emplace(key, item).first;
+    if (!it->second.info.ready && !it->second.info.failed && !dir_.empty()) queue_.push_back(key);
+  } else if (!it->second.info.ready && !it->second.info.failed && cur_ != it->first) {
+    // asked again (it is on screen): move it to the front
+    auto q = std::find(queue_.begin(), queue_.end(), it->first);
+    if (q != queue_.end() && q != queue_.end() - 1) {
+      queue_.erase(q);
+      queue_.push_back(it->first);
+    }
+  }
+  if (queue_.size() > 400) queue_.pop_front();
+  return it->second.info;
+}
+
+void FileThumbs::update() {
+  if (!busy_) {
+    if (queue_.empty() || !ffmpegAvailable()) return;
+    cur_ = queue_.back();  // the newest request first: what is on screen now
+    queue_.pop_back();
+    Item& it = items_[cur_];
+    fs::path base = toPath(dir_) / cur_;
+    if (isStillImage(it.path)) {
+      step_ = 1;
+      it.info.frames = 1;
+      std::string vf = "scale=" + std::to_string(kW) + ":" + std::to_string(kH) +
+                       ":force_original_aspect_ratio=decrease,pad=" + std::to_string(kW) + ":" + std::to_string(kH) +
+                       ":(ow-iw)/2:(oh-ih)/2,format=rgb24";
+      busy_ = proc_.start({ffmpegPath(), "-nostdin", "-y", "-v", "error", "-i", it.path, "-frames:v", "1", "-vf", vf,
+                           "-f", "image2", "-c:v", "ppm", base.u8string() + ".ppm"},
+                          "");
+      // the picture size comes from a quick probe afterwards (step 2)
+    } else {
+      step_ = 0;
+      busy_ = proc_.start({ffprobePath(), "-v", "error", "-select_streams", "v:0", "-show_entries",
+                           "stream=width,height,codec_name:format=duration", "-of", "json", it.path},
+                          base.u8string() + ".probe");
+    }
+    if (!busy_) it.info.failed = true;
+    return;
+  }
+  int code = proc_.poll();
+  if (code == -1) return;
+  Item& it = items_[cur_];
+  fs::path base = toPath(dir_) / cur_;
+  std::error_code ec;
+  auto finish = [&](bool ok) {
+    json j;
+    j["failed"] = !ok;
+    j["frames"] = it.info.frames;
+    j["duration"] = it.info.duration;
+    j["width"] = it.info.width;
+    j["height"] = it.info.height;
+    j["codec"] = it.info.codec;
+    std::ofstream(toPath(base.u8string() + ".json")) << j.dump();
+    it.info.ready = ok;
+    it.info.failed = !ok;
+    it.info.strip = base.u8string() + ".ppm";
+    ++it.info.version;
+    fs::remove(toPath(base.u8string() + ".probe"), ec);
+    busy_ = false;
+    cur_.clear();
+  };
+  if (step_ == 0) {  // probed: now the strip of frames across the clip
+    json pj;
+    try {
+      pj = json::parse(readFile(base.u8string() + ".probe"));
+    } catch (...) {
+    }
+    if (code != 0 || !pj.contains("streams") || pj["streams"].empty()) {
+      finish(false);
+      return;
+    }
+    const json& st = pj["streams"][0];
+    it.info.width = st.value("width", 0);
+    it.info.height = st.value("height", 0);
+    it.info.codec = st.value("codec_name", "");
+    try {
+      if (pj.contains("format") && pj["format"].contains("duration"))
+        it.info.duration = std::stof(pj["format"]["duration"].get<std::string>());
+    } catch (...) {
+    }
+    int n = it.info.duration > 1.f ? kFrames : 1;
+    it.info.frames = n;
+    std::vector<std::string> args = {ffmpegPath(), "-nostdin", "-y", "-v", "error"};
+    for (int k = 0; k < n; ++k) {  // one quick seek per frame (no decoding the whole file)
+      float t = n == 1 ? 0.f : it.info.duration * (0.04f + 0.92f * float(k) / float(n - 1));
+      args.insert(args.end(), {"-ss", std::to_string(std::max(0.f, t - 0.05f)), "-i", it.path});
+    }
+    std::string fc;
+    for (int k = 0; k < n; ++k)
+      fc += "[" + std::to_string(k) + ":v]scale=" + std::to_string(kW) + ":" + std::to_string(kH) +
+            ":force_original_aspect_ratio=decrease,pad=" + std::to_string(kW) + ":" + std::to_string(kH) +
+            ":(ow-iw)/2:(oh-ih)/2,setsar=1[v" + std::to_string(k) + "];";
+    if (n > 1) {
+      for (int k = 0; k < n; ++k) fc += "[v" + std::to_string(k) + "]";
+      fc += "hstack=inputs=" + std::to_string(n) + ",format=rgb24[out]";
+    } else {
+      fc += "[v0]format=rgb24[out]";
+    }
+    args.insert(args.end(), {"-filter_complex", fc, "-map", "[out]", "-frames:v", "1", "-f", "image2", "-c:v", "ppm",
+                             base.u8string() + ".ppm"});
+    step_ = 1;
+    busy_ = proc_.start(args, "");
+    if (!busy_) finish(false);
+    return;
+  }
+  if (step_ == 1) {
+    bool ok = code == 0 && fs::exists(toPath(base.u8string() + ".ppm"), ec);
+    if (ok && isStillImage(it.path) && it.info.width == 0) {  // picture: its size, quickly
+      step_ = 2;
+      busy_ = proc_.start({ffprobePath(), "-v", "error", "-select_streams", "v:0", "-show_entries",
+                           "stream=width,height,codec_name", "-of", "json", it.path},
+                          base.u8string() + ".probe");
+      if (busy_) return;
+    }
+    finish(ok);
+    return;
+  }
+  // step 2: picture size
+  try {
+    json pj = json::parse(readFile(base.u8string() + ".probe"));
+    if (pj.contains("streams") && !pj["streams"].empty()) {
+      it.info.width = pj["streams"][0].value("width", 0);
+      it.info.height = pj["streams"][0].value("height", 0);
+      it.info.codec = pj["streams"][0].value("codec_name", "");
+    }
+  } catch (...) {
+  }
+  finish(true);
+}

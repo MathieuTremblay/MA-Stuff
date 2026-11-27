@@ -23,7 +23,8 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(LaserSettings, mode, beams, rota
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(SparkleSettings, amount, size, spread, twinkle, life, drift, rays, trail)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(PostSettings, bloom, bloomSize, saturation)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(RippleSettings, size, strength, decay, shine, beatDrops)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(RibbonSettings, bands, motion, length, width, wave, flow, glow)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(RibbonSettings, bands, motion, length, width, wave, flow, glow, smooth, brush,
+                                                taper)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(GeometrySettings, shape, rate, size, spin, width, life, glow)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(TunnelSettings, sides, merge, speed, density, twist, width, depth)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(VideoSettings, mode, fit, segments, size, strength, trail, level, glow,
@@ -65,7 +66,8 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(OutputSettings, width, height, f
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(DmxSettings, protocol, sacnUniverse, artnetUniverse, address, mode, lock)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(ExternalSettings, enabled, display, fit, windowed)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(LayoutSettings, panelLeft, panelWidth, sceneStrip, effectStrip, mediaX, mediaY,
-                                                mediaW, mediaH, mediaFull)
+                                                mediaW, mediaH, mediaFull, mFilesW, mSetW, mMonH, mNavW, mTreeW,
+                                                mFilesView, mClipsView)
 
 static Color3 hex(unsigned v) {
   return {((v >> 16) & 255) / 255.f, ((v >> 8) & 255) / 255.f, (v & 255) / 255.f};
@@ -261,6 +263,13 @@ void sanitize(AppState& s) {
   clampRef(s.external.display, 0, 15);
   clampRef(s.external.fit, 0, FIT_COUNT - 1);
   clampRef(s.layout.panelWidth, 0.6f, 1.8f);
+  clampRef(s.layout.mFilesW, 0.12f, 0.5f);
+  clampRef(s.layout.mSetW, 0.12f, 0.45f);
+  clampRef(s.layout.mMonH, 0.15f, 0.7f);
+  clampRef(s.layout.mNavW, 0.15f, 0.6f);
+  clampRef(s.layout.mTreeW, 0.1f, 0.5f);
+  clampRef(s.layout.mFilesView, 0, 1);
+  clampRef(s.layout.mClipsView, 0, 1);
   clampRef(s.videoIn.type, 0, VSRC_COUNT - 1);
 }
 

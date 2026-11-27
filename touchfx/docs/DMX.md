@@ -181,7 +181,7 @@ Choices use 0-9 keep, then equal slots from 10 to 249 in the order listed. Param
 | Fluid (10-24) | - | - | - | Size | Force | Swirl | Trail | Intensity | - | - | - | - | - |
 | Particles (25-39) | Strobe: Strobe off, Strobe sync, Strobe sparkle | Strobe rate: 1/4 per beat, 1/2 per beat, 1 per beat, 2 per beat, 4 per beat, 8 per beat | - | Amount | Size | Life | Speed | Spread | Gravity, 50% = none | Trail | - | - | - |
 | Sparkles (40-54) | - | - | - | Amount | Size | Spread | Twinkle | Life | Drift | Rays | Trail | - | - |
-| Ribbons (55-69) | Ribbon motion: Stay, Float | - | - | Bands (2-6) | Length | Width | Wave | Flow | Glow | - | - | - | - |
+| Ribbons (55-69) | Ribbon motion: Stay, Float | - | - | Bands (2-6) | Length | Width | Wave | Flow | Glow | Smoothing | Brush | Taper | - |
 | Fireworks (70-84) | - | Launch rate: 1/4 per beat, 1/2 per beat, 1 per beat, 2 per beat, 4 per beat, 8 per beat | Rockets: Off, On | Size | Amount | Gravity | Trail | Sparkle | - | - | - | - | - |
 | Starfield (85-99) | - | - | - | Amount | Speed | Streak | Size | Twinkle | Brightness | - | - | - | - |
 | Plexus (100-114) | - | - | - | Points | Link distance | Dot size | Drift | Spread | Trail | - | - | - | - |

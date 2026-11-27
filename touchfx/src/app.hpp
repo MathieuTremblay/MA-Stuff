@@ -150,6 +150,7 @@ struct App {
   // Media server: clips of the open project, converted in the background, played on the VIDEO effect's MEDIA source
   MediaImporter importer;
   MediaPlayer media;
+  FileThumbs fileThumbs;  // the MEDIA window's file browser pictures
   bool mediaWanted = false;  // something shows the media picture this frame
   bool mediaWinOpen = false;
   SDL_Window* mediaWin = nullptr;  // the MEDIA window (own ImGui context, same GL context)
@@ -237,4 +238,5 @@ int dmxFootprint(int mode);
 void rebuildFonts(App& a, float scale);
 namespace ui {
 void MediaWindowUI(App& a);
+void MediaBrowseTo(const std::string& folder, const std::string& file);
 }

@@ -26,6 +26,8 @@ bool OnOff(const char* label, bool* v, float h = 0);
 void SectionLabel(const char* text);
 void Hint(const char* text);
 bool TouchSlider(const char* label, float* v, float lo, float hi, const char* valueText);
+// def != null: double tap resets to *def, dragging snaps at it, a tick marks it
+bool TouchSliderDef(const char* label, float* v, float lo, float hi, const char* valueText, const float* def);
 bool Pct(const char* label, float* v);
 void TouchScroll();
 void SwatchLabel(ImVec2 p, ImVec4 col, const char* text);

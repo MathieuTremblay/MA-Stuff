@@ -467,6 +467,9 @@ inline void dmx2SetParam(Look& l, int fx, int index, int v) {
         case 3: l.ribbons.wave = t; break;
         case 4: l.ribbons.flow = t; break;
         case 5: l.ribbons.glow = t; break;
+        case 6: l.ribbons.smooth = t; break;
+        case 7: l.ribbons.brush = t; break;
+        case 8: l.ribbons.taper = t; break;
         default: break;
       }
       break;

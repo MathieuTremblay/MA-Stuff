@@ -65,7 +65,8 @@ The **CUES** tab is a cue list per song:
 
 ## Controls
 
-The panel has three tabs: **LIVE** (everything you touch during the show), **CUES** and **SETTINGS** (set up once).
+The panel has the tabs **LIVE** (everything you touch during the show), **CUES**, **MEDIA** (opens the MEDIA window)
+and **SHOW MODE**; **SETTINGS** (set up once) is the button at the top right, next to FULL.
 Swipe up/down anywhere in the panel to scroll (sliders: swipe sideways to change, tap to jump to a value).
 
 ### LIVE
@@ -81,7 +82,7 @@ Swipe up/down anywhere in the panel to scroll (sliders: swipe sideways to change
 | **New in 0.5** | **Ripples** (water surface, drops on the beat), **Ribbons** (glowing strands following the fingers), **Shapes** (neon polygons / stars popping on the beat), **Tunnel** (full-screen tunnel, vanishing point under the finger), **Plexus** (connected points), **Fireworks** (rockets bursting at the finger), **Starfield** (hyperspace streaks), **Spectrum** (audio equaliser: circle, bars or wave), **LED grid** (LED-wall tiles: trail, rings, sparkle). Strobe gains **Shockwave**, **Wipe**, **Blinder** and **Blocks**. |
 | **FRONT / BACK** | Which layer the LIVE controls edit. **FRONT** (orange) is the effect you play with your fingers. **BACK** (blue) is the background layer: the effect bar, sliders, mirror and speed then edit the background (see *Background layer*). |
 | **Video** | The video input played with the fingers (choose the input in *SETTINGS → VIDEO IN*): **REVEAL** (paint the video into view, it fades back over the trail time), **LIQUID** (push the picture like a liquid), **RIPPLE** (water ripples bend it), **KALEIDO** (kaleidoscope around your first finger), **PIXEL** (big pixels where your fingers go), **WARP** (swirl / pinch around each finger), **CLEAN** (just the video, nothing added). **ALWAYS ON** keeps the picture up without fingers and it never fades on release (with REVEAL, the unpainted video shows at the *base level*). **FREEZE** (or the **F** key) holds the current frame for both layers, even through a lost signal, until you tap it again (header: *VIDEO FROZEN*; not stored in scenes or cues). The video always goes out exactly like the source: the LOOK (glow, saturation, brightness) only applies to the effects, and with the alpha channel on the video stays opaque. At the default *Video level* (80 %) the picture is 1:1; above it is boosted. Capture cards / cameras: TouchFX uses the colour range and matrix the device reports (full range or video range, BT.601 or BT.709). Fit: fill, fit or stretch. The palette only colours the glow / highlights the effect adds (Glow at 0 = pure video) and the gradient that stands in when there is no input. |
-| **Ribbons** | Each finger paints a wide flat stroke of parallel colour bands (**Bands** 2–6, colours from the palette: low, mid, high, repeating), a retro striped look, with rounded ends; turns too tight for the stroke's width are rounded off so the bands never fold. **STAY**: the paint stays where you drew it and ripples gently (**Wave** sets how much, 0 = still; **Flow** how fast). **FLOAT**: the tail also sways and drifts away softly as it fades. It fades after the **Length** time. Matte: the glow is off unless you raise **Glow**. |
+| **Ribbons** | Each finger paints a wide flat stroke (the brush trails the finger a little and smooths its jitter: **Smoothing**; fast strokes get thinner: **Brush**; the tail narrows to a point: **Taper**) of parallel colour bands (**Bands** 2–6, colours from the palette: low, mid, high, repeating), a retro striped look, with rounded ends; turns too tight for the stroke's width are rounded off so the bands never fold. **STAY**: the paint stays where you drew it and ripples gently (**Wave** sets how much, 0 = still; **Flow** how fast). **FLOAT**: the tail also sways and drifts away softly as it fades. It fades after the **Length** time. Matte: the glow is off unless you raise **Glow**. |
 | **Spectrum** | **CIRCLE** (bars around the finger), **BARS** (an equaliser across the screen laid out by MIRROR: L-R puts the lows in the centre, U-D grows the bars up and down from the middle), **WAVE**, **WATERFALL** (the spectrum's history flowing away from the finger), **SCOPE** (the sound wave itself), **RINGS** (lows inside, highs outside, each ring pumping), **BURST** (every hit throws out a ring of spikes). |
 | **LED grid** | LED-wall tiles: **TRAIL**, **RINGS**, **SPARKLE**, **SCROLL** (colour bands sweeping on the beat, direction from your finger), **EQUALIZER** (VU columns from the audio), **PLASMA**, **RAIN**, **CHECKER** (checker / stripes / quarters flipping on the beat), **RADAR** (sweep around each finger), **VIDEO MAP** (the video input on the tiles), **VU METERS** (big level meters with peak hold), **SPECTRO** (scrolling spectrogram). EQUALIZER, VU METERS and SPECTRO follow MIRROR (L-R: from the centre out, U-D: from the middle row). Square or round tiles, gap, size, and **Bulb**: incandescent lamps (amber when dim, warm white at full, slow to heat up and cool down, a glowing round bulb). |
 | **Lasers** | Laser-show modes: **FAN** (fan of beams from the finger), **AIM** (projectors along the bottom converge on your finger), **TUNNEL** (rings on the beat), **WAVE**, **SCAN**, **WEB**. *Swing* sweeps on the beat and *Rotation* turns the beams, both following the **swing pattern** (**TOGETHER**, **MIRROR** each side opposite, **WAVE** one after the other / the fan opens and closes, **RANDOM** each beam its own direction, speed and start, re-picked at every touch); *Scatter* gives each beam a random angle offset; *Chase* makes beams blink in sequence / alternate / random. |
@@ -121,24 +122,37 @@ A second effect running behind the one you play, on the same output. Select **BA
 
 **MEDIA** (top of the panel) opens the media server in its **own window**, so TouchFX stays usable: with one touch
 screen, both windows can be full screen and **< TOUCHFX** / **MEDIA** switch between them; with a second control
-screen, leave the MEDIA window there. It remembers where it was.
+screen, leave the MEDIA window there. It remembers where it was. **CLOSE** (top left of the MEDIA window) closes
+it; tapping **MEDIA** in TouchFX while it is open offers **SHOW IT** or **CLOSE IT**.
 
-- **FILES** (left): browse **PLACES** (your folders and drives, USB sticks included), **UP**, and **search** (typed,
-  or **KEYS** for the on-screen keyboard; it searches the folder and the folders inside it). Tick videos / pictures
-  and **IMPORT** (or **IMPORT ALL**) into the group shown.
+The window has four sections; drag the bars between them to resize (remembered; **RESET LAYOUT** puts them back):
+**FILES** on the left, **CLIPS** in the middle with **PREVIEW / PLAYING** under them, **CLIP SETTINGS** on the right.
+
+- **FILES** works like the Windows file explorer: **< / >** (back, forward), **UP**, an address bar (tap a part of
+  the path to go there), **Quick access** (Desktop, Videos, Pictures, Documents, Downloads) and **This PC** (every
+  drive, USB sticks included) on the left, and **ICONS** (a thumbnail of every video and picture) or **DETAILS**
+  (name, date modified, type, size; tap a heading to sort). **Search** (typed, or **KEYS** for the on-screen
+  keyboard) looks in the folder and the folders inside it. Tap a folder to open it; tap a file to **preview** it
+  underneath (videos play through frames from the whole clip, with size, codec, length and file size). Tick a
+  file's box (or double tap it) to pick several, then **IMPORT** (or **IMPORT ALL**) into the group shown.
+  Thumbnails are made in the background and kept, so a folder opens at once the next time.
 - Every clip is **converted once to HAP Q** (or **HAP Alpha** for transparent clips and pictures) into the
   project's `media` folder, **without audio**, in the background with a progress bar. The graphics card decodes
   HAP, so playback is smooth, starts instantly, plays at any speed and leaves the CPU (and NDI) alone. Files that
   are already HAP are copied as they are. Resolume DXV files can be imported (converted to HAP). Anything bigger
   than 4K comes down to 4K. FFmpeg (included: `ffmpeg.exe` / `ffprobe.exe` next to TouchFX.exe) does the conversion.
-- **Groups** (middle, as tabs): **+ GROUP**, **RENAME**, **DELETE GROUP** (tap twice; its clips go too). The first cell
-  is always **LIVE INPUT** (the video input from *SETTINGS → VIDEO IN*).
+- **CLIPS**: the groups are listed like folders on the left; **ALL GROUPS** shows them all as folders (with their
+  first clips inside) to find your way through a big library. A group shows its clips as **ICONS** or **DETAILS**
+  (length, size, format, PLAY button). **+ GROUP**, **RENAME**, **DELETE GROUP** (tap twice; its clips go too). The
+  first cell is always **LIVE INPUT** (the video input from *SETTINGS → VIDEO IN*).
 - Like Resolume: **tap a clip's name** to show it in **PREVIEW** (playing, with its settings) and edit it underneath
   without touching the output; **tap its picture** to play it. Tapping the playing clip again restarts it.
   The playing clip has an orange frame and progress bar; colour **labels** (a tag on top of the picture) help to
   find clips. **PLAY IT** plays the previewed clip.
 - **PLAYING** (right) shows the media layer; **RESTART**, **STOP**.
-- **Settings stored with each clip** (they follow the clip wherever it plays, and can be changed while it plays):
+- **Settings stored with each clip** (they follow the clip wherever it plays, and can be changed while it plays).
+  **Double tap a slider** to put just that setting back to its default; while dragging, a slider sticks at its
+  default (the small marks on the slider show where):
   - **PLAY**: **LOOP**, **ONCE + HOLD** (last frame), **ONCE + BLACK**, **BOUNCE**; **In / Out** trim; **Speed**
     (0–400 %), **REVERSE**; **BEAT SYNC**: the clip (In to Out) lasts 1–64 beats at the current BPM and loops
     on the bar; **transition into this clip** (the layer's, or its own CUT / CROSSFADE / BLACK and time).

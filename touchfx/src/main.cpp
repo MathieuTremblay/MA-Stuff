@@ -378,6 +378,10 @@ void closeMediaWindow(App& a) {
   ImGui::SetCurrentContext(mainCtx);
   a.mediaCtx = nullptr;
   SDL_GL_MakeCurrent(a.window, a.gl);
+  // the windows share the font atlas: closing the MEDIA window's backend deleted the font picture and cleared the
+  // atlas' texture, which left TouchFX drawing everything black. Make it again for the main window.
+  ImGui_ImplOpenGL3_DestroyFontsTexture();
+  ImGui_ImplOpenGL3_CreateFontsTexture();
   SDL_DestroyWindow(a.mediaWin);
   a.mediaWin = nullptr;
   a.mediaWinOpen = false;
@@ -386,6 +390,9 @@ void closeMediaWindow(App& a) {
 
 void renderMediaWindow(App& a, float dt) {
   if (!a.mediaWin || !a.mediaCtx) return;
+  a.fileThumbs.setDir((a.settingsPath.empty() ? std::string("./") : a.settingsPath.substr(0, a.settingsPath.size() - 13)) +
+                      "thumbcache");
+  a.fileThumbs.update();
   // the preview monitor (GL work, in the shared context)
   {
     MediaEnv env = mediaEnv(a);
@@ -1084,7 +1091,7 @@ const SelftestStep kSteps[] = {
 };
 constexpr int kStepFrames = 120;
 constexpr int kNumSteps = int(sizeof(kSteps) / sizeof(kSteps[0]));
-constexpr int kUiShots = 11;  // live (no strip), settings x4, panel left, cues, show mode, BACK, video in, MEDIA
+constexpr int kUiShots = 12;  // live (no strip), settings x4, panel left, cues, show mode, BACK, video in, MEDIA, after closing it
 
 void selftestTouches(App& a, int frame, int fingers) {
   float t = frame / 60.f;
@@ -1416,8 +1423,14 @@ int main(int argc, char** argv) {
         }
       } else {
         int k = (frame - fxFrames) / 20;
-        if (k == kUiShots - 1 && !a.mediaWin) {  // the MEDIA window, with the test clips
+        if (k == kUiShots - 1 && a.mediaWin) a.wantCloseMediaWin = true;  // TouchFX must still draw after closing it
+        if (k == kUiShots - 2 && !a.mediaWin) {  // the MEDIA window, with the test clips
           a.wantMediaWin = true;
+          if (const char* mv = std::getenv("TOUCHFX_TEST_MEDIA")) {
+            std::string f = mv;
+            f = f.substr(0, f.find(';'));
+            ui::MediaBrowseTo(std::filesystem::u8path(f).parent_path().u8string(), f);
+          }
           for (const MediaGroup& g : a.st.media.groups)
             for (const MediaClip& mc : g.clips)
               if (a.mediaSelected.empty()) a.mediaSelected = mc.id;
@@ -1737,7 +1750,7 @@ int main(int argc, char** argv) {
     if (a.selftest && frame == kStepFrames * 5 - 1) g_captureExternal = selftestDir + "/external.ppm";
     renderExternal(a);
     renderMediaWindow(a, dt);
-    if (a.selftest && frame == fxFrames + kUiShots * 20 - 2 && a.mediaWin) g_captureMedia = selftestDir + "/media.ppm";
+    if (a.selftest && frame == fxFrames + (kUiShots - 1) * 20 - 2 && a.mediaWin) g_captureMedia = selftestDir + "/media.ppm";
     // the self-test waits for the media conversions before the media steps
     bool waitMedia = a.selftest && frame < fxFrames && kSteps[frame / kStepFrames].media && a.importer.pending() > 0 &&
                      selftestWait < 120.0;

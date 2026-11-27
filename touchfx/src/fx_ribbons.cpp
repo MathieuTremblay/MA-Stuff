@@ -56,7 +56,10 @@ struct Stroke {
   struct Pt {
     Vec2 p;  // pixels
     float born;
+    float w = 1;  // width here (a fast stroke is thinner, like a real brush)
   };
+  Vec2 tip, target;  // the brush tip trails the finger a little (lazy brush): smooth, no jitter
+  float wf = 1;      // current width from the brush speed
   std::vector<Pt> pts;  // oldest first, the last one is the finger
   Vec3 cols[6];
   float phase = 0;
@@ -96,7 +99,9 @@ class Ribbons : public Effect {
     float life = mixf(0.4f, 6.f, s.length * s.length);  // seconds a piece of the stroke stays
     float width = mixf(30.f, 320.f, s.width) * px;
     int bands = std::clamp(s.bands, 2, 6);
-    float step = std::max(3.f * px, width * 0.06f);  // a new point every few pixels of finger travel
+    float step = std::max(3.f * px, width * 0.06f);  // a new point every few pixels of brush travel
+    // lazy brush: how quickly the tip catches up with the finger (Smoothing 0 = right under the finger)
+    float follow = 1.f - std::exp(-dt * mixf(45.f, 3.5f, std::sqrt(s.smooth)));
 
     // ---- follow the fingers ----
     for (auto& kv : strokes) kv.second.seen = false;
@@ -107,19 +112,35 @@ class Ribbons : public Effect {
       if (st.pts.empty()) {
         st.phase = hash01(uint32_t(key) * 2654435761u + uint32_t(clock * 10.f)) * kTau;
         st.order = ++orderCounter;
-        st.pts.push_back({p, clock});
-        st.pts.push_back({p, clock});
+        st.tip = p;
+        st.wf = 1.f;
+        st.pts.push_back({p, clock, 1.f});
+        st.pts.push_back({p, clock, 1.f});
       }
-      // the head follows the finger; a point is left behind every `step` pixels
-      Stroke::Pt& head = st.pts.back();
-      Vec2 last = st.pts[st.pts.size() - 2].p;
-      head.p = p;
-      head.born = clock;
-      if (length(p - last) >= step && st.pts.size() < 2000) st.pts.push_back({p, clock});
+      st.target = p;
+      st.seen = true;
       // band colours: palette low, mid, high, repeating (the colour mode applies)
       static const float kT[3] = {0.f, 0.5f, 1.f};
       for (int b = 0; b < bands; ++b) st.cols[b] = c.color(c.colorT(&e, kT[b % 3], hash01(uint32_t(key) * 31u + uint32_t(b))));
-      st.seen = true;
+    }
+    // ---- move the brush tips (a lifted finger's brush still glides to where the finger was) ----
+    for (auto& kv : strokes) {
+      Stroke& st = kv.second;
+      if (st.pts.size() < 2) continue;
+      Vec2 old = st.tip;
+      st.tip = st.tip + (st.target - st.tip) * follow;
+      float moved = length(st.tip - old);
+      if (!st.seen && moved < 0.3f * px) continue;
+      // faster = thinner (Brush), eased so the width breathes rather than jumps
+      float speed = moved / std::max(dt, 1e-3f) / float(c.H);  // screen heights per second
+      float wantW = std::clamp(1.f / (1.f + s.brush * 2.2f * speed), 0.3f, 1.f);
+      st.wf += (wantW - st.wf) * std::min(1.f, dt * 6.f);
+      Stroke::Pt& head = st.pts.back();
+      Vec2 last = st.pts[st.pts.size() - 2].p;
+      head.p = st.tip;
+      head.born = clock;
+      head.w = st.wf;
+      if (length(st.tip - last) >= step && st.pts.size() < 2000) st.pts.push_back({st.tip, clock, st.wf});
     }
     // age out the tail; a released stroke stays until its whole length has faded
     for (auto it = strokes.begin(); it != strokes.end();) {
@@ -151,10 +172,10 @@ class Ribbons : public Effect {
     glBindVertexArray(vao);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     float waveAmp = mixf(0.f, 0.9f, s.wave) * width;
-    float flow = mixf(0.4f, 3.f, s.flow) * std::clamp(c.speed, 0.3f, 3.f) * std::clamp(c.drive, 0.5f, 1.8f);
+    float flow = mixf(0.25f, 2.5f, s.flow) * std::clamp(c.speed, 0.3f, 3.f) * std::clamp(c.drive, 0.5f, 1.8f);
     for (const Stroke* st : order) {
       if (st->pts.size() < 2) continue;
-      if (!build(*st, width, waveAmp, flow, life, c.gain, s.motion == RIBBON_FLOAT)) continue;
+      if (!build(*st, width, waveAmp, flow, life, c.gain, s.motion == RIBBON_FLOAT, s.taper)) continue;
       float cols[18];
       for (int b = 0; b < 6; ++b) {
         Vec3 v = st->cols[std::min(b, bands - 1)];
@@ -182,7 +203,7 @@ class Ribbons : public Effect {
 
  private:
   // Makes the band's triangles (and the halo's) for one stroke into verts / halo.
-  bool build(const Stroke& st, float width, float waveAmp, float flow, float life, float gain, bool floating) {
+  bool build(const Stroke& st, float width, float waveAmp, float flow, float life, float gain, bool floating, float taper) {
     // 1. the painted path, evenly spaced (oldest first, the finger last). The head is left out while it sits
     // on the last point (no direction yet).
     size_t n = st.pts.size();
@@ -191,8 +212,10 @@ class Ribbons : public Effect {
     const float ds = std::max(4.f, width * 0.25f);  // coarse first: rounding the turns settles fast
     path.clear();
     ages.clear();
+    wfs.clear();
     path.push_back(st.pts[0].p);
     ages.push_back(clock - st.pts[0].born);
+    wfs.push_back(st.pts[0].w);
     float carry = 0;
     for (size_t i = 0; i + 1 < n; ++i) {
       Vec2 a = st.pts[i].p, b = st.pts[i + 1].p;
@@ -203,6 +226,7 @@ class Ribbons : public Effect {
         float k = t / segL;
         path.push_back(a + (b - a) * k);
         ages.push_back(ageA + (ageB - ageA) * k);
+        wfs.push_back(st.pts[i].w + (st.pts[i + 1].w - st.pts[i].w) * k);
         t += ds;
       }
       carry = segL - (t - ds);
@@ -210,6 +234,7 @@ class Ribbons : public Effect {
     if (length(st.pts[n - 1].p - path.back()) > 0.5f) {
       path.push_back(st.pts[n - 1].p);
       ages.push_back(clock - st.pts[n - 1].born);
+      wfs.push_back(st.pts[n - 1].w);
     }
     const size_t m = path.size();
     if (m < 2) return false;
@@ -230,7 +255,13 @@ class Ribbons : public Effect {
       float age = std::clamp(ages[j] / life, 0.f, 1.f);
       float ramp = std::clamp(distFromHead / (width * 1.5f), 0.f, 1.f);
       ramp = ramp * ramp * (3.f - 2.f * ramp);
-      float ripple = std::sin(st.phase + clock * flow * 2.f - distFromHead / (width * 2.2f)) * waveAmp * 0.3f * ramp;
+      // several soft waves of different lengths and speeds, slowly swelling: more like cloth than a sine
+      float d = distFromHead / width;
+      float w3 = std::sin(st.phase + clock * flow * 1.7f - d / 2.2f) * 0.6f +
+                 std::sin(st.phase * 1.7f + clock * flow * 1.1f - d / 3.9f) * 0.3f +
+                 std::sin(st.phase * 2.3f - clock * flow * 0.6f - d / 1.3f) * 0.15f;
+      float swell = 0.75f + 0.25f * std::sin(clock * 0.37f + st.phase * 3.1f);
+      float ripple = w3 * swell * waveAmp * 0.3f * ramp;
       Vec2 off = nrm * ripple;
       if (floating) {
         off += nrm * (std::sin(st.phase + clock * flow - age * 5.f) * waveAmp * std::sqrt(age));
@@ -243,22 +274,41 @@ class Ribbons : public Effect {
     for (int it = 0; it < 2; ++it) {
       base.clear();
       tmpA.clear();
+      tmpW.clear();
       base.push_back(path.front());
       tmpA.push_back(ages.front());
+      tmpW.push_back(wfs.front());
       for (size_t i = 0; i + 1 < path.size(); ++i) {
         base.push_back(path[i] * 0.75f + path[i + 1] * 0.25f);
         base.push_back(path[i] * 0.25f + path[i + 1] * 0.75f);
         tmpA.push_back(ages[i] * 0.75f + ages[i + 1] * 0.25f);
         tmpA.push_back(ages[i] * 0.25f + ages[i + 1] * 0.75f);
+        tmpW.push_back(wfs[i] * 0.75f + wfs[i + 1] * 0.25f);
+        tmpW.push_back(wfs[i] * 0.25f + wfs[i + 1] * 0.75f);
       }
       base.push_back(path.back());
       tmpA.push_back(ages.back());
+      tmpW.push_back(wfs.back());
       path.swap(base);
       ages.swap(tmpA);
+      wfs.swap(tmpW);
     }
     const size_t m2 = path.size();
     alphas.resize(m2);
     for (size_t j = 0; j < m2; ++j) alphas[j] = gain * std::clamp((1.f - ages[j] / life) * 3.f, 0.f, 1.f);
+    // taper: the tail end narrows to a point over the last part of the stroke (Taper sets how long)
+    if (taper > 0.001f && m2 > 2) {
+      float total = 0;
+      for (size_t j = 1; j < m2; ++j) total += length(path[j] - path[j - 1]);
+      float len = std::max(1.f, std::min(total * 0.6f, width * mixf(0.5f, 6.f, taper)));
+      float acc = 0;
+      for (size_t j = 0; j < m2; ++j) {
+        if (j) acc += length(path[j] - path[j - 1]);
+        if (acc >= len) break;
+        float u = acc / len;
+        wfs[j] *= mixf(1.f, 0.08f + 0.92f * u * (2.f - u), std::min(1.f, taper * 1.5f));
+      }
+    }
 
     // 4. a strip of quads plus round ends
     verts.clear();
@@ -280,8 +330,9 @@ class Ribbons : public Effect {
       if (i == 0) firstT = tan, firstN = nrm;
       lastT = tan;
       lastN = nrm;
-      Vec2 L = path[i] + nrm * hw, R = path[i] - nrm * hw;
-      Vec2 HL = path[i] + nrm * hh, HR = path[i] - nrm * hh;
+      float wk = wfs[i];
+      Vec2 L = path[i] + nrm * (hw * wk), R = path[i] - nrm * (hw * wk);
+      Vec2 HL = path[i] + nrm * (hh * wk), HR = path[i] - nrm * (hh * wk);
       float a = alphas[i];
       if (i > 0 && (a > 0.002f || lastA > 0.002f)) {
         any = true;
@@ -300,12 +351,12 @@ class Ribbons : public Effect {
     }
     // round ends: the bands carry on straight across a half disc, like the end of a wide brush
     if (alphas.back() > 0.002f) {
-      cap(verts, path.back(), lastT, lastN, hw, alphas.back());
-      cap(halo, path.back(), lastT, lastN, hh, alphas.back());
+      cap(verts, path.back(), lastT, lastN, hw * wfs.back(), alphas.back());
+      cap(halo, path.back(), lastT, lastN, hh * wfs.back(), alphas.back());
     }
     if (alphas.front() > 0.002f) {
-      cap(verts, path.front(), firstT * -1.f, firstN, hw, alphas.front());
-      cap(halo, path.front(), firstT * -1.f, firstN, hh, alphas.front());
+      cap(verts, path.front(), firstT * -1.f, firstN, hw * wfs.front(), alphas.front());
+      cap(halo, path.front(), firstT * -1.f, firstN, hh * wfs.front(), alphas.front());
     }
     return any;
   }
@@ -350,7 +401,7 @@ class Ribbons : public Effect {
   std::map<int, Stroke> strokes;
   std::vector<float> verts, halo;
   std::vector<Vec2> path, base;
-  std::vector<float> alphas, ages, tmpA;
+  std::vector<float> alphas, ages, tmpA, wfs, tmpW;
   Target canvas;
   float clock = 0;
   int orderCounter = 0;

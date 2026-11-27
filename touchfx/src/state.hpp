@@ -89,6 +89,9 @@ struct RibbonSettings {
   int bands = 4;  // parallel colour bands in each stroke, 2..6
   int motion = 0;  // RibbonMotion: STAY (paint stays where drawn, ripples) or FLOAT (drifts away as it fades)
   float length = 0.5f, width = 0.5f, wave = 0.4f, flow = 0.4f, glow = 0.f;
+  float smooth = 0.45f;  // lazy brush: the stroke trails the finger and smooths its jitter
+  float brush = 0.5f;    // faster strokes get thinner
+  float taper = 0.5f;    // the tail narrows to a point
 };
 struct GeometrySettings {
   int shape = SHAPE_MIX, rate = 3;
@@ -316,6 +319,9 @@ struct LayoutSettings {
   // the MEDIA window (its own window, so TouchFX stays usable): where it was last
   int mediaX = -1, mediaY = -1, mediaW = 1280, mediaH = 800;
   bool mediaFull = false;
+  // its sections (dragged to resize): files width, settings width, monitors height, places / groups lists
+  float mFilesW = 0.27f, mSetW = 0.24f, mMonH = 0.36f, mNavW = 0.34f, mTreeW = 0.22f;
+  int mFilesView = 0, mClipsView = 0;  // 0 large icons, 1 details
 };
 
 constexpr int kNumPalettes = 10;
