@@ -123,14 +123,15 @@ class Ribbons : public Effect {
       static const float kT[3] = {0.f, 0.5f, 1.f};
       for (int b = 0; b < bands; ++b) st.cols[b] = c.color(c.colorT(&e, kT[b % 3], hash01(uint32_t(key) * 31u + uint32_t(b))));
     }
-    // ---- move the brush tips (a lifted finger's brush still glides to where the finger was) ----
+    // ---- move the brush tips ----
     for (auto& kv : strokes) {
       Stroke& st = kv.second;
       if (st.pts.size() < 2) continue;
+      // a lifted finger: the brush stops where it is (gliding on made the head swell and shake)
+      if (!st.seen) continue;
       Vec2 old = st.tip;
       st.tip = st.tip + (st.target - st.tip) * follow;
       float moved = length(st.tip - old);
-      if (!st.seen && moved < 0.3f * px) continue;
       // faster = thinner (Brush), eased so the width breathes rather than jumps
       float speed = moved / std::max(dt, 1e-3f) / float(c.H);  // screen heights per second
       float wantW = std::clamp(1.f / (1.f + s.brush * 2.2f * speed), 0.3f, 1.f);
@@ -231,7 +232,8 @@ class Ribbons : public Effect {
       }
       carry = segL - (t - ds);
     }
-    if (length(st.pts[n - 1].p - path.back()) > 0.5f) {
+    // the head only counts once it is clearly ahead of the last point (very close points make its direction jump)
+    if (length(st.pts[n - 1].p - path.back()) > ds * 0.35f) {
       path.push_back(st.pts[n - 1].p);
       ages.push_back(clock - st.pts[n - 1].born);
       wfs.push_back(st.pts[n - 1].w);

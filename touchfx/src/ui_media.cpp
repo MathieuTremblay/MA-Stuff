@@ -1,11 +1,12 @@
 // The MEDIA window, laid out like this (every border can be dragged; RESET LAYOUT puts it back):
 //
-//   FILES (full height)  |  CLIPS: groups like folders, large icons / details  |  CLIP SETTINGS
-//   places | folder view  |---------------------------------------------------- |  (full height)
-//   + preview of the file |  PREVIEW                |  PLAYING                  |
+//   CLIPS: folders on the left, large icons / details      |  CLIP SETTINGS
+//   ------------------------------------------------------ |  (full height)
+//   PREVIEW                    |  PLAYING                  |
 //
-// FILES works like the Windows file explorer: Back / Forward / Up, a clickable address bar, Quick access and the
-// drives on the left, large icons (thumbnails of the videos) or details, and a preview of the selected file.
+// + IMPORT opens the import window on top of it: a file browser like the Windows file explorer (Back / Forward /
+// Up, a clickable address bar, Quick access and the drives, large icons or details, a preview of the selected
+// file) and the clip folder to import into.
 // CLIPS: like Resolume, tap a clip's NAME to preview it and edit its settings, tap its PICTURE to play it.
 #include <algorithm>
 #include <cctype>
@@ -64,6 +65,10 @@ struct MediaUi {
   int tab = 0;  // settings: PLAY / TRANSFORM / COLOUR
   double deleteArmed = -10, groupDeleteArmed = -10;
   std::string deleteId;
+  // the import window
+  bool importOpen = false, importShown = false;
+  int importDest = 0;
+  std::string importMsg;
 } g_m;
 
 std::string u8(const fs::path& p) { return p.u8string(); }
@@ -612,37 +617,6 @@ void FilePreview(App& a, float h) {
     ImGui::PopTextWrapPos();
   }
   ImGui::EndGroup();
-  // import
-  MediaLibrary& m = a.st.media;
-  int group = std::clamp(m.activeGroup, 0, std::max(0, int(m.groups.size()) - 1));
-  std::vector<std::string> files(g_m.picked.begin(), g_m.picked.end());
-  if (files.empty() && sel) files.push_back(sel->path);
-  char ib[64];
-  std::snprintf(ib, sizeof(ib), g_m.picked.empty() ? "IMPORT" : "IMPORT %d", int(files.size()));
-  float bw = (w - sp * 2) / 3;
-  ImGui::BeginDisabled(files.empty());
-  if (Toggle(ib, !files.empty(), ImVec2(bw, 44 * s), kGo)) {
-    a.importer.import(m, group, files);
-    g_m.picked.clear();
-  }
-  ImGui::EndDisabled();
-  ImGui::SameLine();
-  bool anyFiles = false;
-  for (const Entry& e : g_m.entries) anyFiles = anyFiles || !e.dir;
-  ImGui::BeginDisabled(!anyFiles);
-  if (ImGui::Button("IMPORT ALL", ImVec2(bw, 44 * s))) {
-    std::vector<std::string> all;
-    for (const Entry& e : g_m.entries)
-      if (!e.dir) all.push_back(e.path);
-    a.importer.import(m, group, all);
-    g_m.picked.clear();
-  }
-  ImGui::EndDisabled();
-  ImGui::SameLine();
-  ImGui::BeginDisabled(g_m.picked.empty());
-  if (ImGui::Button("UNTICK", ImVec2(bw, 44 * s))) g_m.picked.clear();
-  ImGui::EndDisabled();
-  ImGui::TextColored(kTextDim, "Into \"%s\"", m.groups.empty() ? "" : m.groups[size_t(group)].name.c_str());
   ImGui::EndChild();
 }
 
@@ -704,12 +678,12 @@ void Clips(App& a, float h) {
   ImGui::BeginChild("##clips", ImVec2(ImGui::GetContentRegionAvail().x, h), ImGuiChildFlags_AlwaysUseWindowPadding);
   float bodyW = ImGui::GetContentRegionAvail().x, bodyH = ImGui::GetContentRegionAvail().y;
   float sp = ImGui::GetStyle().ItemSpacing.x;
-  // the groups, like folders
+  // the clip folders
   float treeW = std::max(110 * s, bodyW * L.mTreeW);
   ImGui::BeginChild("##tree", ImVec2(treeW, bodyH), ImGuiChildFlags_AlwaysUseWindowPadding);
   {
     float tw = ImGui::GetContentRegionAvail().x;
-    if (Toggle("ALL GROUPS", g_m.groupView == -1, ImVec2(tw, 38 * s))) g_m.groupView = -1;
+    if (Toggle("ALL FOLDERS", g_m.groupView == -1, ImVec2(tw, 38 * s))) g_m.groupView = -1;
     for (size_t gi = 0; gi < m.groups.size(); ++gi) {
       ImGui::PushID(int(gi));
       char lbl[96];
@@ -720,24 +694,29 @@ void Clips(App& a, float h) {
       }
       ImGui::PopID();
     }
-    if (ImGui::Button("+ GROUP", ImVec2(tw, 38 * s))) OpenKeyboard("mgroupnew", "Group " + std::to_string(m.groups.size() + 1), "New group");
+    if (ImGui::Button("+ FOLDER", ImVec2(tw, 38 * s))) OpenKeyboard("mgroupnew", "Folder " + std::to_string(m.groups.size() + 1), "New folder");
     TouchScroll();
   }
   ImGui::EndChild();
   VSplit("##treesplit", &L.mTreeW, bodyW, bodyH, 0.1f, 0.5f);
   ImGui::BeginChild("##content", ImVec2(ImGui::GetContentRegionAvail().x, bodyH));
   float cwAvail = ImGui::GetContentRegionAvail().x;
-  // toolbar: view, the group's name and actions
+  // toolbar: import, view, the folder's actions
+  if (Toggle("+ IMPORT", true, ImVec2(130 * s, 38 * s), kGo)) {
+    g_m.importOpen = true;
+    g_m.importDest = g_m.groupView >= 0 ? g_m.groupView : m.activeGroup;
+  }
+  ImGui::SameLine();
   if (Toggle("ICONS##c", L.mClipsView == 0, ImVec2(90 * s, 38 * s))) L.mClipsView = 0;
   ImGui::SameLine();
   if (Toggle("DETAILS##c", L.mClipsView == 1, ImVec2(100 * s, 38 * s))) L.mClipsView = 1;
   if (g_m.groupView >= 0 && g_m.groupView < int(m.groups.size())) {
     ImGui::SameLine();
-    if (ImGui::Button("RENAME", ImVec2(0, 38 * s))) OpenKeyboard("mgroupren", m.groups[size_t(g_m.groupView)].name, "Group name");
+    if (ImGui::Button("RENAME", ImVec2(0, 38 * s))) OpenKeyboard("mgroupren", m.groups[size_t(g_m.groupView)].name, "Folder name");
     ImGui::SameLine();
     bool armed = ImGui::GetTime() - g_m.groupDeleteArmed < 3.0;
     ImGui::BeginDisabled(m.groups.size() <= 1);
-    if (Toggle(armed ? "TAP AGAIN" : "DELETE GROUP", armed, ImVec2(0, 38 * s), kDanger)) {
+    if (Toggle(armed ? "TAP AGAIN" : "DELETE FOLDER", armed, ImVec2(0, 38 * s), kDanger)) {
       if (armed) {
         MediaGroup& g = m.groups[size_t(g_m.groupView)];
         std::vector<std::string> ids;
@@ -769,7 +748,7 @@ void Clips(App& a, float h) {
   float avail = ImGui::GetContentRegionAvail().x;
   ImDrawList* dl = ImGui::GetWindowDrawList();
   if (g_m.groupView == -1) {
-    // all groups as folders: a collage of their first clips, the name and how many clips
+    // all the folders: a collage of their first clips, the name and how many clips
     int cols = std::max(1, int((avail + sp) / (200 * s + sp)));
     float cw = (avail - sp * (cols - 1)) / cols, th = cw * 9.f / 16.f;
     for (size_t gi = 0; gi < m.groups.size(); ++gi) {
@@ -852,7 +831,7 @@ void Clips(App& a, float h) {
     }
     if (g.clips.empty()) {
       ImGui::PushStyleColor(ImGuiCol_Text, kTextDim);
-      ImGui::TextWrapped("No clips in this group yet: pick videos or pictures in FILES and tap IMPORT. "
+      ImGui::TextWrapped("No clips in this folder yet: tap + IMPORT to bring in videos or pictures. "
                          "Tap a clip's picture to play it, its name to preview it and change its settings.");
       ImGui::PopStyleColor();
     }
@@ -879,8 +858,10 @@ void Monitors(App& a, float h) {
   std::string pname = a.mediaSelected == kMediaLive ? "Live input" : (sc ? sc->name : "");
   const MediaClip* lc = findClip(a.st.media, a.st.look.mediaClip);
   std::string lname = a.st.look.mediaClip == kMediaLive ? "Live input" : (lc ? lc->name : "(nothing)");
+  ImVec2 top = ImGui::GetCursorScreenPos();  // both monitors start here: exactly the same height
+  float colH = 0;
   for (int k = 0; k < 2; ++k) {
-    if (k) ImGui::SameLine();
+    ImGui::SetCursorScreenPos(ImVec2(top.x + k * (colW + sp), top.y));
     ImGui::BeginGroup();
     ImGui::PushID(k);
     if (k == 0) ImGui::TextColored(kBack, "PREVIEW  %s", pname.c_str());
@@ -907,7 +888,9 @@ void Monitors(App& a, float h) {
     }
     ImGui::PopID();
     ImGui::EndGroup();
+    colH = std::max(colH, ImGui::GetItemRectMax().y - top.y);
   }
+  ImGui::SetCursorScreenPos(ImVec2(top.x, top.y + colH + 4 * s));
   std::string st = a.media.status();
   const Look& l = a.st.look;
   bool shown = (l.effect == FX_VIDEO && l.video.source == VIDSRC_MEDIA) ||
@@ -1005,7 +988,7 @@ void Settings(App& a, float h) {
     std::string txt;
     if (c && KeyboardResult("mcliprename", txt) && !txt.empty()) c->name = txt;
     if (ImGui::BeginPopup("##movegroup")) {
-      ImGui::TextColored(kTextDim, "Move the clip to:");
+      ImGui::TextColored(kTextDim, "Move the clip to the folder:");
       for (size_t g = 0; g < m.groups.size(); ++g) {
         ImGui::PushID(int(g));
         int cg = -1, cc = -1;
@@ -1117,10 +1100,121 @@ void Settings(App& a, float h) {
 
 }  // namespace
 
-// self-test: open the file browser in a folder with a file selected
+// self-test: open the import window in a folder with a file selected
 void MediaBrowseTo(const std::string& folder, const std::string& file) {
   navigate(folder);
   g_m.selFile = file;
+  g_m.importOpen = true;
+}
+
+// The import window, on top of the media screen: browse, preview, tick files, choose the clip folder, IMPORT.
+// It stays open for more imports until CLOSE.
+void ImportWindow(App& a) {
+  float s = S();
+  ImGuiIO& io = ImGui::GetIO();
+  MediaLibrary& m = a.st.media;
+  if (g_m.importOpen && !g_m.importShown) {
+    ImGui::OpenPopup("##import");
+    g_m.importShown = true;
+    g_m.importMsg.clear();
+  }
+  ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+  ImGui::SetNextWindowSize(ImVec2(io.DisplaySize.x * 0.94f, io.DisplaySize.y * 0.92f));
+  ImGui::PushStyleColor(ImGuiCol_PopupBg, ImVec4(0.085f, 0.085f, 0.10f, 1));
+  ImGui::PushStyleColor(ImGuiCol_ModalWindowDimBg, ImVec4(0, 0, 0, 0.6f));
+  bool open = ImGui::BeginPopupModal("##import", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove |
+                                                              ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar);
+  ImGui::PopStyleColor(2);
+  if (!open) {
+    g_m.importOpen = g_m.importShown = false;
+    return;
+  }
+  float sp = ImGui::GetStyle().ItemSpacing.x;
+  ImGui::PushFont(a.fontBig);
+  ImGui::TextColored(kGo, "IMPORT");
+  ImGui::PopFont();
+  ImGui::SameLine(0, 16 * s);
+  ImGui::BeginGroup();
+  ImGui::TextColored(kTextDim, "Videos and pictures are converted to HAP into the project folder, without audio.");
+  if (!ffmpegAvailable()) ImGui::TextColored(ImVec4(1, 0.5f, 0.4f, 1), "FFmpeg is missing: files cannot be converted.");
+  ImGui::EndGroup();
+  float barH = 110 * s;
+  Files(a, ImGui::GetContentRegionAvail().y - barH);
+
+  // bottom bar: into which folder, then IMPORT / IMPORT ALL / UNTICK / CLOSE
+  if (m.groups.empty()) m.groups.push_back(MediaGroup{"Folder 1", {}});
+  g_m.importDest = std::clamp(g_m.importDest, 0, int(m.groups.size()) - 1);
+  ImGui::AlignTextToFramePadding();
+  ImGui::TextUnformatted("Into the folder:");
+  ImGui::SameLine();
+  std::string dest = m.groups[size_t(g_m.importDest)].name + "   v";
+  if (ImGui::Button(dest.c_str(), ImVec2(std::max(220 * s, ImGui::CalcTextSize(dest.c_str()).x + 30 * s), 46 * s)))
+    ImGui::OpenPopup("##dest");
+  if (ImGui::BeginPopup("##dest")) {
+    for (size_t g = 0; g < m.groups.size(); ++g) {
+      ImGui::PushID(int(g));
+      char lbl[96];
+      std::snprintf(lbl, sizeof(lbl), "%s  (%d)", m.groups[g].name.c_str(), int(m.groups[g].clips.size()));
+      if (Toggle(lbl, int(g) == g_m.importDest, ImVec2(320 * s, 46 * s))) {
+        g_m.importDest = int(g);
+        ImGui::CloseCurrentPopup();
+      }
+      ImGui::PopID();
+    }
+    ImGui::EndPopup();
+  }
+  ImGui::SameLine();
+  if (ImGui::Button("+ NEW FOLDER", ImVec2(170 * s, 46 * s)))
+    OpenKeyboard("mimportfolder", "Folder " + std::to_string(m.groups.size() + 1), "New folder");
+  std::string txt;
+  if (KeyboardResult("mimportfolder", txt) && !txt.empty()) {
+    m.groups.push_back(MediaGroup{txt, {}});
+    g_m.importDest = int(m.groups.size()) - 1;
+  }
+  if (!g_m.importMsg.empty()) {
+    ImGui::SameLine(0, 20 * s);
+    ImGui::TextColored(kGo, "%s", g_m.importMsg.c_str());
+  }
+  // actions
+  std::vector<std::string> files(g_m.picked.begin(), g_m.picked.end());
+  if (files.empty() && !g_m.selFile.empty())
+    for (const Entry& e : g_m.entries)
+      if (e.path == g_m.selFile && !e.dir) files.push_back(e.path);
+  std::vector<std::string> all;
+  for (const Entry& e : g_m.entries)
+    if (!e.dir) all.push_back(e.path);
+  float bw = (ImGui::GetContentRegionAvail().x - sp * 3) / 4;
+  auto doImport = [&](const std::vector<std::string>& list) {
+    int n = a.importer.import(m, g_m.importDest, list);
+    char msg[160];
+    std::snprintf(msg, sizeof(msg), "%d file%s added to \"%s\" (converting in the background).", n, n == 1 ? "" : "s",
+                  m.groups[size_t(g_m.importDest)].name.c_str());
+    g_m.importMsg = msg;
+    g_m.picked.clear();
+    g_m.groupView = g_m.importDest;  // the clips show the folder they went into
+    m.activeGroup = g_m.importDest;
+  };
+  char ib[64];
+  std::snprintf(ib, sizeof(ib), g_m.picked.empty() ? "IMPORT" : "IMPORT %d", int(files.size()));
+  ImGui::BeginDisabled(files.empty());
+  if (Toggle(ib, !files.empty(), ImVec2(bw, 50 * s), kGo)) doImport(files);
+  ImGui::EndDisabled();
+  ImGui::SameLine();
+  ImGui::BeginDisabled(all.empty());
+  if (ImGui::Button("IMPORT ALL HERE", ImVec2(bw, 50 * s))) doImport(all);
+  ImGui::EndDisabled();
+  ImGui::SameLine();
+  ImGui::BeginDisabled(g_m.picked.empty());
+  if (ImGui::Button("UNTICK ALL", ImVec2(bw, 50 * s))) g_m.picked.clear();
+  ImGui::EndDisabled();
+  ImGui::SameLine();
+  if (Toggle("CLOSE", true, ImVec2(bw, 50 * s), kDanger)) {
+    g_m.importOpen = false;
+    ImGui::CloseCurrentPopup();
+  }
+  KeyboardFrame(a);  // inside the import window, so the keyboard shows on top of it
+  ImGui::EndPopup();
+  if (!g_m.importOpen) g_m.importShown = false;
 }
 
 void MediaWindowUI(App& a) {
@@ -1152,7 +1246,7 @@ void MediaWindowUI(App& a) {
   ImGui::SameLine(std::max(ImGui::GetCursorPosX(), ImGui::GetWindowWidth() - right - ImGui::GetStyle().WindowPadding.x));
   if (ImGui::Button("RESET LAYOUT", ImVec2(170 * s, 46 * s))) {
     LayoutSettings d;
-    L.mFilesW = d.mFilesW, L.mSetW = d.mSetW, L.mMonH = d.mMonH, L.mNavW = d.mNavW, L.mTreeW = d.mTreeW;
+    L.mSetW = d.mSetW, L.mMonH = d.mMonH, L.mNavW = d.mNavW, L.mTreeW = d.mTreeW;
   }
   ImGui::SameLine();
   bool full = L.mediaFull;
@@ -1165,19 +1259,15 @@ void MediaWindowUI(App& a) {
     KeyboardFrame(a);
     return;
   }
-  // FILES | splitter | (CLIPS / splitter / MONITORS) | splitter | SETTINGS
+  // (CLIPS / splitter / MONITORS) | splitter | SETTINGS
   float W = ImGui::GetContentRegionAvail().x, H = ImGui::GetContentRegionAvail().y;
   float bar = 12 * s;
-  float filesW = std::max(260 * s, W * L.mFilesW), setW = std::max(260 * s, W * L.mSetW);
-  float midW = std::max(200 * s, W - filesW - setW - bar * 2);
-  ImGui::BeginChild("##colfiles", ImVec2(filesW, H));
-  Files(a, H);
-  ImGui::EndChild();
-  VSplit("##split1", &L.mFilesW, W, H, 0.12f, 0.5f);
+  float setW = std::max(280 * s, W * L.mSetW);
+  float midW = std::max(300 * s, W - setW - bar);
   ImGui::BeginChild("##colmid", ImVec2(midW, H));
   {
-    float monH = std::max(140 * s, H * L.mMonH);
-    float clipsH = std::max(120 * s, H - monH - bar);
+    float monH = std::max(160 * s, H * L.mMonH);
+    float clipsH = std::max(140 * s, H - monH - bar);
     Clips(a, clipsH);
     HSplit("##split3", &L.mMonH, H, midW, 0.15f, 0.7f);
     Monitors(a, ImGui::GetContentRegionAvail().y);
@@ -1187,8 +1277,9 @@ void MediaWindowUI(App& a) {
   ImGui::BeginChild("##colset", ImVec2(ImGui::GetContentRegionAvail().x, H));
   Settings(a, H);
   ImGui::EndChild();
+  ImportWindow(a);
   ImGui::End();
-  KeyboardFrame(a);
+  if (!g_m.importOpen) KeyboardFrame(a);
 }
 
 }  // namespace ui

@@ -2208,22 +2208,7 @@ void drawUI(App& a) {
     ImGui::SameLine();
     if (Toggle("CUES", a.st.tab == 2, ImVec2(w, h))) a.st.tab = 2;
     ImGui::SameLine();
-    if (Toggle("MEDIA", a.mediaWinOpen, ImVec2(w, h), kBack)) {
-      if (a.mediaWinOpen) ImGui::OpenPopup("##mediaopen");  // already open: bring it up, or close it
-      else a.wantMediaWin = true;
-    }
-    if (ImGui::BeginPopup("##mediaopen")) {
-      ImGui::TextUnformatted("The MEDIA window is open.");
-      if (Toggle("SHOW IT", true, ImVec2(300 * s, 50 * s), kBack)) {
-        a.wantMediaWin = true;
-        ImGui::CloseCurrentPopup();
-      }
-      if (Toggle("CLOSE IT", true, ImVec2(300 * s, 50 * s), kDanger)) {
-        a.wantCloseMediaWin = true;
-        ImGui::CloseCurrentPopup();
-      }
-      ImGui::EndPopup();
-    }
+    if (Toggle("MEDIA", a.mediaWinOpen, ImVec2(w, h), kBack)) a.wantMediaWin = true;  // opens it / brings it to the front
     ImGui::SameLine();
     ShowModeButton(a, ImVec2(w, h));
   }

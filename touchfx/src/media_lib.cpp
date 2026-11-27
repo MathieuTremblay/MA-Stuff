@@ -450,7 +450,7 @@ void FileThumbs::update() {
     if (isStillImage(it.path)) {
       step_ = 1;
       it.info.frames = 1;
-      std::string vf = "scale=" + std::to_string(kW) + ":" + std::to_string(kH) +
+      std::string vf = "format=rgba,premultiply=inplace=1,scale=" + std::to_string(kW) + ":" + std::to_string(kH) +
                        ":force_original_aspect_ratio=decrease,pad=" + std::to_string(kW) + ":" + std::to_string(kH) +
                        ":(ow-iw)/2:(oh-ih)/2,format=rgb24";
       busy_ = proc_.start({ffmpegPath(), "-nostdin", "-y", "-v", "error", "-i", it.path, "-frames:v", "1", "-vf", vf,

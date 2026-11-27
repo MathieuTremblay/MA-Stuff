@@ -123,28 +123,30 @@ A second effect running behind the one you play, on the same output. Select **BA
 **MEDIA** (top of the panel) opens the media server in its **own window**, so TouchFX stays usable: with one touch
 screen, both windows can be full screen and **< TOUCHFX** / **MEDIA** switch between them; with a second control
 screen, leave the MEDIA window there. It remembers where it was. **CLOSE** (top left of the MEDIA window) closes
-it; tapping **MEDIA** in TouchFX while it is open offers **SHOW IT** or **CLOSE IT**.
+it; **MEDIA** in TouchFX opens it or brings it to the front.
 
-The window has four sections; drag the bars between them to resize (remembered; **RESET LAYOUT** puts them back):
-**FILES** on the left, **CLIPS** in the middle with **PREVIEW / PLAYING** under them, **CLIP SETTINGS** on the right.
+The window shows the **CLIPS** with **PREVIEW / PLAYING** under them and the **CLIP SETTINGS** on the right; drag the
+bars between them to resize (remembered; **RESET LAYOUT** puts them back).
 
-- **FILES** works like the Windows file explorer: **< / >** (back, forward), **UP**, an address bar (tap a part of
+- **+ IMPORT** opens the import window on top of the media screen. It works like the Windows file explorer: **< / >** (back, forward), **UP**, an address bar (tap a part of
   the path to go there), **Quick access** (Desktop, Videos, Pictures, Documents, Downloads) and **This PC** (every
   drive, USB sticks included) on the left, and **ICONS** (a thumbnail of every video and picture) or **DETAILS**
   (name, date modified, type, size; tap a heading to sort). **Search** (typed, or **KEYS** for the on-screen
   keyboard) looks in the folder and the folders inside it. Tap a folder to open it; tap a file to **preview** it
   underneath (videos play through frames from the whole clip, with size, codec, length and file size). Tick a
-  file's box (or double tap it) to pick several, then **IMPORT** (or **IMPORT ALL**) into the group shown.
-  Thumbnails are made in the background and kept, so a folder opens at once the next time.
+  file's box (or double tap it) to pick several. At the bottom, choose the clip folder to import **into** (or
+  **+ NEW FOLDER**), then **IMPORT** (the ticked files, or the previewed one) or **IMPORT ALL HERE** (every video and
+  picture in the folder shown). It stays open for more imports until **CLOSE**. Thumbnails are made in the
+  background and kept, so a folder opens at once the next time.
 - Every clip is **converted once to HAP Q** (or **HAP Alpha** for transparent clips and pictures) into the
   project's `media` folder, **without audio**, in the background with a progress bar. The graphics card decodes
   HAP, so playback is smooth, starts instantly, plays at any speed and leaves the CPU (and NDI) alone. Files that
   are already HAP are copied as they are. Resolume DXV files can be imported (converted to HAP). Anything bigger
   than 4K comes down to 4K. FFmpeg (included: `ffmpeg.exe` / `ffprobe.exe` next to TouchFX.exe) does the conversion.
-- **CLIPS**: the groups are listed like folders on the left; **ALL GROUPS** shows them all as folders (with their
-  first clips inside) to find your way through a big library. A group shows its clips as **ICONS** or **DETAILS**
-  (length, size, format, PLAY button). **+ GROUP**, **RENAME**, **DELETE GROUP** (tap twice; its clips go too). The
-  first cell is always **LIVE INPUT** (the video input from *SETTINGS → VIDEO IN*).
+- **CLIPS**: your clip **folders** are listed on the left; **ALL FOLDERS** shows them all (with their first clips
+  inside) to find your way through a big library. A folder shows its clips as **ICONS** or **DETAILS** (length,
+  size, format, PLAY button). **+ FOLDER**, **RENAME**, **DELETE FOLDER** (tap twice; its clips go too). The first
+  cell is always **LIVE INPUT** (the video input from *SETTINGS → VIDEO IN*).
 - Like Resolume: **tap a clip's name** to show it in **PREVIEW** (playing, with its settings) and edit it underneath
   without touching the output; **tap its picture** to play it. Tapping the playing clip again restarts it.
   The playing clip has an orange frame and progress bar; colour **labels** (a tag on top of the picture) help to
@@ -158,7 +160,7 @@ The window has four sections; drag the bars between them to resize (remembered; 
     on the bar; **transition into this clip** (the layer's, or its own CUT / CROSSFADE / BLACK and time).
   - **TRANSFORM**: **Scale**, **Scale X / Y**, **Position X / Y**, **Rotation**, **FLIP H / V**, **Crop** each side.
   - **COLOUR**: **Gamma**, **Hue**, **Saturation**, **Blur**.
-  - **RENAME**, **< / >** (order), **MOVE TO GROUP**, **DELETE CLIP** (tap twice; removes its file from the project).
+  - **RENAME**, **< / >** (order), **MOVE** (to another folder), **DELETE CLIP** (tap twice; removes its file from the project).
 - **When the clip changes** (the media layer): **CUT**, **CROSSFADE** or **FADE THROUGH BLACK**, with a time.
 
 **Where the media plays:** the media player is a source of the **VIDEO** effect (**VIDEO INPUT** / **MEDIA**). Tapping

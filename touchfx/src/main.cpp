@@ -1426,11 +1426,6 @@ int main(int argc, char** argv) {
         if (k == kUiShots - 1 && a.mediaWin) a.wantCloseMediaWin = true;  // TouchFX must still draw after closing it
         if (k == kUiShots - 2 && !a.mediaWin) {  // the MEDIA window, with the test clips
           a.wantMediaWin = true;
-          if (const char* mv = std::getenv("TOUCHFX_TEST_MEDIA")) {
-            std::string f = mv;
-            f = f.substr(0, f.find(';'));
-            ui::MediaBrowseTo(std::filesystem::u8path(f).parent_path().u8string(), f);
-          }
           for (const MediaGroup& g : a.st.media.groups)
             for (const MediaClip& mc : g.clips)
               if (a.mediaSelected.empty()) a.mediaSelected = mc.id;
@@ -1750,7 +1745,17 @@ int main(int argc, char** argv) {
     if (a.selftest && frame == kStepFrames * 5 - 1) g_captureExternal = selftestDir + "/external.ppm";
     renderExternal(a);
     renderMediaWindow(a, dt);
-    if (a.selftest && frame == fxFrames + (kUiShots - 1) * 20 - 2 && a.mediaWin) g_captureMedia = selftestDir + "/media.ppm";
+    if (a.selftest && a.mediaWin) {  // the MEDIA window, then its import window
+      int f0 = fxFrames + (kUiShots - 2) * 20;
+      if (frame == f0 + 8) g_captureMedia = selftestDir + "/media_main.ppm";
+      if (frame == f0 + 10)
+        if (const char* mv = std::getenv("TOUCHFX_TEST_MEDIA")) {
+          std::string f = mv;
+          f = f.substr(0, f.find(';'));
+          ui::MediaBrowseTo(std::filesystem::u8path(f).parent_path().u8string(), f);
+        }
+      if (frame == f0 + 18) g_captureMedia = selftestDir + "/media.ppm";
+    }
     // the self-test waits for the media conversions before the media steps
     bool waitMedia = a.selftest && frame < fxFrames && kSteps[frame / kStepFrames].media && a.importer.pending() > 0 &&
                      selftestWait < 120.0;
