@@ -1734,7 +1734,8 @@ int main(int argc, char** argv) {
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
     if (a.selftest) {
-      bool capture = (frame < fxFrames && frame % kStepFrames == 110) ||  // 110: inside a strobe flash at 120 BPM
+      static const int shotAt = std::getenv("TOUCHFX_SELFTEST_SHOT_AT") ? std::atoi(std::getenv("TOUCHFX_SELFTEST_SHOT_AT")) : 110;
+      bool capture = (frame < fxFrames && frame % kStepFrames == shotAt) ||  // 110: inside a strobe flash at 120 BPM
                      (frame >= fxFrames && (frame - fxFrames) % 20 == 19);
       if (capture) writePpm(selftestDir + "/shot" + std::to_string(shot++) + ".ppm", dw, dh);
       if (frame >= fxFrames + kUiShots * 20 - 1) running = false;

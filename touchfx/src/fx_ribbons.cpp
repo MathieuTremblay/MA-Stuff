@@ -127,11 +127,14 @@ class Ribbons : public Effect {
     for (auto& kv : strokes) {
       Stroke& st = kv.second;
       if (st.pts.size() < 2) continue;
-      // a lifted finger: the brush stops where it is (gliding on made the head swell and shake)
-      if (!st.seen) continue;
+      // A lifted finger: the brush stops where it is. During the release fade the finger is kept "down" where it
+      // was lifted (so the effect can fade), which made the brush creep on, the head swell and the ripple at the
+      // head shake: the brush is frozen then too.
+      if (!st.seen || c.releasing) continue;
       Vec2 old = st.tip;
       st.tip = st.tip + (st.target - st.tip) * follow;
       float moved = length(st.tip - old);
+      if (moved < 0.4f * px) continue;  // standing still: nothing changes (no swelling head when the finger stops)
       // faster = thinner (Brush), eased so the width breathes rather than jumps
       float speed = moved / std::max(dt, 1e-3f) / float(c.H);  // screen heights per second
       float wantW = std::clamp(1.f / (1.f + s.brush * 2.2f * speed), 0.3f, 1.f);

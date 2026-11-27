@@ -320,6 +320,16 @@ void HSplit(const char* id, float* frac, float total, float w, float lo, float h
                                             hot ? ImGui::GetColorU32(kAccent) : IM_COL32(90, 90, 105, 255), 2 * s);
 }
 
+// A section of the window with its own background tint and a thin border, so the areas are easy to tell apart.
+const ImVec4 kPanClips{0.105f, 0.11f, 0.14f, 1}, kPanList{0.07f, 0.075f, 0.095f, 1}, kPanMon{0.055f, 0.055f, 0.065f, 1},
+    kPanSet{0.125f, 0.11f, 0.095f, 1}, kPanNone{0, 0, 0, 0};
+void BeginPanel(const char* id, ImVec2 size, ImVec4 bg, bool border = true) {
+  ImGui::PushStyleColor(ImGuiCol_ChildBg, bg);
+  ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.24f, 0.24f, 0.3f, 1));
+  ImGui::BeginChild(id, size, (border ? ImGuiChildFlags_Borders : 0) | ImGuiChildFlags_AlwaysUseWindowPadding);
+  ImGui::PopStyleColor(2);
+}
+
 // =====================================================================================================
 // FILES
 void FilePreview(App& a, float h);
@@ -327,7 +337,7 @@ void FilePreview(App& a, float h);
 void Files(App& a, float h) {
   float s = S();
   LayoutSettings& L = a.st.layout;
-  ImGui::BeginChild("##files", ImVec2(ImGui::GetContentRegionAvail().x, h), ImGuiChildFlags_AlwaysUseWindowPadding);
+  BeginPanel("##files", ImVec2(ImGui::GetContentRegionAvail().x, h), kPanClips);
   float w = ImGui::GetContentRegionAvail().x, sp = ImGui::GetStyle().ItemSpacing.x;
   float bh = 40 * s;
   // toolbar: back, forward, up | view
@@ -423,7 +433,7 @@ void Files(App& a, float h) {
   float bodyH = ImGui::GetContentRegionAvail().y - previewH - sp;
   float bodyW = ImGui::GetContentRegionAvail().x;
   float navW = std::max(140 * s, bodyW * L.mNavW);
-  ImGui::BeginChild("##nav", ImVec2(navW, bodyH), ImGuiChildFlags_AlwaysUseWindowPadding);
+  BeginPanel("##nav", ImVec2(navW, bodyH), kPanList);
   {
     auto placeBtn = [&](const Place& p) {
       bool cur = !g_m.path.empty() && fs::u8path(g_m.path) == fs::u8path(p.path);
@@ -445,7 +455,7 @@ void Files(App& a, float h) {
   }
   ImGui::EndChild();
   VSplit("##navsplit", &L.mNavW, bodyW, bodyH, 0.15f, 0.6f);
-  ImGui::BeginChild("##folder", ImVec2(ImGui::GetContentRegionAvail().x, bodyH), ImGuiChildFlags_AlwaysUseWindowPadding);
+  BeginPanel("##folder", ImVec2(ImGui::GetContentRegionAvail().x, bodyH), kPanNone, false);
   std::string enter;
   if (g_m.path.empty()) {  // This PC: the places as big tiles
     ImGui::TextColored(kTextDim, "Choose a place on the left, or a drive:");
@@ -579,7 +589,7 @@ void Files(App& a, float h) {
 // The selected file: its frames playing through, its details, and IMPORT.
 void FilePreview(App& a, float h) {
   float s = S();
-  ImGui::BeginChild("##fprev", ImVec2(0, h), ImGuiChildFlags_AlwaysUseWindowPadding);
+  BeginPanel("##fprev", ImVec2(0, h), kPanMon);
   float w = ImGui::GetContentRegionAvail().x, sp = ImGui::GetStyle().ItemSpacing.x;
   float pw = std::min(w * 0.5f, (h - 70 * s) * 16.f / 9.f), ph = pw * 9.f / 16.f;
   ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -675,12 +685,12 @@ void Clips(App& a, float h) {
   LayoutSettings& L = a.st.layout;
   MediaLibrary& m = a.st.media;
   if (g_m.groupView == -2 || g_m.groupView >= int(m.groups.size())) g_m.groupView = std::clamp(m.activeGroup, 0, int(m.groups.size()) - 1);
-  ImGui::BeginChild("##clips", ImVec2(ImGui::GetContentRegionAvail().x, h), ImGuiChildFlags_AlwaysUseWindowPadding);
+  BeginPanel("##clips", ImVec2(ImGui::GetContentRegionAvail().x, h), kPanClips);
   float bodyW = ImGui::GetContentRegionAvail().x, bodyH = ImGui::GetContentRegionAvail().y;
   float sp = ImGui::GetStyle().ItemSpacing.x;
   // the clip folders
   float treeW = std::max(110 * s, bodyW * L.mTreeW);
-  ImGui::BeginChild("##tree", ImVec2(treeW, bodyH), ImGuiChildFlags_AlwaysUseWindowPadding);
+  BeginPanel("##tree", ImVec2(treeW, bodyH), kPanList);
   {
     float tw = ImGui::GetContentRegionAvail().x;
     if (Toggle("ALL FOLDERS", g_m.groupView == -1, ImVec2(tw, 38 * s))) g_m.groupView = -1;
@@ -699,7 +709,9 @@ void Clips(App& a, float h) {
   }
   ImGui::EndChild();
   VSplit("##treesplit", &L.mTreeW, bodyW, bodyH, 0.1f, 0.5f);
+  ImGui::PushStyleColor(ImGuiCol_ChildBg, kPanNone);
   ImGui::BeginChild("##content", ImVec2(ImGui::GetContentRegionAvail().x, bodyH));
+  ImGui::PopStyleColor();
   float cwAvail = ImGui::GetContentRegionAvail().x;
   // toolbar: import, view, the folder's actions
   if (Toggle("+ IMPORT", true, ImVec2(130 * s, 38 * s), kGo)) {
@@ -744,7 +756,9 @@ void Clips(App& a, float h) {
   if (KeyboardResult("mgroupren", txt) && !txt.empty() && g_m.groupView >= 0 && g_m.groupView < int(m.groups.size()))
     m.groups[size_t(g_m.groupView)].name = txt;
 
+  ImGui::PushStyleColor(ImGuiCol_ChildBg, kPanNone);
   ImGui::BeginChild("##cells", ImVec2(0, 0));
+  ImGui::PopStyleColor();
   float avail = ImGui::GetContentRegionAvail().x;
   ImDrawList* dl = ImGui::GetWindowDrawList();
   if (g_m.groupView == -1) {
@@ -847,7 +861,7 @@ void Clips(App& a, float h) {
 // MONITORS (bottom): preview | playing
 void Monitors(App& a, float h) {
   float s = S();
-  ImGui::BeginChild("##monitors", ImVec2(ImGui::GetContentRegionAvail().x, h), ImGuiChildFlags_AlwaysUseWindowPadding);
+  BeginPanel("##monitors", ImVec2(ImGui::GetContentRegionAvail().x, h), kPanMon);
   float W = ImGui::GetContentRegionAvail().x, sp = ImGui::GetStyle().ItemSpacing.x;
   float colW = (W - sp) * 0.5f;
   float aspect = float(a.out.w) / std::max(1, a.out.h);
@@ -918,7 +932,7 @@ bool Slider(const char* label, float* v, float lo, float hi, const char* fmt, fl
 void Settings(App& a, float h) {
   float s = S();
   MediaLibrary& m = a.st.media;
-  ImGui::BeginChild("##clipset", ImVec2(ImGui::GetContentRegionAvail().x, h), ImGuiChildFlags_AlwaysUseWindowPadding);
+  BeginPanel("##clipset", ImVec2(ImGui::GetContentRegionAvail().x, h), kPanSet);
   float w = ImGui::GetContentRegionAvail().x, sp = ImGui::GetStyle().ItemSpacing.x;
   bool liveSel = a.mediaSelected == kMediaLive;
   MediaClip* c = findClip(m, a.mediaSelected);
@@ -1030,7 +1044,9 @@ void Settings(App& a, float h) {
   ImGui::PushStyleColor(ImGuiCol_Text, kTextDim);
   ImGui::TextWrapped("Double tap a slider: back to its default.");
   ImGui::PopStyleColor();
+  ImGui::PushStyleColor(ImGuiCol_ChildBg, kPanNone);
   ImGui::BeginChild("##setsliders", ImVec2(0, 0));
+  ImGui::PopStyleColor();
   if (g_m.tab == 0) {
     static const char* plays[] = {"LOOP", "ONCE + HOLD", "ONCE + BLACK", "BOUNCE"};
     Choice("mplay", plays, PLAY_COUNT, &k.play, 2, 40 * s);
@@ -1264,7 +1280,9 @@ void MediaWindowUI(App& a) {
   float bar = 12 * s;
   float setW = std::max(280 * s, W * L.mSetW);
   float midW = std::max(300 * s, W - setW - bar);
+  ImGui::PushStyleColor(ImGuiCol_ChildBg, kPanNone);
   ImGui::BeginChild("##colmid", ImVec2(midW, H));
+  ImGui::PopStyleColor();
   {
     float monH = std::max(160 * s, H * L.mMonH);
     float clipsH = std::max(140 * s, H - monH - bar);
@@ -1274,7 +1292,9 @@ void MediaWindowUI(App& a) {
   }
   ImGui::EndChild();
   VSplit("##split2", &L.mSetW, W, H, 0.12f, 0.45f, true);
+  ImGui::PushStyleColor(ImGuiCol_ChildBg, kPanNone);
   ImGui::BeginChild("##colset", ImVec2(ImGui::GetContentRegionAvail().x, H));
+  ImGui::PopStyleColor();
   Settings(a, H);
   ImGui::EndChild();
   ImportWindow(a);
